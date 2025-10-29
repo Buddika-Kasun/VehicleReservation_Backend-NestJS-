@@ -1,0 +1,1 @@
+export const MESSAGES = { CREATED: 'Created successfully' };

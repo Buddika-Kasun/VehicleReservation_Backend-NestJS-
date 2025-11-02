@@ -1,40 +1,194 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { compare } from '../../common/utils/hash.util';
+import { ConfigService } from '@nestjs/config';
+import { ResponseService } from 'src/common/services/response.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
 
 @Injectable()
 export class AuthService {
-  constructor(private usersService: UsersService, private jwtService: JwtService) {}
+  constructor(
+    private usersService: UsersService, 
+    private jwtService: JwtService,
+    private configService: ConfigService,
+    private readonly responseService: ResponseService,
+  ) {}
+
+  private refreshTokens = new Map<number, string>(); // In production, use Redis
 
   async validateUser(username: string, pass: string): Promise<any> {
-    const user = await this.usersService.findByUsername(username);
+    const res = await this.usersService.findAuthByUsername(username);
 
-    if (!user.isApproved) throw new UnauthorizedException('Account pending HR approval.');
+    const user = res.data?.user;
+
+    if (!user.isApproved) {
+      throw new UnauthorizedException(
+        this.responseService.error(
+          'Your account is pending approval, Please contact administrator.',
+          401
+        )
+      );
+    }
 
     if (user && (await compare(pass, user.passwordHash))) {
       const { password, ...result } = user as any;
       return result;
     }
     
-    throw new UnauthorizedException('Invalid credentials');
+    throw new UnauthorizedException(
+      this.responseService.error(
+        'Invalid username or password',
+        401
+      )
+    );
 
   }
 
-  async login(user: any) {
-    const payload = { sub: user.id, email: user.email, role: user.role, username: user.username };
+  async login(dto: LoginDto) {
 
-    const token = this.jwtService.sign(payload)
-    
-    return {
-      access_token: token,
-      user: {
-        id: user.id,
-        username: user.username,
-        displayname: user.display,
-        email: user.email,
-        role: user.role,
-      },
+    const user = await this.validateUser(dto.username, dto.password);
+
+    console.log("user : ", user);
+
+    const payload = { 
+      sub: user.id, 
+      email: user.email, 
+      role: user.role, 
+      username: user.username 
     };
+
+    const accessToken = this.generateAccessToken(payload)
+
+    const refreshToken = this.generateRefreshToken(payload)
+
+    // Update stored refresh token
+    this.storeRefreshToken(user.id, refreshToken);
+
+    const sanitizedUser = sanitizeUser(user);
+    
+    return this.responseService.success(
+      'Login successful',
+      {
+        accessToken,
+        refreshToken,
+        user: sanitizedUser
+      }
+    );
+
   }
+
+  async refreshToken(refreshToken: string) {
+    if (!refreshToken) {
+      throw new BadRequestException(
+        this.responseService.error(
+          'Refresh token is required',
+          401,
+        )
+      );
+    }
+
+    try {
+      // Verify the refresh token
+      const payload = this.verifyRefreshToken(refreshToken);
+
+      // Check if user still exists
+      const res = await this.usersService.findByUsername(payload.username);
+
+      const user = res.data?.user;
+
+      if (!user) {
+        throw new UnauthorizedException(
+          this.responseService.error(
+            'User not found',
+            401
+          )
+        );
+      }
+
+      // Generate new tokens
+      const newPayload = { 
+        sub: user.id, 
+        email: user.email, 
+        role: user.role, 
+        username: user.username 
+      };
+
+      const accessToken = this.generateAccessToken(newPayload);
+
+      const newRefreshToken = this.generateRefreshToken(newPayload)
+
+      // Update stored refresh token
+      this.storeRefreshToken(user.id, newRefreshToken);
+
+      const sanitizedUser = sanitizeUser(user);
+
+      return this.responseService.success(
+        'Returns new access and refresh tokens',
+        {
+          accessToken,
+          refreshToken: newRefreshToken,
+          user: sanitizedUser
+        }
+      );
+
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        throw new UnauthorizedException(
+          this.responseService.error(
+            'Refresh token expired',
+            401
+          )
+        );
+      }
+      if (error.name === 'JsonWebTokenError') {
+        throw new UnauthorizedException(
+          this.responseService.error(
+            'Invalid refresh token',
+            401
+          )
+        );
+      }
+      throw new UnauthorizedException(
+        this.responseService.error(
+          'Token verification failed',
+          401
+        )
+      );
+    }
+  }
+
+  private generateAccessToken(payload: any) {
+    return this.jwtService.sign(payload, {
+      expiresIn: this.configService.get('jwt.expiresIn') || '1d',
+    });
+  }
+
+  private generateRefreshToken(payload: any) {
+    return this.jwtService.sign(payload, {
+      expiresIn: this.configService.get('jwt.refreshExpiresIn') || '7d',
+    });
+  }
+
+  private verifyRefreshToken(refreshToken: string) {
+    return this.jwtService.verify(refreshToken, {
+      secret: this.configService.get('jwt.refreshSecret') || 'supersecretrefreshkey',
+    });
+  }
+  
+  // Method to store refresh token when user logs in
+  private storeRefreshToken(userId: number, refreshToken: string) {
+    this.refreshTokens.set(userId, refreshToken);
+  }
+
+  // Method to revoke refresh token (on logout)
+  async revokeRefreshToken(userId: number) {
+    this.refreshTokens.delete(userId);
+    return this.responseService.success(
+      'Logged out successfully',
+    )
+  }
+
 }

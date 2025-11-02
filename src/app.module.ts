@@ -15,6 +15,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import appConfig from './config/app.config';
 import jwtConfig from './config/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { JwtModule } from '@nestjs/jwt';
     FeedbackModule,
     ReportsModule,
     AuditModule,
+    CommonModule
   ],
 })
 export class AppModule {}

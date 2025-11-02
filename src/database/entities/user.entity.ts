@@ -32,6 +32,9 @@ export class User {
   @Column({ length: 100 })
   displayname: string;
 
+  @Column({ nullable: true })
+  profilePicture?: string;
+
   @Index()
   @Column({ length: 100, unique: true })
   email?: string;
@@ -42,7 +45,7 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.EMPLOYEE })
   role: UserRole;
 
-  @Column({ nullable: true, select: false })
+  @Column({ nullable: true })
   passwordHash?: string;
 
   @Column({ default: 0 })

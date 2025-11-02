@@ -1,7 +1,13 @@
 
-import { Entity, PrimaryGeneratedColumn, Column, OneToOne, ManyToOne, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToOne, ManyToOne, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Trip } from './trip.entity';
 import { User } from './user.entity';
+
+export enum StatusApproval {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
 
 @Entity()
 export class Approval {
@@ -20,12 +26,15 @@ export class Approval {
   @ManyToOne(() => User, { nullable: true })
   safetyApprover?: User;
 
-  @Column({ length: 50, default: 'pending' })
-  status: string; // 'pending' | 'approved' | 'rejected'
+  @Column({ type: 'enum', enum: StatusApproval, default: StatusApproval.PENDING })
+  statusApproval: StatusApproval;
 
   @Column({ length: 255, nullable: true })
   comments?: string;
 
   @CreateDateColumn()
-  decidedAt: Date;
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

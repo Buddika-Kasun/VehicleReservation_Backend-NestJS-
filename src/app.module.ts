@@ -4,7 +4,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
-import { HealthModule } from './modules/health/health.module';
 import { CompanyModule } from './modules/company/company.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { TripsModule } from './modules/trips/trips.module';
@@ -42,7 +41,6 @@ import { CommonModule } from './common/common.module';
 
     AuthModule,
     UsersModule,
-    HealthModule,
     CompanyModule,
     VehiclesModule,
     TripsModule,

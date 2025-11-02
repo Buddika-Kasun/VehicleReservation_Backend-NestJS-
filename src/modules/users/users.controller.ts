@@ -1,33 +1,427 @@
 
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { AuthGuard } from '@nestjs/passport';
-import { User } from 'src/common/decorators/user.decorator';
+import { GetUser } from 'src/common/decorators/user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiInternalServerErrorResponse, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { ProfilePictureDto } from './dto/profile-picture.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { multerConfig } from 'src/config/multer.config';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { User, UserRole } from 'src/database/entities/user.entity';
 
 @Controller('user')
+@UseGuards(JwtAuthGuard)
+@ApiTags('User API')
+@ApiBearerAuth()
+@ApiUnauthorizedResponse({ 
+  description: 
+  `
+      Unauthorized - Invalid or missing JWT token
+  `
+})
+@ApiInternalServerErrorResponse({ 
+  description: 
+  `
+      Internal server error.
+  `
+})
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post('create')
-  async register(@Body() dto: CreateUserDto) {
+  @ApiOperation({ summary: 'Create user' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      The following fields are required: {missingFields}.
+      The following fields are already registered: {Fields}.
+    `
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 
+    `
+      User registered successfully. Please wait for admin approval.
+    `
+  })
+  async create(@Body() dto: CreateUserDto) {
     return this.usersService.createUser(dto);
   }
 
   @Put('approve/:id')
+  @ApiOperation({ summary: 'Approve user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found.
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      User already approved.
+    `
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User approved successfully.
+    `
+  })
+  @ApiResponse({ 
+    status: 403, 
+    description: 
+    `
+      Forbidden - Insufficient permissions
+    ` 
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
   async approve(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.approveUser(id);
   }
 
-  @Get()
+  @Put('disapprove/:id')
+  @ApiOperation({ summary: 'Disapprove user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found.
+    `
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User disapproved successfully.
+    `
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
+  async disapprove(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.disapproveUser(id);
+  }
+
+  @Get('get-all')
+  @ApiOperation({ summary: 'Get all users' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Users retrieved successfully.
+    `
+  })
   async getAll() {
     return this.usersService.findAll();
   }
 
   @Get('profile')
-  @UseGuards(JwtAuthGuard)
-  async getProfile(@User() user) {
-    return this.usersService.findByUsername(user.username);
+  @ApiOperation({ summary: 'Get user profile' })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found.
+    `
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User retrieved successfully.
+    `
+  })
+  async getProfile(@GetUser() user) {
+    return this.usersService.findById(user.id);
   }
+
+  @Patch('update/:id')
+  @ApiOperation({ summary: 'Update user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiBody({
+    description: 'User details',
+    type: UpdateUserDto,
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found.
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      The following fields are required: {missingFields}.
+      The following fields are already registered: {Fields}.
+    `
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User update successfully.
+    `
+  })
+  async updateUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto
+  ) {
+    return this.usersService.updateUser(id, updateUserDto);
+  }
+
+  @Patch('deactivate/:id')
+  @ApiOperation({ summary: 'Deactivate user (soft delete)' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User deactivated successfully
+    ` 
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      User already deactivated
+    `
+  })
+  async deactivateUser(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.deactivateUser(id);
+  }
+
+  @Patch('activate/:id')
+  @ApiOperation({ summary: 'Activate deactivated user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User activated successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      User already active
+    `
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
+  async activateUser(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.activateUser(id);
+  }
+
+  @Delete('hard-delete/:id')
+  @ApiOperation({ summary: 'Permanently delete user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User deleted permanently
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
+  async deleteUser(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.deleteUser(id);
+  }
+
+  @Patch('toggle-active/:id')
+  @ApiOperation({ summary: 'Toggle user active status' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      User status toggled successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
+  async toggleActiveStatus(@Param('id', ParseIntPipe) id: number) {
+    const user = await this.usersService.findById(id);
+    if (user.data.user.isActive) {
+      return this.usersService.deactivateUser(id);
+    } else {
+      return this.usersService.activateUser(id);
+    }
+  }
+
+  @Post('profile/picture-upload')
+  @ApiOperation({ summary: 'Upload profile picture' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Profile picture file',
+    type: ProfilePictureDto,
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Profile picture uploaded successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      No file uploaded or invalid file type
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @UseInterceptors(FileInterceptor('file', multerConfig))
+  async uploadProfilePicture(
+    @GetUser() user: User,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    return this.usersService.updateProfilePicture(user.id, file);
+  }
+
+  @Patch('profile/picture-update')
+  @ApiOperation({ summary: 'Update profile picture' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Profile picture file',
+    type: ProfilePictureDto,
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Profile picture updated successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      No file uploaded or invalid file type
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @UseInterceptors(FileInterceptor('file', multerConfig))
+  async updateProfilePicture(
+    @GetUser() user: User,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    return this.usersService.updateProfilePicture(user.id, file);
+  }
+
+  @Delete('profile/picture-remove')
+  @ApiOperation({ summary: 'Remove profile picture' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Profile picture removed successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      No profile picture to remove
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  async removeProfilePicture(@GetUser() user) {
+    return this.usersService.removeProfilePicture(user.id);
+  }
+
+  // Admin endpoint to manage other users' profile pictures
+  @Post('profile/picture-admin-change/:id')
+  @ApiOperation({ summary: 'Upload profile picture for user (Admin)' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Profile picture file',
+    type: ProfilePictureDto,
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Profile picture updated successfully
+    `
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 
+    `
+      No file uploaded or invalid file type
+    `
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 
+    `
+      User not found
+    `
+  })
+  @Roles(UserRole.HR, UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', multerConfig))
+  async uploadUserProfilePicture(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    return this.usersService.updateProfilePicture(id, file);
+  }
+
 }

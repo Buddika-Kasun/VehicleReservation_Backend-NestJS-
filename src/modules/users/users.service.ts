@@ -1,5 +1,5 @@
 
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from 'src/database/entities/user.entity';
@@ -60,10 +60,10 @@ export class UsersService {
       if (existingEmail) errors.push('email');
       if (existingPhone) errors.push('phone number');
       
-      throw new BadRequestException(
+      throw new ConflictException(
         this.responseService.error(
           `The following fields are already registered: ${errors.join(', ')}`, 
-          400
+          409
         )
       );
     }

@@ -9,6 +9,7 @@ import { hash } from 'src/common/utils/hash.util';
 import { ResponseService } from 'src/common/services/response.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { sanitizeUser, sanitizeUsers } from 'src/common/utils/sanitize-user.util';
+import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
 
 @Injectable()
 export class UsersService {
@@ -69,7 +70,7 @@ export class UsersService {
     }
   }
 
-  async createUser(dto: CreateUserDto) {
+  async createUser(dto: CreateUserDto): Promise<RegisterResponseDto> {
     
     // Check required fields
     await this.validateRequiredFields(dto);
@@ -106,7 +107,7 @@ export class UsersService {
 
     const savedUser = await this.userRepo.save(user);
 
-    const sanitizedUser = sanitizeUser(savedUser);
+    const sanitizedUser: UserData = sanitizeUser(savedUser);
 
     return this.responseService.created(
       'User registered successfully. Please wait for admin approval.',
@@ -232,21 +233,7 @@ export class UsersService {
   async findAuthByUsername(username: string) {
     const user = await this.userRepo.findOne({ where: { username } });
 
-    if (!user) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'User not found', 
-          404
-        )
-      );
-    }
-
-    return this.responseService.success(
-      'User retrieved successfully',
-      {
-        user,
-      }
-    );
+    return user;
   }
 
   async findById(id: number) {

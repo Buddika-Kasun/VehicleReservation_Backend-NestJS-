@@ -1,6 +1,7 @@
 
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { Company } from './company.entity';
+import { Vehicle } from './vehicle.entity';
 
 @Entity()
 export class CostConfiguration {
@@ -13,6 +14,9 @@ export class CostConfiguration {
   @Column({ length: 50 })
   vehicleType: string; // Car / Van / Lorry
 
+  @OneToMany(() => Vehicle, v => v.vehicleType)
+  vehicle: Vehicle[];
+
   @Column('decimal',{ precision: 10, scale: 2 })
   costPerKm: number;
 
@@ -21,4 +25,7 @@ export class CostConfiguration {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

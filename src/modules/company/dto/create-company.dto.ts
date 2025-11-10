@@ -1,4 +1,4 @@
-// src/modules/company/dto/company.dto.ts
+
 import { IsString, IsOptional, IsBoolean, Length, IsPhoneNumber, IsEmail } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 

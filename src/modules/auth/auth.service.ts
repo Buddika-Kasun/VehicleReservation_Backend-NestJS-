@@ -7,6 +7,7 @@ import { ResponseService } from 'src/common/services/response.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
+import { LoginResponseDto, LogoutResponseDto, UserData } from './dto/authResponse.dto';
 
 @Injectable()
 export class AuthService {
@@ -20,9 +21,27 @@ export class AuthService {
   private refreshTokens = new Map<number, string>(); // In production, use Redis
 
   async validateUser(username: string, pass: string): Promise<any> {
-    const res = await this.usersService.findAuthByUsername(username);
+    const user = await this.usersService.findAuthByUsername(username);;
 
-    const user = res.data?.user;
+    if (!user) {
+      throw new UnauthorizedException(
+        this.responseService.error(
+          'Invalid username or password',
+          401
+        )
+      );
+    }
+
+    const isPasswordValid = await compare(pass, user.passwordHash);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException(
+        this.responseService.error(
+          'Invalid username or password',
+          401
+        )
+      );
+    }    
 
     if (!user.isApproved) {
       throw new UnauthorizedException(
@@ -33,21 +52,12 @@ export class AuthService {
       );
     }
 
-    if (user && (await compare(pass, user.passwordHash))) {
-      const { password, ...result } = user as any;
-      return result;
-    }
-    
-    throw new UnauthorizedException(
-      this.responseService.error(
-        'Invalid username or password',
-        401
-      )
-    );
+    const { password, ...result } = user as any;
+    return result;
 
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto): Promise<LoginResponseDto> {
 
     const user = await this.validateUser(dto.username, dto.password);
 
@@ -67,7 +77,7 @@ export class AuthService {
     // Update stored refresh token
     this.storeRefreshToken(user.id, refreshToken);
 
-    const sanitizedUser = sanitizeUser(user);
+    const sanitizedUser: UserData = sanitizeUser(user);
     
     return this.responseService.success(
       'Login successful',
@@ -184,7 +194,7 @@ export class AuthService {
   }
 
   // Method to revoke refresh token (on logout)
-  async revokeRefreshToken(userId: number) {
+  async revokeRefreshToken(userId: number): Promise<LogoutResponseDto> {
     this.refreshTokens.delete(userId);
     return this.responseService.success(
       'Logged out successfully',

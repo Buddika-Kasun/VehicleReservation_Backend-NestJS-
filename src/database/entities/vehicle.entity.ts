@@ -6,6 +6,7 @@ import { Company } from './company.entity';
 import { User } from './user.entity';
 import { Trip } from './trip.entity';
 import { OdometerLog } from './odometer-log.entity';
+import { CostConfiguration } from './cost-configuration.entity';
 
 @Entity()
 export class Vehicle {
@@ -29,13 +30,20 @@ export class Vehicle {
   seatingCapacity: number;
 
   @ManyToOne(() => User, { nullable: true })
-  assignedDriver?: User;
+  assignedDriverPrimary: User;
+
+  @ManyToOne(() => User, { nullable: true })
+  assignedDriverSecondary?: User;
 
   @Column('decimal', { precision: 12, scale: 2, default: 0 })
   odometerLastReading: number;
 
   @Column({ length: 50, nullable: true })
+  @ManyToOne(() => CostConfiguration, c => c.vehicleType, { nullable: true })
   vehicleType?: string;
+
+  @Column({ length: 255, nullable: true })
+  vehicleImage?: string;
 
   @Column({ default: true })
   isActive: boolean;

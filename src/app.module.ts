@@ -5,9 +5,7 @@ import { databaseConfig } from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CompanyModule } from './modules/company/company.module';
-import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { TripsModule } from './modules/trips/trips.module';
-import { OdometerModule } from './modules/odometer/odometer.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -15,6 +13,9 @@ import appConfig from './config/app.config';
 import jwtConfig from './config/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
 import { CommonModule } from './common/common.module';
+import { CostCenterModule } from './modules/costcenter/cost-center.module';
+import { DepartmentModule } from './modules/department/department.module';
+import { VehicleModule } from './modules/vehicles/vehicles.module';
 
 @Module({
   imports: [
@@ -42,13 +43,14 @@ import { CommonModule } from './common/common.module';
     AuthModule,
     UsersModule,
     CompanyModule,
-    VehiclesModule,
+    VehicleModule,
     TripsModule,
-    OdometerModule,
     FeedbackModule,
     ReportsModule,
     AuditModule,
-    CommonModule
+    CommonModule,
+    CostCenterModule,
+    DepartmentModule,
   ],
 })
 export class AppModule {}

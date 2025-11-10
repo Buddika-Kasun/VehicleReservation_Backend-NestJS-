@@ -8,6 +8,7 @@ import { Trip } from './trip.entity';
 import { Feedback } from './feedback.entity';
 
 export enum UserRole {
+  SYSADMIN = 'sysadmin',
   EMPLOYEE = 'employee',
   DRIVER = 'driver',
   ADMIN = 'admin',

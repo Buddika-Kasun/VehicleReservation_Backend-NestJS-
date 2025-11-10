@@ -68,7 +68,7 @@ async function bootstrap() {
   );
   console.log('✅ Global ValidationPipe enabled');
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+  //app.useGlobalInterceptors(new TransformInterceptor());
 
   // Serve static files from uploads directory
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {

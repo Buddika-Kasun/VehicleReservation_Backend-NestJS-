@@ -9,11 +9,6 @@ export class CreateDepartmentDto {
   @MaxLength(100)
   name: string;
 
-  @ApiProperty({ example: 1, description: 'Company ID' })
-  @IsNumber()
-  @IsNotEmpty()
-  companyId: number;
-
   @ApiProperty({ example: 1, description: 'Cost Center ID', required: false })
   @IsNumber()
   @IsOptional()

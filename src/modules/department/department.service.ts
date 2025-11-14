@@ -23,10 +23,9 @@ export class DepartmentService {
   ) {}
 
   async create(createDepartmentDto: CreateDepartmentDto) {
-    // Check if company exists
-    const company = await this.companyRepository.findOne({
-      where: { id: createDepartmentDto.companyId }
-    });
+
+    const companies = await this.companyRepository.find({ where: {isActive: true}});
+    const company = companies[0];
 
     if (!company) {
       throw new NotFoundException(
@@ -165,64 +164,42 @@ export class DepartmentService {
       );
     }
 
-    // Check if company exists (if companyId is being updated)
-    if (updateDepartmentDto.companyId && updateDepartmentDto.companyId !== department.company.id) {
-      const company = await this.companyRepository.findOne({
-        where: { id: updateDepartmentDto.companyId }
+    let costCenter: CostCenter | null = null;
+    if (updateDepartmentDto.costCenterId) {
+      costCenter = await this.costCenterRepository.findOne({
+        where: { id: updateDepartmentDto.costCenterId }
       });
-
-      if (!company) {
+      if (!costCenter) {
         throw new NotFoundException(
           this.responseService.error(
-            'Company not found',
+            'Cost center not found',
             404
           )
         );
       }
-      department.company = company;
     }
 
-    // Check if cost center exists (if costCenterId is being updated)
-    if (updateDepartmentDto.costCenterId !== undefined) {
-      if (updateDepartmentDto.costCenterId === null) {
-        department.costCenter = null;
-      } else if (updateDepartmentDto.costCenterId !== department.costCenter?.id) {
-        const costCenter = await this.costCenterRepository.findOne({
-          where: { id: updateDepartmentDto.costCenterId }
-        });
-        if (!costCenter) {
-          throw new NotFoundException(
-            this.responseService.error(
-              'Cost center not found',
-              404
-            )
-          );
-        }
-        department.costCenter = costCenter;
+    let head: User | null = null;
+    if (updateDepartmentDto.headId) {
+      head = await this.userRepository.findOne({
+        where: { id: updateDepartmentDto.headId }
+      });
+      if (!head) {
+        throw new NotFoundException(
+          this.responseService.error(
+            'Department head user not found',
+            404
+          )
+        );
       }
     }
 
-    // Check if head exists (if headId is being updated)
-    if (updateDepartmentDto.headId !== undefined) {
-      if (updateDepartmentDto.headId === null) {
-        department.head = null;
-      } else if (updateDepartmentDto.headId !== department.head?.id) {
-        const head = await this.userRepository.findOne({
-          where: { id: updateDepartmentDto.headId }
-        });
-        if (!head) {
-          throw new NotFoundException(
-            this.responseService.error(
-              'Department head user not found',
-              404
-            )
-          );
-        }
-        department.head = head;
-      }
+    Object.assign(department, {
+      ...updateDepartmentDto,
+      costCenter,
+      head
     }
-
-    Object.assign(department, updateDepartmentDto);
+    );
     const updatedDepartment = await this.departmentRepository.save(department);
 
     return this.responseService.success(

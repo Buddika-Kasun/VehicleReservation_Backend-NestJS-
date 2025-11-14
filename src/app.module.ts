@@ -16,6 +16,7 @@ import { CommonModule } from './common/common.module';
 import { CostCenterModule } from './modules/costcenter/cost-center.module';
 import { DepartmentModule } from './modules/department/department.module';
 import { VehicleModule } from './modules/vehicles/vehicles.module';
+import { ValidationModule } from './modules/validation/validation.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { VehicleModule } from './modules/vehicles/vehicles.module';
     CommonModule,
     CostCenterModule,
     DepartmentModule,
+    ValidationModule,
   ],
 })
 export class AppModule {}

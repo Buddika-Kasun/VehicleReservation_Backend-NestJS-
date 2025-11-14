@@ -11,9 +11,10 @@ import { UserRole } from 'src/database/entities/user.entity';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @Controller('company')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiTags('Company API')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ 
@@ -32,7 +33,7 @@ export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}
 
   @Post('create')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Create a new company' })
   @ApiResponse({
     status: 409,
@@ -53,7 +54,7 @@ export class CompanyController {
   }
 
   @Get('get-all')
-  @Roles(UserRole.HR, UserRole.ADMIN)
+  @Roles(UserRole.SYSADMIN, UserRole.HR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all companies' })
   @ApiResponse({ 
     status: 200, 
@@ -68,7 +69,7 @@ export class CompanyController {
   }
 
   @Get('search')
-  @Roles(UserRole.HR, UserRole.ADMIN)
+  @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Search companies by name' })
   @ApiResponse({ 
     status: 200, 
@@ -83,7 +84,7 @@ export class CompanyController {
   }
 
   @Get('get/:id')
-  @Roles(UserRole.HR, UserRole.ADMIN)
+  @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Get company by ID' })
   @ApiResponse({ 
     status: 404, 
@@ -104,7 +105,7 @@ export class CompanyController {
   }
 
   @Get('statistics/:id')
-  @Roles(UserRole.ADMIN,UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Get company statistics' })
   @ApiResponse({ 
     status: 404, 
@@ -125,7 +126,7 @@ export class CompanyController {
   }
 
   @Put('update/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Update company details' })
   @ApiResponse({ 
     status: 404, 
@@ -153,7 +154,7 @@ export class CompanyController {
   }
 
   @Patch('deactivate/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Deactivate a company' })
   @ApiResponse({ 
     status: 400, 
@@ -183,7 +184,7 @@ export class CompanyController {
   }
 
   @Patch('activate/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Activate a company' })
   @ApiResponse({ 
     status: 400, 
@@ -211,7 +212,7 @@ export class CompanyController {
   }
 
   @Delete('delete/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Permanently delete a company (use with caution)' })
   @ApiResponse({ 
     status: 400, 
@@ -235,7 +236,7 @@ export class CompanyController {
     `
   })
   async deleteCompany(@Param('id', ParseIntPipe) id: number) {
-    await this.companyService.hardDeleteCompany(id);
+    return await this.companyService.hardDeleteCompany(id);
   }
   
 }

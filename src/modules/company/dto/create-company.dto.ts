@@ -52,4 +52,13 @@ export class CreateCompanyDto {
   contactEmail?: string;
   */
 
+  @ApiPropertyOptional({
+    description: 'Is the company active?',
+    example: true,
+    default: true
+  })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards, Request, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Request, HttpStatus, Get } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -10,6 +10,7 @@ import { GetUser } from 'src/common/decorators/user.decorator';
 import { User } from 'src/database/entities/user.entity';
 import { LoginResponseDto, LogoutResponseDto, RegisterResponseDto } from './dto/authResponse.dto';
 import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('auth')
 @ApiTags('Auth API')
@@ -34,6 +35,7 @@ export class AuthController {
     description: 'User registered successfully. Please wait for admin approval.',
     type: RegisterResponseDto,
   })
+  @Public()
   async register(@Body() registerDto: RegisterDto): Promise<RegisterResponseDto> {
     return await this.usersService.createUser(registerDto as any);
   }
@@ -55,6 +57,7 @@ export class AuthController {
     description: 'Login successful.',
     type: LoginResponseDto,
   })
+  @Public()
   async login(@Body() loginDto: LoginDto): Promise<LoginResponseDto> {
     return await this.authService.login(loginDto);
   }

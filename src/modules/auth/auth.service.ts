@@ -21,7 +21,7 @@ export class AuthService {
   private refreshTokens = new Map<number, string>(); // In production, use Redis
 
   async validateUser(username: string, pass: string): Promise<any> {
-    const user = await this.usersService.findAuthByUsername(username);;
+    const user = await this.usersService.findAuthByUsername(username);
 
     if (!user) {
       throw new UnauthorizedException(

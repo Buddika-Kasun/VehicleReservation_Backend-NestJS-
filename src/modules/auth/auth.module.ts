@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { ResponseService } from 'src/common/services/response.service';
 import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -32,6 +33,14 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
     JwtStrategy, 
     LocalStrategy, 
     ResponseService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtStrategy, // Apply globally
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard, // Apply globally
+    },
     {
       provide: APP_GUARD,
       useClass: RolesGuard, // Apply globally

@@ -14,15 +14,15 @@ export class CreateCostCenterDto {
   @IsOptional()
   budget?:number;
 
-  @ApiProperty({ example: 1, description: 'Company ID' })
-  @IsNumber()
-  @IsNotEmpty()
-  companyId: number;
-
   @ApiPropertyOptional({ example: true, default: true })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 }
 
-export class UpdateCostCenterDto extends PartialType(CreateCostCenterDto) {}
+export class UpdateCostCenterDto extends PartialType(CreateCostCenterDto) {
+  @ApiPropertyOptional({ example: 1, description: 'Company ID' })
+  @IsNumber()
+  @IsOptional()
+  companyId?: number;
+}

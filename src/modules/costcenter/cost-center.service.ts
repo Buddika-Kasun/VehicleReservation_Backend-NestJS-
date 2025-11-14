@@ -17,10 +17,9 @@ export class CostCenterService {
   ) {}
 
   async create(createCostCenterDto: CreateCostCenterDto) {
-    // Check if company exists
-    const company = await this.companyRepository.findOne({
-      where: { id: createCostCenterDto.companyId }
-    });
+
+    const companies = await this.companyRepository.find({ where: {isActive: true}});
+    const company = companies[0];
 
     if (!company) {
       throw new NotFoundException(
@@ -46,31 +45,31 @@ export class CostCenterService {
     );
   }
 
-  async findAll(page = 1, limit = 10, search?: string, companyId?: number) {
-    const skip = (page - 1) * limit;
-    const query = this.costCenterRepository
-      .createQueryBuilder('costCenter')
-      .leftJoinAndSelect('costCenter.company', 'company')
-      .leftJoinAndSelect('costCenter.departments', 'departments')
-      .loadRelationCountAndMap('costCenter.departmentCount', 'costCenter.departments');
+  async findAll(page = 1, limit = 20, search?: string, companyId?: number) {
+    try {
+      const skip: number = (page - 1) * limit;
 
-    if (search) {
-      query.where('costCenter.name LIKE :search', { search: `%${search}%` });
-    }
+      const query = this.costCenterRepository
+        .createQueryBuilder('costCenter')
+        .leftJoinAndSelect('costCenter.company', 'company')
+        .leftJoinAndSelect('costCenter.departments', 'departments')
+        .loadRelationCountAndMap('costCenter.departmentCount', 'costCenter.departments');
 
-    if (companyId) {
-      query.andWhere('costCenter.companyId = :companyId', { companyId });
-    }
+      if (search) {
+        query.andWhere('costCenter.name LIKE :search', { search: `%${search}%` });
+      }
 
-    const [costCenters, total] = await query
-      .skip(skip)
-      .take(limit)
-      .orderBy('costCenter.createdAt', 'DESC')
-      .getManyAndCount();
+      if (companyId) {
+        query.andWhere('company.id = :companyId', { companyId });
+      }
 
-    return this.responseService.success(
-      'Cost centers retrieved successfully',
-      {
+      const [costCenters, total] = await query
+        .skip(skip)
+        .take(limit)
+        .orderBy('costCenter.createdAt', 'DESC')
+        .getManyAndCount();
+
+      return this.responseService.success('Cost centers retrieved successfully', {
         costCenters,
         pagination: {
           page,
@@ -78,9 +77,13 @@ export class CostCenterService {
           total,
           totalPages: Math.ceil(total / limit),
         },
-      }
-    );
+      });
+    } catch (error) {
+      console.error('❌ CostCenter findAll error:', error);
+      throw new Error('Internal query error: ' + error.message);
+    }
   }
+
 
   async findOne(id: number) {
     const costCenter = await this.costCenterRepository

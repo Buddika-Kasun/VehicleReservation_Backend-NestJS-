@@ -1,5 +1,4 @@
-// src/modules/company-structure/controllers/cost-center.controller.ts
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, HttpCode, HttpStatus, ParseIntPipe, Put } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CostCenterService } from './cost-center.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -7,27 +6,27 @@ import { UserRole } from 'src/database/entities/user.entity';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateCostCenterDto, UpdateCostCenterDto } from './dto/cost-center-request.dto';
 import { CostCenterListResponseDto, CostCenterResponseDto } from './dto/cost-center-response.dto';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @ApiTags('Cost Center API')
 @Controller('cost-center')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class CostCenterController {
   constructor(private readonly costCenterService: CostCenterService) {}
 
-  @Post()
-  @Roles(UserRole.ADMIN)
+  @Post('create')
+  @Roles(UserRole.SYSADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new cost center' })
   @ApiResponse({ status: 201, description: 'Cost center created successfully', type: CostCenterResponseDto })
   @ApiResponse({ status: 404, description: 'Company not found' })
   async create(@Body() createCostCenterDto: CreateCostCenterDto) {
-    const result = await this.costCenterService.create(createCostCenterDto);
-    return { success: true, data: result };
+    return await this.costCenterService.create(createCostCenterDto);
   }
 
-  @Get()
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Get('get-all')
+  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Get all cost centers' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -35,53 +34,54 @@ export class CostCenterController {
   @ApiQuery({ name: 'companyId', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Cost centers retrieved successfully', type: CostCenterListResponseDto })
   async findAll(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
     @Query('search') search?: string,
-    @Query('companyId') companyId?: number,
+    @Query('companyId') companyId?: string,
   ) {
-    const result = await this.costCenterService.findAll(page, limit, search, companyId);
-    return { success: true, data: result };
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 20;
+    const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
+    return await this.costCenterService.findAll(pageNumber, limitNumber, search, companyIdNumber);
   }
 
-  @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Get('get/:id')
+  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Get a cost center by ID' })
   @ApiResponse({ status: 200, description: 'Cost center retrieved successfully', type: CostCenterResponseDto })
   @ApiResponse({ status: 404, description: 'Cost center not found' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.costCenterService.findOne(id);
-    return { success: true, data: result };
+    return await this.costCenterService.findOne(id);
   }
 
-  @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Put('update/:id')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Update a cost center' })
   @ApiResponse({ status: 200, description: 'Cost center updated successfully', type: CostCenterResponseDto })
   @ApiResponse({ status: 404, description: 'Cost center not found' })
-  async update(@Param('id', ParseIntPipe) id: number, @Body() updateCostCenterDto: UpdateCostCenterDto) {
-    const result = await this.costCenterService.update(id, updateCostCenterDto);
-    return { success: true, data: result };
+  async update(
+    @Param('id', ParseIntPipe) id: number, 
+    @Body() updateCostCenterDto: UpdateCostCenterDto
+  ) {
+    return await this.costCenterService.update(id, updateCostCenterDto);
   }
 
-  @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Delete('delete/:id')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Delete a cost center' })
   @ApiResponse({ status: 200, description: 'Cost center deleted successfully' })
   @ApiResponse({ status: 404, description: 'Cost center not found' })
   @ApiResponse({ status: 409, description: 'Cannot delete cost center with departments' })
   async remove(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.costCenterService.remove(id);
-    return { success: true, data: result };
+    return await this.costCenterService.remove(id);
   }
 
-  @Patch(':id/toggle-status')
-  @Roles(UserRole.ADMIN)
+  @Patch('toggle-status/:id')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Toggle cost center active status' })
   @ApiResponse({ status: 200, description: 'Cost center status updated successfully', type: CostCenterResponseDto })
   @ApiResponse({ status: 404, description: 'Cost center not found' })
   async toggleStatus(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.costCenterService.toggleStatus(id);
-    return { success: true, data: result };
+    return await this.costCenterService.toggleStatus(id);
   }
 }

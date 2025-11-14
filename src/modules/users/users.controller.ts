@@ -1,5 +1,5 @@
 
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { GetUser } from 'src/common/decorators/user.decorator';
@@ -122,6 +122,21 @@ export class UsersController {
   })
   async getAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('get-all-by-department/:id')
+  @ApiOperation({ summary: 'Get all users by department' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Users retrieved successfully.
+    `
+  })
+  async getAllByDepartment(
+    @Param('id', ParseIntPipe) depId: number,
+  ) {
+    return this.usersService.findAllByDepartment(depId);
   }
 
   @Get('profile')

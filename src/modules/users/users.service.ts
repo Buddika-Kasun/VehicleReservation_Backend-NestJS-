@@ -93,9 +93,14 @@ export class UsersService {
     // Hash password
     const passwordHash = await hash(dto.password);
 
+    const companies = await this.companyRepo.find({ where: { isActive: true } });
+
+    const companyId = companies[0].id;
+
     // Create user (not approved yet)
     const user = this.userRepo.create({
       username: dto.username,
+      company: { id: companyId },
       displayname: dto.displayname,
       email: dto.email,
       phone: dto.phone,
@@ -192,6 +197,28 @@ export class UsersService {
     );
   }
 
+  async findAllByDepartment(departmentId?: number) {
+    const whereCondition = departmentId
+      ? { department: { id: departmentId } }
+      : {};
+
+    const users = await this.userRepo.find({
+      where: whereCondition,
+      relations: ['company', 'department'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const sanitizedUsers = sanitizeUsers(users);
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: sanitizedUsers,
+        total: sanitizedUsers.length,
+      },
+    );
+  }
+
   async findByEmail(email: string) {
     const user = await this.userRepo.findOne({ where: { email } });
     if (!user) {
@@ -231,7 +258,7 @@ export class UsersService {
   }
 
   async findAuthByUsername(username: string) {
-    const user = await this.userRepo.findOne({ where: { username } });
+    const user = await this.userRepo.findOne({ where: { username }, relations: ['company'] });
 
     return user;
   }

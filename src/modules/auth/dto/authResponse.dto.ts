@@ -66,6 +66,12 @@ export class UserData {
   isApproved: boolean;
 
   @ApiProperty({ 
+    example: 1,
+    description: 'Company ID associated with the user'
+  })
+  companyId: number;
+
+  @ApiProperty({ 
     example: '2025-11-03T10:48:48.598Z',
     description: 'Timestamp when user account was created'
   })

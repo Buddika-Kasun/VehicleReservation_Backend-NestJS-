@@ -12,9 +12,10 @@ import { multerConfig } from 'src/config/multer.config';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { User, UserRole } from 'src/database/entities/user.entity';
+import { ApproveUserDto } from './dto/approve-user.dto';
 
 @Controller('user')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiTags('User API')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ 
@@ -84,12 +85,15 @@ export class UsersController {
       Forbidden - Insufficient permissions
     ` 
   })
-  @Roles(UserRole.HR, UserRole.ADMIN)
-  async approve(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.approveUser(id);
+  @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
+  async approve(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ApproveUserDto
+  ) {
+    return this.usersService.approveUser(id, dto);
   }
 
-  @Put('disapprove/:id')
+  @Put('reject/:id')
   @ApiOperation({ summary: 'Disapprove user' })
   @ApiParam({ name: 'id', description: 'User ID' })
   @ApiResponse({ 
@@ -106,7 +110,7 @@ export class UsersController {
       User disapproved successfully.
     `
   })
-  @Roles(UserRole.HR, UserRole.ADMIN)
+  @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   async disapprove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.disapproveUser(id);
   }

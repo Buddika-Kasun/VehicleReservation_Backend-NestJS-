@@ -1,8 +1,8 @@
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User, UserRole } from 'src/database/entities/user.entity';
+import { Not, Repository } from 'typeorm';
+import { Status, User, UserRole } from 'src/database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Company } from 'src/database/entities/company.entity';
 import { hash } from 'src/common/utils/hash.util';
@@ -10,6 +10,8 @@ import { ResponseService } from 'src/common/services/response.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { sanitizeUser, sanitizeUsers } from 'src/common/utils/sanitize-user.util';
 import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
+import { Department } from 'src/database/entities/department.entity';
+import { ApproveUserDto } from './dto/approve-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -94,8 +96,9 @@ export class UsersService {
     const passwordHash = await hash(dto.password);
 
     const companies = await this.companyRepo.find({ where: { isActive: true } });
-
     const companyId = companies[0].id;
+
+    const departmentId = Number(dto.departmentId);
 
     // Create user (not approved yet)
     const user = this.userRepo.create({
@@ -106,8 +109,9 @@ export class UsersService {
       phone: dto.phone,
       role: dto.role,
       passwordHash,
-      isApproved: false,
       isActive: true,
+      isApproved: Status.PENDING,
+      department: { id: departmentId }
     });
 
     const savedUser = await this.userRepo.save(user);
@@ -122,8 +126,11 @@ export class UsersService {
     );
   }
 
-  async approveUser(id: number) {
-    const user = await this.userRepo.findOne({ where: { id } });
+  async approveUser(id: number, dto: ApproveUserDto) {
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['department'],
+    });
     if (!user) {
       throw new NotFoundException(
         this.responseService.error(
@@ -134,7 +141,7 @@ export class UsersService {
     }
 
     // Check if user is already approved
-    if (user.isApproved) {
+    if (user.isApproved === Status.APPROVED) {
       throw new BadRequestException(
         this.responseService.error(
           'User is already approved', 
@@ -143,8 +150,12 @@ export class UsersService {
       );
     }
 
-    user.isApproved = true;
+    const departmentId = Number(dto.departmentId);
+
+    user.isApproved = Status.APPROVED;
     user.isActive = true;
+    user.department.id = departmentId;
+    user.role = dto.role;
 
     const approvedUser = await this.userRepo.save(user);
 
@@ -169,7 +180,7 @@ export class UsersService {
       );
     }
 
-    user.isApproved = false;
+    user.isApproved = Status.REJECTED;
 
     const disapprovedUser = await this.userRepo.save(user);
 
@@ -184,7 +195,12 @@ export class UsersService {
   }
 
   async findAll() {
-    const users = await this.userRepo.find({ relations: ['company'] });
+    const users = await this.userRepo.find({
+      where: {
+        role: Not(UserRole.SYSADMIN),
+      },
+      relations: ['company', 'department'],
+    });
 
     const sanitizedUsers = sanitizeUsers(users);
 
@@ -208,13 +224,16 @@ export class UsersService {
       order: { createdAt: 'DESC' },
     });
 
-    const sanitizedUsers = sanitizeUsers(users);
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+    }));
 
     return this.responseService.success(
       'Users retrieved successfully',
       {
-        users: sanitizedUsers,
-        total: sanitizedUsers.length,
+        users: minimalUsers,
+        total: minimalUsers.length,
       },
     );
   }
@@ -311,7 +330,6 @@ export class UsersService {
     if (dto.email !== undefined) updateData.email = dto.email;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
     if (dto.role !== undefined) updateData.role = dto.role;
-    if (dto.isApproved !== undefined) updateData.isApproved = dto.isApproved;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
 
     // Update password if provided

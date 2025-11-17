@@ -38,12 +38,14 @@ export class Vehicle {
   @Column('decimal', { precision: 12, scale: 2, default: 0 })
   odometerLastReading: number;
 
-  @Column({ length: 50, nullable: true })
   @ManyToOne(() => CostConfiguration, c => c.vehicleType, { nullable: true })
-  vehicleType?: string;
+  vehicleType?: CostConfiguration;
 
   @Column({ length: 255, nullable: true })
   vehicleImage?: string;
+
+  @Column('text', { nullable: true } ) // Store base64 QR code string
+  qrCode?: string;
 
   @Column({ default: true })
   isActive: boolean;

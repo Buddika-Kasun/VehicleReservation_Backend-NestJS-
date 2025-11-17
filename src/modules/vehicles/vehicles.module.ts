@@ -10,10 +10,11 @@ import { ResponseService } from 'src/common/services/response.service';
 import { QrController } from './qr.controller';
 import { QrService } from './qr.service';
 import { Company } from 'src/database/entities/company.entity';
+import { CostConfiguration } from 'src/database/entities/cost-configuration.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Vehicle, Trip, OdometerLog, User, Company]),
+    TypeOrmModule.forFeature([Vehicle, Trip, OdometerLog, User, Company, CostConfiguration]),
   ],
   controllers: [VehicleController, QrController],
   providers: [VehicleService, QrService, ResponseService],

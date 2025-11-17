@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Vehicle } from '../../database/entities/vehicle.entity';
@@ -6,6 +6,9 @@ import { Company } from '../../database/entities/company.entity';
 import { User } from '../../database/entities/user.entity';
 import { ResponseService } from '../../common/services/response.service';
 import { AssignDriverDto, CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle-request.dto';
+import { CostConfiguration } from 'src/database/entities/cost-configuration.entity';
+import * as QRCode from 'qrcode';
+import { OdometerLog } from 'src/database/entities/odometer-log.entity';
 
 @Injectable()
 export class VehicleService {
@@ -16,8 +19,31 @@ export class VehicleService {
     private readonly companyRepository: Repository<Company>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(CostConfiguration)
+    private readonly costConfigurationRepository: Repository<CostConfiguration>,
     private readonly responseService: ResponseService,
   ) {}
+
+  private async generateQRCodeBase64(data: any): Promise<string> {
+    try {
+      const jsonString = JSON.stringify(data);
+      return await QRCode.toDataURL(jsonString, {
+        width: 300,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(
+        this.responseService.error(
+          'Failed to generate QR code',
+          500
+        )
+      );
+    }
+  }
 
   // FR-03.1: Add vehicles
   async createVehicle(createVehicleDto: CreateVehicleDto) {
@@ -35,10 +61,8 @@ export class VehicleService {
       );
     }
 
-    // Check if company exists
-    const company = await this.companyRepository.findOne({
-      where: { id: createVehicleDto.companyId }
-    });
+    const companies = await this.companyRepository.find({ where: {isActive: true}});
+    const company = companies[0];
 
     if (!company) {
       throw new NotFoundException(
@@ -81,19 +105,72 @@ export class VehicleService {
       }
     }
 
+    let vehicleType: CostConfiguration | null = null;
+    if (createVehicleDto.vehicleTypeId) {
+      vehicleType = await this.costConfigurationRepository.findOne({
+        where: { id: createVehicleDto.vehicleTypeId }
+      });
+
+      if (!vehicleType) {
+        throw new NotFoundException(
+          this.responseService.error(
+            'Vehicle type not found.',
+            404
+          )
+        );
+      }
+    }
+
     const vehicle = this.vehicleRepository.create({
       ...createVehicleDto,
       company,
       assignedDriverPrimary,
-      assignedDriverSecondary
+      assignedDriverSecondary,
+      vehicleType
     });
 
     const savedVehicle = await this.vehicleRepository.save(vehicle);
 
+    // Prepare QR code data
+    const qrCodeData = {
+      vehicleId: savedVehicle.id,
+      model: savedVehicle.model,
+      regNo: savedVehicle.regNo,
+      OdometerLastReading: savedVehicle.odometerLastReading,
+      createdAt: savedVehicle.createdAt.toISOString(),
+      updatedAt: savedVehicle.updatedAt.toISOString(),
+      type: savedVehicle.vehicleType,
+      action: 'view-details'
+    };
+
+    // Format as readable text instead of JSON
+  const qrCodeText = `
+VEHICLE INFORMATION
+──────────────────
+ID: ${savedVehicle.id}
+Model: ${savedVehicle.model}
+Register No: ${savedVehicle.regNo}
+Type: ${savedVehicle.vehicleType.vehicleType}
+Last Odometer: ${savedVehicle.odometerLastReading}
+Created: ${savedVehicle.createdAt.toLocaleDateString()}
+Updated: ${savedVehicle.updatedAt.toLocaleDateString()}
+──────────────────
+Scan Date: ${new Date().toLocaleDateString()}
+  `.trim();
+
+    // Generate QR code
+    const qrCodeBase64 = await this.generateQRCodeBase64(qrCodeText);
+
+    // Update vehicle with QR code and data
+    savedVehicle.qrCode = qrCodeBase64;
+    //savedVehicle.qrCodeData = qrCodeData;
+
+    const savedVehicleQr = await this.vehicleRepository.save(savedVehicle);
+
     return this.responseService.created(
       'Vehicle created successfully.',
       {
-        vehicle: savedVehicle
+        vehicle: savedVehicleQr
       }
     );
   }
@@ -110,6 +187,7 @@ export class VehicleService {
     const query = this.vehicleRepository
       .createQueryBuilder('vehicle')
       .leftJoinAndSelect('vehicle.company', 'company')
+      .leftJoinAndSelect('vehicle.vehicleType', 'vehicleType')
       .leftJoinAndSelect('vehicle.assignedDriverPrimary', 'assignedDriverPrimary')
       .leftJoinAndSelect('vehicle.assignedDriverSecondary', 'assignedDriverSecondary');
 
@@ -207,23 +285,6 @@ export class VehicleService {
           )
         );
       }
-    }
-
-    // Update company if changed
-    if (updateVehicleDto.companyId && updateVehicleDto.companyId !== vehicle.company.id) {
-      const company = await this.companyRepository.findOne({
-        where: { id: updateVehicleDto.companyId }
-      });
-
-      if (!company) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Company not found.',
-            404
-          )
-        );
-      }
-      vehicle.company = company;
     }
 
     // Update primary driver if changed

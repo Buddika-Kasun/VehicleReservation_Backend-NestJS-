@@ -12,6 +12,9 @@ export class Department {
   @ManyToOne(() => Company, c => c.departments, { onDelete: 'CASCADE' })
   company: Company;
 
+  @OneToMany(() => User, user => user.department)
+  users: User[];
+
   @Column({ length: 100 })
   name: string;
 

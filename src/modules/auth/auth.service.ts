@@ -8,6 +8,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
 import { LoginResponseDto, LogoutResponseDto, UserData } from './dto/authResponse.dto';
+import { Status } from 'src/database/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -43,7 +44,7 @@ export class AuthService {
       );
     }    
 
-    if (!user.isApproved) {
+    if (user.isApproved != Status.APPROVED) {
       throw new UnauthorizedException(
         this.responseService.error(
           'Your account is pending approval, Please contact administrator.',

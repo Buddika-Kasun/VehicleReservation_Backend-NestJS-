@@ -12,7 +12,7 @@ export class CostConfiguration {
   company: Company;
 
   @Column({ length: 50 })
-  vehicleType: string; // Car / Van / Lorry
+  vehicleType: string; 
 
   @OneToMany(() => Vehicle, v => v.vehicleType)
   vehicle: Vehicle[];
@@ -22,6 +22,9 @@ export class CostConfiguration {
 
   @Column('date')
   validFrom: Date;
+
+  @Column({ default: true })
+  isActive: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

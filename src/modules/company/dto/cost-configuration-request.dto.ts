@@ -1,5 +1,5 @@
 // src/modules/company/dto/cost-configuration.dto.ts
-import { IsString, IsNumber, IsDateString, IsInt, Min, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsDateString, IsInt, Min, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCostConfigurationDto {
@@ -26,14 +26,12 @@ export class CreateCostConfigurationDto {
     example: '2025-01-01'
   })
   @IsDateString()
-  validFrom: Date;
+  validFrom: string;
 
-  @ApiProperty({
-    description: 'Company ID',
-    example: 1
-  })
-  @IsInt()
-  companyId: number;
+  @ApiProperty({ example: true, required: false, default: true })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }
 
 export class UpdateCostConfigurationDto {
@@ -63,5 +61,10 @@ export class UpdateCostConfigurationDto {
   })
   @IsDateString()
   @IsOptional()
-  validFrom?: Date;
+  validFrom?: string;
+
+  @ApiProperty({ example: true, required: false, default: true })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 }

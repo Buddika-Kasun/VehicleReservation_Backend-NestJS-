@@ -51,4 +51,11 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   password: string;
+
+  @ApiProperty({
+    description: 'Department id',
+    example: '1'
+  })
+  @IsString()
+  departmentId: string;
 }

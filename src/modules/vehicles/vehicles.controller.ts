@@ -15,28 +15,28 @@ import { VehicleListResponseDto, VehicleResponseDto } from './dto/vehicle-respon
 import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/config/multer.config';
 import { VehiclePictureDto } from './dto/vehicle-picture.dto';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @ApiTags('Vehicles API')
 @Controller('vehicle')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
 
   @Post('create')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Create a new vehicle' })
   @ApiBody({ type: CreateVehicleDto })
   @ApiResponse({ status: 201, description: 'Vehicle created successfully', type: VehicleResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'Company not found' })
   async create(@Body() createVehicleDto: CreateVehicleDto) {
-    const result = await this.vehicleService.createVehicle(createVehicleDto);
-    return { success: true, data: result };
+    return await this.vehicleService.createVehicle(createVehicleDto);
   }
 
   @Get('get-all')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get all vehicles with pagination and filters' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -45,28 +45,29 @@ export class VehicleController {
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiResponse({ status: 200, description: 'Vehicles retrieved successfully', type: VehicleListResponseDto })
   async findAll(
-    @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
-    @Query('companyId', new ParseIntPipe({ optional: true })) companyId?: number,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('search') search?: string,
+    @Query('companyId') companyId?: string,
     @Query('isActive') isActive?: boolean,
-    @Query('search') search?: string
   ) {
-    const result = await this.vehicleService.getAllVehicles(page, limit, companyId, isActive, search);
-    return { success: true, data: result };
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 20;
+    const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
+    return await this.vehicleService.getAllVehicles(pageNumber, limitNumber, companyIdNumber, isActive, search);
   }
 
   @Get('get/:id')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get a vehicle by ID' })
   @ApiResponse({ status: 200, description: 'Vehicle retrieved successfully', type: VehicleResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.vehicleService.getVehicle(id);
-    return { success: true, data: result };
+    return await this.vehicleService.getVehicle(id);
   }
 
   @Put('update/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Update a vehicle' })
   @ApiBody({ type: UpdateVehicleDto })
   @ApiResponse({ status: 200, description: 'Vehicle updated successfully', type: VehicleResponseDto })
@@ -76,44 +77,40 @@ export class VehicleController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateVehicleDto: UpdateVehicleDto
   ) {
-    const result = await this.vehicleService.updateVehicle(id, updateVehicleDto);
-    return { success: true, data: result };
+    return await this.vehicleService.updateVehicle(id, updateVehicleDto);
   }
 
   @Delete('delete/:id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Delete a vehicle' })
   @ApiResponse({ status: 200, description: 'Vehicle deleted successfully' })
   @ApiResponse({ status: 404, description: 'Vehicle not found or already assigned' })
   async remove(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.vehicleService.deleteVehicle(id);
-    return { success: true, data: result };
+    return await this.vehicleService.deleteVehicle(id);
   }
 
   @Post('assign-drivers')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Assign drivers to a vehicle' })
   @ApiBody({ type: AssignDriverDto })
   @ApiResponse({ status: 200, description: 'Drivers assigned successfully' })
   @ApiResponse({ status: 400, description: 'Invalid input or assignment conflicts' })
   @ApiResponse({ status: 404, description: 'Vehicle or driver not found' })
   async assignDrivers(@Body() assignDriverDto: AssignDriverDto) {
-    const result = await this.vehicleService.assignDrivers(assignDriverDto);
-    return { success: true, data: result };
+    return await this.vehicleService.assignDrivers(assignDriverDto);
   }
 
   @Put(':id/toggle-status')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Toggle vehicle active status' })
   @ApiResponse({ status: 200, description: 'Vehicle status updated successfully', type: VehicleResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })
   async toggleStatus(@Param('id', ParseIntPipe) id: number) {
-    const result = await this.vehicleService.toggleVehicleStatus(id);
-    return { success: true, data: result };
+    return await this.vehicleService.toggleVehicleStatus(id);
   }
 
   @Put(':id/odometer')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Update vehicle odometer reading' })
   @ApiQuery({ name: 'reading', required: true, type: Number })
   @ApiResponse({ status: 200, description: 'Odometer updated successfully', type: VehicleResponseDto })
@@ -123,12 +120,11 @@ export class VehicleController {
     @Param('id', ParseIntPipe) id: number,
     @Body('reading', ParseIntPipe) reading: number
   ) {
-    const result = await this.vehicleService.updateOdometer(id, reading);
-    return { success: true, data: result };
+    return await this.vehicleService.updateOdometer(id, reading);
   }
 
   @Get('company/:companyId')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get all vehicles for a specific company' })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean })
   @ApiResponse({ status: 200, description: 'Company vehicles retrieved successfully', type: VehicleListResponseDto })
@@ -137,28 +133,25 @@ export class VehicleController {
     @Param('companyId', ParseIntPipe) companyId: number,
     @Query('isActive') isActive?: boolean
   ) {
-    const result = await this.vehicleService.getCompanyVehicles(companyId, isActive);
-    return { success: true, data: result };
+    return await this.vehicleService.getCompanyVehicles(companyId, isActive);
   }
 
   @Get('available-vehicles')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get all available (unassigned) vehicles' })
   @ApiQuery({ name: 'companyId', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Available vehicles retrieved successfully', type: VehicleListResponseDto })
   async getAvailableVehicles(@Query('companyId', new ParseIntPipe({ optional: true })) companyId?: number) {
-    const result = await this.vehicleService.getAvailableVehicles(companyId);
-    return { success: true, data: result };
+    return await this.vehicleService.getAvailableVehicles(companyId);
   }
 
   @Get('driver/:driverId')
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get all vehicles assigned to a specific driver' })
   @ApiResponse({ status: 200, description: 'Driver vehicles retrieved successfully', type: VehicleListResponseDto })
   @ApiResponse({ status: 404, description: 'Driver not found' })
   async getDriverVehicles(@Param('driverId', ParseIntPipe) driverId: number) {
-    const result = await this.vehicleService.getDriverVehicles(driverId);
-    return { success: true, data: result };
+    return await this.vehicleService.getDriverVehicles(driverId);
   }
 
   @Post(':id/picture-upload')

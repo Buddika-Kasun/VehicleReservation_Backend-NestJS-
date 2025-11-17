@@ -11,13 +11,6 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateVehicleDto {
-  @ApiProperty({
-    example: 1,
-    description: 'ID of the company that owns the vehicle',
-  })
-  @IsNotEmpty()
-  @IsNumber()
-  companyId: number;
 
   @ApiProperty({
     example: 'KL01AB1234',
@@ -93,8 +86,8 @@ export class CreateVehicleDto {
     description: 'Category or type of the vehicle',
   })
   @IsOptional()
-  @IsString()
-  vehicleType?: string;
+  @IsNumber()
+  vehicleTypeId: number;
 
   @ApiPropertyOptional({
     example: 101,

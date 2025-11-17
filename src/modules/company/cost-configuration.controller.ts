@@ -18,6 +18,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/database/entities/user.entity';
 import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @ApiTags('Cost Configurations API')
 @ApiBearerAuth()
@@ -31,9 +32,9 @@ import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
   type: ErrorResponseDto,
   example: ErrorResponseDto.example('Internal server error.', HttpStatus.INTERNAL_SERVER_ERROR)
 })
-@UseGuards(JwtAuthGuard)
-@Roles(UserRole.ADMIN, UserRole.HR)
-@Controller('company/:companyId/cost-configurations/')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN)
+@Controller('cost-configurations/')
 export class CostConfigurationController {
   constructor(private readonly companyService: CompanyService) {}
 
@@ -41,12 +42,6 @@ export class CostConfigurationController {
   @ApiOperation({ 
     summary: 'Create cost configuration',
     description: 'Create a new cost configuration for a company. Requires Manager role or higher.'
-  })
-  @ApiParam({
-    name: 'companyId',
-    description: 'Company ID',
-    type: Number,
-    example: 1
   })
   @ApiBody({ type: CreateCostConfigurationDto })
   @ApiResponse({
@@ -63,42 +58,22 @@ export class CostConfigurationController {
     description: 'Cannot create configuration because a future configuration exists'
   })
   async createCostConfiguration(
-    @Param('companyId') companyId: string,
     @Body() dto: CreateCostConfigurationDto
   ) {
-    // Ensure companyId in URL matches the one in DTO
-    if (dto.companyId !== +companyId) {
-      throw new BadRequestException('Company ID in URL does not match request body');
-    }
     return this.companyService.createCostConfiguration(dto);
   }
 
-  @Get('get')
+  @Get('get-all')
   @ApiOperation({ 
     summary: 'Get company cost configurations',
     description: 'Retrieve all cost configurations for a company with optional vehicle type filter. Requires Manager role or higher.'
-  })
-  @ApiParam({
-    name: 'companyId',
-    description: 'Company ID',
-    type: Number,
-    example: 1
-  })
-  @ApiQuery({
-    name: 'vehicleType',
-    required: false,
-    enum: ['Car', 'Van', 'Lorry', 'SUV', 'Truck'],
-    description: 'Filter by vehicle type'
   })
   @ApiOkResponse({
     description: 'Cost configurations retrieved successfully',
     type: CostConfigurationListResponseDto
   })
-  async getCompanyCostConfigurations(
-    @Param('companyId') companyId: string,
-    @Query('vehicleType') vehicleType?: string
-  ) {
-    return this.companyService.getCompanyCostConfigurations(+companyId, vehicleType);
+  async getCompanyCostConfigurations() {
+    return this.companyService.getCompanyCostConfigurations();
   }
 
   @Get('get-current')

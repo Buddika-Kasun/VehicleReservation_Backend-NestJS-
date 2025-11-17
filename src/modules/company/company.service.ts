@@ -323,9 +323,8 @@ export class CompanyService {
 
   // Cost configuration services
   async createCostConfiguration(dto: CreateCostConfigurationDto) {
-    const company = await this.companyRepo.findOne({ 
-      where: { id: dto.companyId } 
-    });
+    const companies = await this.companyRepo.find({ where: {isActive: true}});
+    const company = companies[0];
     
     if (!company) {
       throw new NotFoundException(
@@ -339,34 +338,35 @@ export class CompanyService {
     // Check for overlapping configurations for the same vehicle type and date
     const existingConfig = await this.costConfigRepo.findOne({
       where: {
-        company: { id: dto.companyId },
         vehicleType: dto.vehicleType,
-        validFrom: dto.validFrom
+        //validFrom: dto.validFrom
       }
     });
 
     if (existingConfig) {
       throw new ConflictException(
         this.responseService.error(
-          `Cost configuration for vehicle type '${dto.vehicleType}' with valid from date '${dto.validFrom}' already exists`,
+          //`Cost configuration for vehicle type '${dto.vehicleType}' with valid from date '${dto.validFrom}' already exists`,
+          `vehicle type '${dto.vehicleType}' already exists`,
           409
         )
       );
     }
 
+    const validFromDate = new Date(dto.validFrom);
+
     // Check if there's a configuration for the same vehicle type with future date
     const futureConfig = await this.costConfigRepo.findOne({
       where: {
-        company: { id: dto.companyId },
         vehicleType: dto.vehicleType,
-        validFrom: MoreThan(dto.validFrom)
+        validFrom: MoreThan(validFromDate)
       }
     });
 
     if (futureConfig) {
       throw new BadRequestException(
         this.responseService.error(
-          `Cannot create configuration with valid from date '${dto.validFrom}' because a future configuration exists for '${futureConfig.validFrom}'`,
+          `Cannot create vehicle type with valid from date '${dto.validFrom}' because a future configuration exists for '${futureConfig.validFrom}'`,
           400
         )
       );
@@ -400,13 +400,15 @@ export class CompanyService {
       );
     }
 
+    const validFromDate = new Date(dto.validFrom);
+
     // If validFrom is being updated, check for conflicts
-    if (dto.validFrom && dto.validFrom !== config.validFrom) {
+    if (dto.validFrom && validFromDate !== config.validFrom) {
       const existingConfig = await this.costConfigRepo.findOne({
         where: {
           company: { id: config.company.id },
           vehicleType: dto.vehicleType || config.vehicleType,
-          validFrom: dto.validFrom
+          validFrom: validFromDate
         }
       });
 
@@ -450,18 +452,13 @@ export class CompanyService {
     );
   }
 
-  async getCompanyCostConfigurations(companyId: number, vehicleType?: string) {
-    const whereCondition: any = { company: { id: companyId } };
-    
-    if (vehicleType) {
-      whereCondition.vehicleType = vehicleType;
-    }
+  async getCompanyCostConfigurations() {
 
-    const configs = await this.costConfigRepo.find({
-      where: whereCondition,
-      relations: ['company'],
-      order: { validFrom: 'DESC' }
-    });
+    const configs = await this.costConfigRepo
+    .createQueryBuilder('config')
+    .loadRelationCountAndMap('config.vehicleCount', 'config.vehicle')
+    .orderBy('config.validFrom', 'DESC')
+    .getMany();
 
     return this.responseService.success(
       'Cost configurations retrieved successfully',
@@ -501,47 +498,37 @@ export class CompanyService {
   }
 
   async deleteCostConfiguration(id: number) {
-    const config = await this.costConfigRepo.findOne({ 
+    // Load cost config with vehicles relation
+    const config = await this.costConfigRepo.findOne({
       where: { id },
-      relations: ['company'] 
+      relations: ['company', 'vehicle'], // include vehicles
     });
-    
+
     if (!config) {
       throw new NotFoundException(
-        this.responseService.error(
-          'Cost configuration not found',
-          404
-        )
+        this.responseService.error('Cost configuration not found', 404),
       );
     }
 
-    // Check if this is the current active configuration
-    const currentDate = new Date();
-    const currentConfig = await this.costConfigRepo.findOne({
-      where: {
-        company: { id: config.company.id },
-        vehicleType: config.vehicleType,
-        validFrom: LessThanOrEqual(currentDate)
-      },
-      order: { validFrom: 'DESC' }
-    });
-
-    if (currentConfig && currentConfig.id === id) {
+    // Check if any vehicle is associated with this configuration
+    if (config.vehicle && config.vehicle.length > 0) {
       throw new BadRequestException(
         this.responseService.error(
-          'Cannot delete the current active cost configuration',
-          400
-        )
+          `Cannot delete configuration. ${config.vehicle.length} vehicle(s) are using this vehicle type.`,
+          400,
+        ),
       );
     }
 
+    // Safe to delete
     await this.costConfigRepo.remove(config);
 
     return this.responseService.success(
       'Cost configuration deleted successfully',
-      { deletedConfigurationId: id }
+      { deletedConfigurationId: id },
     );
   }
+
 
   async getCostConfigurationHistory(companyId: number, vehicleType: string) {
     const configs = await this.costConfigRepo.find({

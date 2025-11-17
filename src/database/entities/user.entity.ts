@@ -16,6 +16,12 @@ export enum UserRole {
   SECURITY = 'security',
 }
 
+export enum Status {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
+
 @Entity()
 export class User {
   @PrimaryGeneratedColumn()
@@ -55,8 +61,8 @@ export class User {
   @Column({ default: false })
   isActive: boolean;
 
-  @Column({ default: false })
-  isApproved: boolean;
+  @Column({ type: 'enum', enum: Status, default: Status.PENDING })
+  isApproved: Status;
 
   @OneToMany(() => Trip, t => t.requester)
   trips: Trip[];

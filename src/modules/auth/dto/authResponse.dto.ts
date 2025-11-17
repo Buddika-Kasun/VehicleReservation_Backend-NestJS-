@@ -82,6 +82,12 @@ export class UserData {
     description: 'Timestamp when user account was last updated'
   })
   updatedAt: string;
+
+  @ApiProperty({ 
+    example: 1,
+    description: 'Department ID associated with the user'
+  })
+  departmentId: number;
 }
 
 export class LoginData {

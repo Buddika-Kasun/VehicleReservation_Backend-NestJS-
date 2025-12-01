@@ -1,6 +1,15 @@
 {
-  "version": 3,
-  "buildCommand": "npm run build",
-  "outputDirectory": "api",
-  "framework": null
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/main.js"
+    }
+  ]
 }

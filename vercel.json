@@ -2,18 +2,40 @@
   "version": 2,
   "builds": [
     {
-      "src": "dist/main.js",
-      "use": "@vercel/node"
+      "src": "api/index.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["dist/**", "uploads/**"]
+      }
     }
   ],
   "routes": [
     {
+      "src": "/",
+      "dest": "api/index.js",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/health",
+      "dest": "api/index.js",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/api/docs",
+      "dest": "api/index.js",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/api/v1/(.*)",
+      "dest": "api/index.js"
+    },
+    {
+      "src": "/uploads/(.*)",
+      "dest": "api/index.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "dist/main.js"
+      "dest": "api/index.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production",
-    "TYPEORM_SYNC": "false"
-  }
+  ]
 }

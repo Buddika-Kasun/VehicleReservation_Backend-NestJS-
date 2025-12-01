@@ -86,8 +86,17 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  // Enable CORS if needed
-  app.enableCors();
+  app.enableCors({
+    origin: '*',
+    credentials: true,
+  });
+  
+  // For Vercel - export the app instance
+  if (process.env.VERCEL) {
+    console.log('Running on Vercel');
+    await app.init();
+    return app;
+  }
 
   await app.listen(port);
   

@@ -1,0 +1,12 @@
+node_modules/
+.git/
+.env
+.env.local
+*.md
+test/
+coverage/
+.vscode/
+*.log
+src/
+tsconfig.json
+nest-cli.json

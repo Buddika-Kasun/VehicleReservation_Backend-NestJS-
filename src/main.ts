@@ -1,89 +1,98 @@
-// src/main.ts
+/*
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('api/v1');
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new TransformInterceptor());
+
+  const config = new DocumentBuilder()
+    .setTitle('NestJS Boilerplate')
+    .setDescription('API docs')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('docs', app, document);
+
+  //await app.listen(process.env.PORT || 3000);
+  await app.listen( || 3000);
+  console.log(`Server running on http://localhost:${process.env.PORT || 3000}`);
+}
+
+bootstrap();
+*/
+
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
-import { Request, Response } from 'express';
 
 async function bootstrap() {
+  //const app = await NestFactory.create(AppModule);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
   
-  const port = process.env.PORT || 3000;
-  const environment = process.env.NODE_ENV || 'development';
+  // Get configuration values
+  const port = configService.get<number>('port');
+  const environment = configService.get<string>('environment');
 
   // Global settings
   app.setGlobalPrefix('api/v1');
+  /*app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: false,
+      transform: true,
+    }),
+  );*/
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
+  console.log('✅ Global ValidationPipe enabled');
   app.useGlobalFilters(new AllExceptionsFilter());
+  //app.useGlobalInterceptors(new TransformInterceptor());
 
-  // Serve static files
+  // Serve static files from uploads directory
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
   });
 
-  // Get Express instance
-  const server = app.getHttpAdapter().getInstance();
-
-  // Root endpoint
-  server.get('/', (req: Request, res: Response) => {
-    res.json({
-      status: 'success',
-      message: '🚀 Vehicle Reservation API',
-      environment,
-      timestamp: new Date().toISOString(),
-      docs: '/api/docs',
-      api: '/api/v1',
-    });
-  });
-
-  // Health endpoint
-  server.get('/health', (req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      service: 'vehicle-reservation-api',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    });
-  });
-
-  // Swagger
-  const config = new DocumentBuilder()
+  // Swagger documentation
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('Vehicle Reservation API')
-    .setDescription('API Documentation')
+    .setDescription('Vehicle Reservation System API Documentation')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  // CORS
-  app.enableCors({
-    origin: '*',
-    credentials: true,
-  });
+  // Enable CORS if needed
+  app.enableCors();
 
-  // For Vercel serverless
-  if (process.env.VERCEL) {
-    console.log('🚀 Starting serverless mode for Vercel');
-    await app.init();
-    return app;
-  }
-
-  // Local development
   await app.listen(port);
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  
+  console.log(`🚀 Server running in ${environment} mode on http://localhost:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
 }
 
-// Export for Vercel
-export default bootstrap().then(app => app.getHttpAdapter().getInstance());
+bootstrap();

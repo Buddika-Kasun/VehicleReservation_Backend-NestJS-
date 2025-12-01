@@ -1,11 +1,8 @@
 {
-  "version": 2,
+  "version": 3,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/dist/main.js"
-    }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/dist/main.js" }
   ]
 }

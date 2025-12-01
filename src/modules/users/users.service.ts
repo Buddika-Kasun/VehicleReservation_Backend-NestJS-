@@ -1,7 +1,7 @@
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { Brackets, ILike, Not, Repository } from 'typeorm';
 import { Status, User, UserRole } from 'src/database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Company } from 'src/database/entities/company.entity';
@@ -12,6 +12,7 @@ import { sanitizeUser, sanitizeUsers } from 'src/common/utils/sanitize-user.util
 import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
 import { Department } from 'src/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
+import { authenticate } from 'passport';
 
 @Injectable()
 export class UsersService {
@@ -51,10 +52,10 @@ export class UsersService {
 
   private async validateUniqueFields(dto: CreateUserDto): Promise<void> {
     const [existingUsername, existingEmail, existingPhone] = await Promise.all([
-      this.userRepo.findOne({ where: { username: dto.username } }),
-      this.userRepo.findOne({ where: { email: dto.email } }),
-      this.userRepo.findOne({ where: { phone: dto.phone } }),
-    ]);
+  this.userRepo.findOne({ where: { username: dto.username } }),
+  !dto.email ? Promise.resolve(null) : this.userRepo.findOne({ where: { email: dto.email } }),
+  this.userRepo.findOne({ where: { phone: dto.phone } }),
+]);
 
     if (existingUsername || existingEmail || existingPhone) {
       const errors = [];
@@ -200,6 +201,7 @@ export class UsersService {
         role: Not(UserRole.SYSADMIN),
       },
       relations: ['company', 'department'],
+      order: { id: 'DESC' },
     });
 
     const sanitizedUsers = sanitizeUsers(users);
@@ -215,7 +217,7 @@ export class UsersService {
 
   async findAllByDepartment(departmentId?: number) {
     const whereCondition = departmentId
-      ? { department: { id: departmentId } }
+      ? { department: { id: departmentId }, role: Not(UserRole.SYSADMIN) }
       : {};
 
     const users = await this.userRepo.find({
@@ -238,8 +240,156 @@ export class UsersService {
     );
   }
 
+  async findAllBySearching(search?: string) {
+    // Create query builder
+    const queryBuilder = this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .orderBy('user.createdAt', 'DESC');
+
+    // Add search conditions if search term is provided
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      queryBuilder.andWhere(
+        new Brackets(qb => {
+          qb.where('user.displayname ILIKE :search', { search: searchTerm })
+            .orWhere('user.email ILIKE :search', { search: searchTerm })
+            .orWhere('user.username ILIKE :search', { search: searchTerm });
+        })
+      );
+    }
+
+    // Execute query
+    const users = await queryBuilder.getMany();
+
+    // Transform to minimal user data
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      phone: user.phone,
+      departmentName: user.department?.name
+    }));
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: minimalUsers,
+        total: minimalUsers.length,
+      },
+    );
+  }
+
+  async findAllByApprovalSearching(search?: string) {
+    // Create query builder
+    const queryBuilder = this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .andWhere('user.authenticationLevel = :authLevel', { authLevel: 0 }) // Add this line
+      .orderBy('user.createdAt', 'DESC');
+
+    // Add search conditions if search term is provided
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      queryBuilder.andWhere(
+        new Brackets(qb => {
+          qb.where('user.displayname ILIKE :search', { search: searchTerm })
+            .orWhere('user.email ILIKE :search', { search: searchTerm })
+            .orWhere('user.username ILIKE :search', { search: searchTerm });
+        })
+      );
+    }
+
+    // Execute query
+    const users = await queryBuilder.getMany();
+
+    // Transform to minimal user data
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department?.name
+    }));
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: minimalUsers,
+        total: minimalUsers.length,
+      },
+    );
+  }
+
+  async setUserApprove(id: number, state: boolean) {
+
+    const user = await this.userRepo.findOne({
+      where: { id: id }
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        this.responseService.error(
+          'User not found', 
+          404
+        )
+      );
+    }
+
+    if(state === true) {
+      user.authenticationLevel = 3;
+    }
+    else {
+      user.authenticationLevel = 0
+    }
+
+    const savedUser = await this.userRepo.save(user);
+
+    const minimalUser = {
+      id: savedUser.id,
+      displayName: savedUser.displayname,
+      authenticationLevel: savedUser.authenticationLevel
+    }
+
+    return this.responseService.success(
+      'User approved successfully',
+      {
+        user: minimalUser,
+      },
+    );
+
+  }
+
+  async findAllByApproval() {
+    
+    const users = await this.userRepo.find({
+      where: { authenticationLevel : 3, role: Not(UserRole.SYSADMIN) },
+      relations: ['company', 'department'],
+      order: { id: 'DESC' },
+    });
+
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department.name
+    }));
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: minimalUsers,
+        total: minimalUsers.length,
+      },
+    );
+  }
+
+
   async findByEmail(email: string) {
-    const user = await this.userRepo.findOne({ where: { email } });
+    const user = await this.userRepo.findOne({ where: { email, role: Not(UserRole.SYSADMIN) } });
     if (!user) {
       throw new NotFoundException(
         this.responseService.error('User not found', 404)

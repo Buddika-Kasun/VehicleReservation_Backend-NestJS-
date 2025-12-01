@@ -146,7 +146,7 @@ export class VehicleController {
   }
 
   @Get('driver/:driverId')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER)
   @ApiOperation({ summary: 'Get all vehicles assigned to a specific driver' })
   @ApiResponse({ status: 200, description: 'Driver vehicles retrieved successfully', type: VehicleListResponseDto })
   @ApiResponse({ status: 404, description: 'Driver not found' })

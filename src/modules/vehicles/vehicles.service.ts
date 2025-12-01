@@ -126,7 +126,8 @@ export class VehicleService {
       company,
       assignedDriverPrimary,
       assignedDriverSecondary,
-      vehicleType
+      vehicleType,
+      seatingAvailability: createVehicleDto.seatingCapacity,
     });
 
     const savedVehicle = await this.vehicleRepository.save(vehicle);
@@ -559,11 +560,23 @@ Scan Date: ${new Date().toLocaleDateString()}
       order: { regNo: 'ASC' }
     });
 
+    // Separate primary and secondary vehicles
+    const primaryVehicles = vehicles.filter(vehicle => 
+      vehicle.assignedDriverPrimary?.id === driverId
+    );
+
+    const secondaryVehicles = vehicles.filter(vehicle => 
+      vehicle.assignedDriverSecondary?.id === driverId
+    );
+
     return this.responseService.success(
       'Driver vehicles retrieved successfully.',
       {
-        vehicles,
-        total: vehicles.length
+        primaryVehicles,
+        secondaryVehicles,
+        total: vehicles.length,
+        primaryTotal: primaryVehicles.length,
+        secondaryTotal: secondaryVehicles.length
       }
     );
   }

@@ -1,12 +1,13 @@
-
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, OneToMany
+  Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn, 
+  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable
 } from 'typeorm';
 import { User } from './user.entity';
 import { Vehicle } from './vehicle.entity';
 import { Approval } from './approval.entity';
 import { OdometerLog } from './odometer-log.entity';
 import { Feedback } from './feedback.entity';
+import { TripLocation } from './trip-location.entity';
 
 export enum TripStatus {
   DRAFT = 'draft',
@@ -18,40 +19,82 @@ export enum TripStatus {
   CANCELED = 'canceled',
 }
 
+export enum RepetitionType {
+  ONCE = 'once',
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  CUSTOM = 'custom',
+}
+
+export enum PassengerType {
+  OWN = 'own',
+  OTHER_INDIVIDUAL = 'other_individual',
+  GROUP = 'group',
+}
+
 @Entity()
 export class Trip {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, u => u.trips)
+  @ManyToOne(() => User, user => user.trips)
   requester: User;
 
-  @ManyToOne(() => Vehicle, v => v.trips, { nullable: true })
+  @ManyToOne(() => Vehicle, vehicle => vehicle.trips, { nullable: true })
   vehicle?: Vehicle;
 
-  @Column({ length: 150 })
-  origin: string;
+  // Location information
+  @OneToOne(() => TripLocation, location => location.trip, { cascade: true })
+  @JoinColumn()
+  location: TripLocation;
 
-  @Column({ length: 150 })
-  destination: string;
-
+  // Schedule information
   @Column('date')
   startDate: Date;
 
   @Column('date', { nullable: true })
-  endDate?: Date;
+  validTillDate?: Date;
 
   @Column('time')
   startTime: string;
 
-  @Column('time', { nullable: true })
-  endTime?: string;
+  @Column({ type: 'enum', enum: RepetitionType, default: RepetitionType.ONCE })
+  repetition: RepetitionType;
 
-  @Column({ length: 255, nullable: true })
-  purpose?: string;
+  @Column({ default: false })
+  includeWeekends: boolean;
+
+  @Column({ type: 'int', nullable: true })
+  repeatAfterDays?: number;
+
+  // Passenger information
+  @Column({ type: 'enum', enum: PassengerType, default: PassengerType.OWN })
+  passengerType: PassengerType;
 
   @Column({ type: 'int', default: 1 })
-  passengers: number;
+  passengerCount: number;
+
+  @ManyToOne(() => User, { nullable: true })
+  selectedIndividual?: User;
+
+  @ManyToMany(() => User)
+  @JoinTable()
+  selectedGroupUsers: User[];
+
+  @Column('jsonb', { nullable: true })
+  selectedOthers: Array<{
+    id: string;
+    displayName: string;
+    contactNo: string;
+  }>;
+
+  @Column({ default: true })
+  includeMeInGroup: boolean;
+
+  // Trip details
+  @Column({ length: 255, nullable: true })
+  purpose?: string;
 
   @Column({ length: 255, nullable: true })
   specialRemarks?: string;
@@ -59,6 +102,7 @@ export class Trip {
   @Column({ type: 'enum', enum: TripStatus, default: TripStatus.DRAFT })
   status: TripStatus;
 
+  // Cost and mileage
   @Column('decimal', { precision: 12, scale: 2, nullable: true })
   cost?: number;
 
@@ -71,15 +115,16 @@ export class Trip {
   @Column('decimal', { precision: 12, scale: 2, nullable: true })
   endOdometer?: number;
 
+  // Relations
   @OneToOne(() => Approval, approval => approval.trip, { cascade: true })
   @JoinColumn()
   approval?: Approval;
 
-  @OneToOne(() => OdometerLog, o => o.trip, { cascade: true })
+  @OneToOne(() => OdometerLog, odometerLog => odometerLog.trip, { cascade: true })
   @JoinColumn()
   odometerLog?: OdometerLog;
 
-  @OneToOne(() => Feedback, f => f.trip, { cascade: true })
+  @OneToOne(() => Feedback, feedback => feedback.trip, { cascade: true })
   @JoinColumn()
   feedback?: Feedback;
 

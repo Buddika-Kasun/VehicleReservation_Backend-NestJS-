@@ -43,7 +43,7 @@ export class User {
   profilePicture?: string;
 
   @Index()
-  @Column({ length: 100, unique: true })
+  @Column({ length: 100, unique: true, nullable:true })
   email?: string;
 
   @Column({ length: 20, nullable: true, unique:true })
@@ -56,7 +56,7 @@ export class User {
   passwordHash?: string;
 
   @Column({ default: 0 })
-  authenticationLevel: number; // for MFA level, etc.
+  authenticationLevel: number;
 
   @Column({ default: false })
   isActive: boolean;

@@ -1,107 +1,61 @@
-// src/common/dto/response.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
-import { Exclude, Expose, Type } from 'class-transformer';
-
-@Exclude()
-export class TripResponseData {
-  @Expose()
-  @ApiProperty({ example: 1 })
-  id: number;
-
-  @Expose()
-  @ApiProperty({ example: 'Company Headquarters' })
-  origin: string;
-
-  @Expose()
-  @ApiProperty({ example: 'Client Office' })
-  destination: string;
-
-  @Expose()
-  @ApiProperty({ example: '2024-01-15' })
-  startDate: string;
-
-  @Expose()
-  @ApiProperty({ example: '14:30' })
-  startTime: string;
-
-  @Expose()
-  @ApiProperty({ example: 'Client meeting', nullable: true })
-  purpose?: string;
-
-  @Expose()
-  @ApiProperty({ example: 3 })
-  passengers: number;
-
-  @Expose()
-  @ApiProperty({ example: 'draft', enum: ['draft', 'pending', 'approved', 'rejected', 'ongoing', 'completed', 'canceled'] })
-  status: string;
-
-  @Expose()
-  @ApiProperty({ example: 15000.5, nullable: true })
-  startOdometer?: number;
-
-  @Expose()
-  @ApiProperty({ example: 15200.5, nullable: true })
-  endOdometer?: number;
-
-  @Expose()
-  @ApiProperty({ example: 200.0, nullable: true })
-  mileage?: number;
-
-  @Expose()
-  @ApiProperty({ example: 350.0, nullable: true })
-  cost?: number;
-
-  @Expose()
-  @ApiProperty({ example: '2024-01-10T10:00:00.000Z' })
-  createdAt: Date;
-
-  @Expose()
-  @ApiProperty({ example: '2024-01-10T10:00:00.000Z' })
-  updatedAt: Date;
-}
+import { Trip, TripStatus } from 'src/database/entities/trip.entity';
+import { Vehicle } from 'src/database/entities/vehicle.entity';
 
 export class TripResponseDto {
-  @ApiProperty({ example: true })
-  success: boolean;
+  id: number;
+  status: TripStatus;
+  startDate: Date;
+  startTime: string;
+  passengerCount: number;
+  purpose?: string;
+  vehicle?: Vehicle;
+  createdAt: Date;
+  driverName?: string;
+  vehicleRegNo?: string;
+  vehicleModel?: string;
+  driverPhone?: string;
+  cost?: number;
 
-  @ApiProperty({ example: 'Trip created successfully' })
-  message: string;
+  constructor(trip: Trip) {
+    this.id = trip.id;
+    this.status = trip.status;
+    this.startDate = trip.startDate;
+    this.startTime = trip.startTime;
+    this.passengerCount = trip.passengerCount;
+    this.purpose = trip.purpose;
+    this.vehicle = trip.vehicle;
+    this.createdAt = trip.createdAt;
+    
+    // Map vehicle properties to top level for frontend compatibility
+    if (trip.vehicle) {
+      this.driverName = trip.vehicle.assignedDriverPrimary.displayname;
+      this.vehicleRegNo = trip.vehicle.regNo;
+      this.vehicleModel = trip.vehicle.model;
+      this.driverPhone = trip.vehicle.assignedDriverPrimary.phone;
+    }
+    
+    // Add cost if available (you might need to calculate this)
+    this.cost = this.calculateTripCost(trip);
+  }
 
-  @ApiProperty({ example: 201 })
-  statusCode: number;
-
-  @ApiProperty({ example: '2024-01-10T10:00:00.000Z' })
-  timestamp: string;
-
-  @ApiProperty({ type: TripResponseData })
-  data: TripResponseData;
+  private calculateTripCost(trip: Trip): number {
+    // Implement your cost calculation logic here
+    // This is just a placeholder - adjust based on your business logic
+    return 0; // or calculate based on distance, vehicle type, etc.
+  }
 }
 
-export class TripListResponseDto {
-  @ApiProperty({ example: true })
-  success: boolean;
+export class AvailableVehicleDto {
+  vehicle: Vehicle;
+  isRecommended: boolean;
+  recommendationReason: string;
+  distanceFromStart: number; // in meters
+  estimatedArrivalTime: number; // in minutes
+}
 
-  @ApiProperty({ example: 'Trips retrieved successfully' })
-  message: string;
-
-  @ApiProperty({ example: 200 })
-  statusCode: number;
-
-  @ApiProperty({ example: '2024-01-10T10:00:00.000Z' })
-  timestamp: string;
-
-  @ApiProperty({ type: [TripResponseData] })
-  data: TripResponseData[];
-
-  @ApiProperty({ 
-    example: { page: 1, limit: 10, total: 25, totalPages: 3 },
-    required: false 
-  })
-  pagination?: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
+export class AvailableVehiclesResponseDto {
+  recommendedVehicles: AvailableVehicleDto[];
+  allVehicles: AvailableVehicleDto[];
+  conflictingTrips: any[];
+  canBookNew: boolean;
 }

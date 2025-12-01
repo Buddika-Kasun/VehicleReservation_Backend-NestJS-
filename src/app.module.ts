@@ -17,6 +17,9 @@ import { CostCenterModule } from './modules/costcenter/cost-center.module';
 import { DepartmentModule } from './modules/department/department.module';
 import { VehicleModule } from './modules/vehicles/vehicles.module';
 import { ValidationModule } from './modules/validation/validation.module';
+import { ApprovalConfigModule } from './modules/approval/approvalConfig.module';
+import { LocationsModule } from './modules/locations/locations.module';
+import { RoutesModule } from './modules/routes/routes.module';
 
 @Module({
   imports: [
@@ -53,6 +56,9 @@ import { ValidationModule } from './modules/validation/validation.module';
     CostCenterModule,
     DepartmentModule,
     ValidationModule,
+    ApprovalConfigModule,
+    LocationsModule,
+    RoutesModule,
   ],
 })
 export class AppModule {}

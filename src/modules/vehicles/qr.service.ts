@@ -262,8 +262,8 @@ export class QrService {
       currentStatus,
       activeTrip: activeTrip ? {
         id: activeTrip.id,
-        origin: activeTrip.origin,
-        destination: activeTrip.destination,
+        //origin: activeTrip.origin,
+        //destination: activeTrip.destination,
         startDate: activeTrip.startDate,
         status: activeTrip.status
       } : null
@@ -321,7 +321,7 @@ export class QrService {
       trip.endOdometer = odometerReading;
       // Update passenger count if provided
       if (actualPassengers !== undefined) {
-        trip.passengers = actualPassengers;
+        //trip.passengers = actualPassengers;
       }
       
       if (trip.startOdometer) {
@@ -329,8 +329,8 @@ export class QrService {
       }
       
       trip.status = TripStatus.COMPLETED;
-      trip.endDate = new Date();
-      trip.endTime = new Date().toTimeString().split(' ')[0];
+      //trip.endDate = new Date();
+      //trip.endTime = new Date().toTimeString().split(' ')[0];
       
       trip.cost = await this.calculateTripCost(trip);
     }
@@ -342,8 +342,9 @@ export class QrService {
     const baseRate = 50;
     const mileageRate = 2;
     const passengerRate = 5;
-    const cost = baseRate + (trip.mileage || 0) * mileageRate + (trip.passengers || 1) * passengerRate;
-    return Number(cost.toFixed(2));
+    //const cost = baseRate + (trip.mileage || 0) * mileageRate + (trip.passengers || 1) * passengerRate;
+    //return Number(cost.toFixed(2));
+    return Number(2);
   }
 
   private async createOdometerLog(

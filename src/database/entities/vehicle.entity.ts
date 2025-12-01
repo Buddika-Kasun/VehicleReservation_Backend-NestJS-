@@ -29,6 +29,9 @@ export class Vehicle {
   @Column({ type: 'int', default: 4 })
   seatingCapacity: number;
 
+  @Column({ type: 'int', default: 4 })
+  seatingAvailability: number;
+
   @ManyToOne(() => User, { nullable: true })
   assignedDriverPrimary: User;
 

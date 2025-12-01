@@ -1,5 +1,5 @@
 
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Search, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { GetUser } from 'src/common/decorators/user.decorator';
@@ -142,6 +142,55 @@ export class UsersController {
   ) {
     return this.usersService.findAllByDepartment(depId);
   }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllBySearching(
+    @Query('query') search: string,
+  ) {
+    return this.usersService.findAllBySearching(search);
+  }
+
+  @Get('get-user-by-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllByApproval() {
+    return this.usersService.findAllByApproval();
+  }
+
+  @Get('search-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllByApprovalSearching(
+    @Query('query') search: string,
+  ) {
+    return this.usersService.findAllByApprovalSearching(search);
+  }
+
+  @Put('set-approval/:id')
+  @ApiOperation({ summary: 'Set approval' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'User approve change successfully.',
+  })
+  async setApproveUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('state') state: boolean,
+  ) {
+    return this.usersService.setUserApprove(id, state);
+  }
+
 
   @Get('profile')
   @ApiOperation({ summary: 'Get user profile' })

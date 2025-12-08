@@ -6,6 +6,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/database/entities/user.entity';
 import { CreateApprovalConfigDto, UpdateApprovalConfigDto } from './dto/approval-config-request.dto';
+import { GetUser } from 'src/common/decorators/user.decorator';
 
 @ApiTags('Approval Config API')
 @Controller('approval-config')
@@ -20,6 +21,15 @@ export class ApprovalConfigController {
   @ApiOperation({ summary: 'Create approval config' })
   async create(@Body() dto: CreateApprovalConfigDto) {
     return await this.service.create(dto);
+  }
+
+  @Get('get-menu-approvals')
+  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN, UserRole.EMPLOYEE, UserRole.DRIVER, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Get all approvals for menu' })
+  async findMenuApproval(
+    @GetUser() user: any
+  ) {
+    return await this.service.findMenuApproval(user.userId);
   }
 
   @Get('get-all')

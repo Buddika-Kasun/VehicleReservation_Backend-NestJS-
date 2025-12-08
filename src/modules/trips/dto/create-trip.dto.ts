@@ -2,6 +2,33 @@ import { IsEnum, IsNumber, IsString, IsOptional, IsBoolean, IsDateString, IsArra
 import { Type } from 'class-transformer';
 import { PassengerType, RepetitionType, TripStatus } from 'src/database/entities/trip.entity';
 
+export class SelectedGroupUserDto {
+  @IsNumber()
+  id: number;
+
+  @IsString()
+  displayName: string;
+
+  @IsString()
+  contactNo: string;
+}
+
+export class SelectedOtherDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  displayName: string;
+
+  @IsString()
+  contactNo: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isOther?: boolean;
+}
+
 export class LocationDataDto {
   @IsObject()
   startLocation: {
@@ -19,9 +46,29 @@ export class LocationDataDto {
     };
   };
 
-  @IsArray()
+  /*
+  @IsObject()
   @IsOptional()
-  intermediateStops: any[];
+  routeData?: {
+    routeSegments: Array<{
+      color?: number;
+      points: [number, number][]; // Array of [longitude, latitude] pairs
+      strokeWidth?: number;
+      [key: string]: any; // For any other properties
+    }>;
+  };
+  */
+  @IsOptional()
+  routeData?: any;
+
+  //@IsArray()
+  //@IsOptional()
+  //intermediateStops: any[];
+
+  //@IsArray()
+  @IsOptional()
+  intermediateStops?: any;
+
 
   @IsNumber()
   totalStops: number;
@@ -54,20 +101,25 @@ export class PassengerDataDto {
   @IsEnum(PassengerType)
   passengerType: PassengerType;
 
-  @IsNumber()
+  @IsObject()
   @IsOptional()
-  selectedIndividual?: number;
-
-  @IsArray()
-  @IsOptional()
-  selectedGroupUsers?: number[];
-
-  @IsArray()
-  @IsOptional()
-  selectedOthers?: Array<{
+  selectedIndividual?: {
+    id: number;
     displayName: string;
     contactNo: string;
-  }>;
+  };
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => SelectedGroupUserDto)
+  selectedGroupUsers?: SelectedGroupUserDto[];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => SelectedOtherDto)
+  selectedOthers?: SelectedOtherDto[];
 
   @IsBoolean()
   @IsOptional()
@@ -99,6 +151,10 @@ export class CreateTripDto {
   @IsOptional()
   vehicleId?: number;
 
+  @IsNumber()
+  @IsOptional()
+  conflictingTripId?: number;
+
   @IsString()
   @IsOptional()
   purpose?: string;
@@ -109,7 +165,7 @@ export class CreateTripDto {
 
   @IsEnum(TripStatus)
   @IsOptional()
-  status?: TripStatus;
+  status?: TripStatus = TripStatus.PENDING;
 }
 
 export class AvailableVehiclesRequestDto {

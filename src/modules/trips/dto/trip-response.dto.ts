@@ -1,4 +1,4 @@
-import { Trip, TripStatus } from 'src/database/entities/trip.entity';
+import { RepetitionType, Trip, TripStatus } from 'src/database/entities/trip.entity';
 import { Vehicle } from 'src/database/entities/vehicle.entity';
 
 export class TripResponseDto {
@@ -15,6 +15,7 @@ export class TripResponseDto {
   vehicleModel?: string;
   driverPhone?: string;
   cost?: number;
+  conflictingTrips?: TripResponseDto[];
 
   constructor(trip: Trip) {
     this.id = trip.id;
@@ -36,6 +37,10 @@ export class TripResponseDto {
     
     // Add cost if available (you might need to calculate this)
     this.cost = this.calculateTripCost(trip);
+
+    if (trip.conflictingTrips) {
+      this.conflictingTrips = trip.conflictingTrips.map(t => new TripResponseDto(t));
+    }
   }
 
   private calculateTripCost(trip: Trip): number {
@@ -51,11 +56,45 @@ export class AvailableVehicleDto {
   recommendationReason: string;
   distanceFromStart: number; // in meters
   estimatedArrivalTime: number; // in minutes
+  isInConflict: boolean;
+  conflictingTripData?: {
+    tripId: number;
+    //status: TripStatus;
+    //startDate: Date;
+    startTime: string;
+    //passengerCount: number;
+    //purpose?: string;
+    //repetition: RepetitionType;
+    
+    startLocation: {
+      address: string;
+      latitude: number;
+      longitude: number;
+    };
+    
+    endLocation: {
+      address: string;
+      latitude: number;
+      longitude: number;
+    };
+    
+    /*intermediateStops: Array<{
+      latitude: number;
+      longitude: number;
+      address: string;
+      order: number;
+    }>;*/
+    
+    //totalStops: number;
+    //estimatedDuration?: number;
+    //distance?: number;
+    //detailedLocationData?: any; // Optional detailed location data
+  };
 }
 
 export class AvailableVehiclesResponseDto {
-  recommendedVehicles: AvailableVehicleDto[];
+  //recommendedVehicles: AvailableVehicleDto[];
   allVehicles: AvailableVehicleDto[];
-  conflictingTrips: any[];
-  canBookNew: boolean;
+  //conflictingTrips: any[];
+  //canBookNew: boolean;
 }

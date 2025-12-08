@@ -20,6 +20,7 @@ import { ValidationModule } from './modules/validation/validation.module';
 import { ApprovalConfigModule } from './modules/approval/approvalConfig.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { RoutesModule } from './modules/routes/routes.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { RoutesModule } from './modules/routes/routes.module';
     ApprovalConfigModule,
     LocationsModule,
     RoutesModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

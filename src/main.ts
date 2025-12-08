@@ -39,8 +39,28 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+const fs = require('fs');
+const path = require('path');
 
 async function bootstrap() {
+  // Ensure uploads directory exists with proper permissions
+  const uploadPath = process.env.UPLOAD_PATH || './uploads';
+  const fullPath = path.isAbsolute(uploadPath) ? uploadPath : path.join(process.cwd(), uploadPath);
+  
+  try {
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true, mode: 0o777 });
+      console.log(`Created uploads directory: ${fullPath}`);
+    }
+    
+    // Set permissions
+    fs.chmodSync(fullPath, 0o777);
+  } catch (error) {
+    console.warn(`Could not create uploads directory: ${error.message}`);
+    console.warn('Using /tmp/uploads instead');
+    process.env.UPLOAD_PATH = '/tmp/uploads';
+  }
+
   //const app = await NestFactory.create(AppModule);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
@@ -71,9 +91,11 @@ async function bootstrap() {
   //app.useGlobalInterceptors(new TransformInterceptor());
 
   // Serve static files from uploads directory
+  /*
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
   });
+  */
 
   // Swagger documentation
   const swaggerConfig = new DocumentBuilder()

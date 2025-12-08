@@ -7,9 +7,8 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY tsconfig*.json ./
 
-# Install ALL dependencies (including dev for build)
+# Install ALL dependencies
 RUN npm ci
 
 # Copy source code
@@ -18,13 +17,21 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Remove dev dependencies to reduce image size
-RUN npm prune --production
+# Create uploads directory with proper permissions
+RUN mkdir -p /app/uploads && chmod -R 777 /app/uploads
+
+# Create temporary directory for uploads
+RUN mkdir -p /tmp/uploads && chmod -R 777 /tmp/uploads
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
-USER nestjs
+RUN adduser -S nodejs -u 1001
+
+# Change ownership of app directory
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
 
 EXPOSE 3000
 

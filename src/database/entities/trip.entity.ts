@@ -79,7 +79,11 @@ export class Trip {
   selectedIndividual?: User;
 
   @ManyToMany(() => User)
-  @JoinTable()
+  @JoinTable({
+    name: 'trip_selected_group_users',
+    joinColumn: { name: 'trip_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' }
+  })
   selectedGroupUsers: User[];
 
   @Column('jsonb', { nullable: true })
@@ -116,7 +120,10 @@ export class Trip {
   endOdometer?: number;
 
   // Relations
-  @OneToOne(() => Approval, approval => approval.trip, { cascade: true })
+  @OneToOne(() => Approval, approval => approval.trip, { 
+    cascade: true,
+    onDelete: 'CASCADE' 
+  })
   @JoinColumn()
   approval?: Approval;
 
@@ -127,6 +134,17 @@ export class Trip {
   @OneToOne(() => Feedback, feedback => feedback.trip, { cascade: true })
   @JoinColumn()
   feedback?: Feedback;
+
+  @ManyToMany(() => Trip, trip => trip.linkedTrips, { nullable: true })
+  @JoinTable({
+    name: 'trip_conflicts',
+    joinColumn: { name: 'trip_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'conflict_trip_id', referencedColumnName: 'id' }
+  })
+  conflictingTrips?: Trip[];
+
+  @ManyToMany(() => Trip, trip => trip.conflictingTrips)
+  linkedTrips?: Trip[];
 
   @CreateDateColumn()
   createdAt: Date;

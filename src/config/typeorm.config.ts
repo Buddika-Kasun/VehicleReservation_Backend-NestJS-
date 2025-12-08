@@ -4,10 +4,14 @@ import { config } from 'dotenv';
 
 config();
 
+// Force looking only at .js files in production
+const fileExtension = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
+const baseDir = process.env.NODE_ENV === 'production' ? 'dist' : 'src';
+
 // Check if we're in production (compiled JS) or development (TypeScript)
-const isCompiled = __filename.endsWith('.js');
-const fileExtension = isCompiled ? 'js' : 'ts';
-const baseDir = isCompiled ? 'dist' : 'src';
+//const isCompiled = __filename.endsWith('.js');
+//const fileExtension = isCompiled ? 'js' : 'ts';
+//const baseDir = isCompiled ? 'dist' : 'src';
 
 const dataSource = new DataSource({
   type: 'postgres',

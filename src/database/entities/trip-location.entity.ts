@@ -1,3 +1,4 @@
+// trip-location.entity.ts
 import { Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn } from 'typeorm';
 import { Trip } from './trip.entity';
 
@@ -42,7 +43,11 @@ export class TripLocation {
   @Column({ type: 'int', default: 0 })
   totalStops: number;
 
-  // Calculated distance in meters
+  // Complete location data including route
+  @Column('jsonb', { nullable: true })
+  locationData?: any;
+
+  // Calculated distance in km
   @Column('decimal', { precision: 10, scale: 2, nullable: true })
   distance: number;
 

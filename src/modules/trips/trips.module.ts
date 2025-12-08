@@ -9,10 +9,11 @@ import { Vehicle } from 'src/database/entities/vehicle.entity';
 import { User } from 'src/database/entities/user.entity';
 import { ResponseService } from 'src/common/services/response.service';
 import { TripLocation } from 'src/database/entities/trip-location.entity';
+import { ApprovalConfig } from 'src/database/entities/approval-configuration.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation]),
+    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig]),
   ],
   controllers: [TripsController],
   providers: [TripsService, ResponseService],

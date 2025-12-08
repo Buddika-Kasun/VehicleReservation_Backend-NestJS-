@@ -90,13 +90,6 @@ async function bootstrap() {
     origin: '*',
     credentials: true,
   });
-  
-  // For Vercel - export the app instance
-  if (process.env.VERCEL) {
-    console.log('Running on Vercel');
-    await app.init();
-    return app;
-  }
 
   await app.listen(port);
   

@@ -54,8 +54,15 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
     migrations: [path.join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
 
     // Keep your existing logic
-    synchronize: process.env.TYPEORM_SYNC === 'true',
+    synchronize: process.env.NODE_ENV === 'development' && process.env.TYPEORM_SYNC === 'true',
     logging: process.env.NODE_ENV === 'development',
+  
+    // Optional: Better performance
+    extra: {
+      max: 20,
+      connectionTimeoutMillis: 10000,
+    },
+    
   };
 
   return config;

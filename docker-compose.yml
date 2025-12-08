@@ -1,21 +1,49 @@
-version: '3.9'
+version: '3.8'
+
 services:
   app:
-    build: .
-    container_name: nestjs-app
+    build:
+      context: .
+      target: production
     ports:
-      - '3000:3000'
-    env_file:
-      - .env
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=${DB_PASSWORD:-password123}
+      - DB_NAME=vrapp_db
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-password123}@db:5432/vrapp_db
+      - JWT_SECRET=${JWT_SECRET:-supersecretjwtkey}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-supersecretrefreshkey}
     depends_on:
-      - postgres
-  postgres:
-    image: postgres:16
-    container_name: nestjs-db
-    restart: always
-    ports:
-      - '5432:5432'
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: nestjs_boilerplate
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password123}
+      POSTGRES_DB: vrapp_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Company } from 'src/database/entities/company.entity';
 import { CostCenter } from 'src/database/entities/cost-center.entity';
 import { Department } from 'src/database/entities/department.entity';
-import { User } from 'src/database/entities/user.entity';
+import { User, UserRole } from 'src/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
@@ -74,6 +74,26 @@ export class DepartmentService {
     });
 
     const savedDepartment = await this.departmentRepository.save(department);
+
+    const sysAdmins = await this.userRepository.find({
+      where: {
+        role: UserRole.SYSADMIN
+      }
+    });
+
+    const sysAdminsToUpdate = sysAdmins.filter(
+      user => !user.company || !user.department
+    );
+
+    if (sysAdminsToUpdate.length > 0) {
+      for (const user of sysAdminsToUpdate) {
+        user.company = company;
+        user.department = savedDepartment;
+      }
+
+      await this.userRepository.save(sysAdminsToUpdate);
+    }
+
 
     return this.responseService.created(
       'Department created successfully',

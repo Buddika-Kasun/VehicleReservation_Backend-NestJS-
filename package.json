@@ -1,9 +1,8 @@
 {
   "name": "nestjs-boilerplate",
   "version": "1.0.0",
-  "scripts": {
+  "scripts1": {
     "build": "nest build",
-    "vercel-build": "npm run build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -14,6 +13,20 @@
     "migration:revert": "npm run typeorm migration:revert",
     "migration:generate": "node scripts/migration-generate.js",
     "migration:show": "npm run typeorm migration:show"
+  },
+  "scripts": {
+    "build": "nest build",
+    "postbuild": "npm run build:migrations",
+    "build:migrations": "tsc --project tsconfig.migrations.json",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    
+    "migration:generate": "node scripts/migration-generate.js",
+    "migration:run:dev": "npx typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:run",
+    "migration:run:prod": "npx typeorm -d dist/config/typeorm.config.js migration:run",
+    "migration:run": "if [ \"$NODE_ENV\" = \"production\" ]; then npm run migration:run:prod; else npm run migration:run:dev; fi",
+    
+    "railway:deploy": "npm run build && npm run migration:run:prod"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

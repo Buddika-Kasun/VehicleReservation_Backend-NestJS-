@@ -2,3 +2,7 @@ node_modules
 dist
 .env
 npm-debug.log
+
+# Ignore compiled migrations (they're built during deployment)
+dist/database/migrations/*.js
+!dist/database/migrations/.gitkeep

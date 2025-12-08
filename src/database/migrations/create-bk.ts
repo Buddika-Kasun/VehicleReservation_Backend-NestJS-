@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
-export class CreateSysadminUser1712345678901 implements MigrationInterface {
+export class CreateBkSysadminUser1712345678901 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Check if sysadmin already exists
     const existingUser = await queryRunner.query(

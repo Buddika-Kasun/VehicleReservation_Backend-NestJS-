@@ -127,7 +127,7 @@ export class VehicleService {
       assignedDriverPrimary,
       assignedDriverSecondary,
       vehicleType,
-      seatingAvailability: createVehicleDto.seatingCapacity,
+      seatingAvailability: createVehicleDto.seatingCapacity - 1,
     });
 
     const savedVehicle = await this.vehicleRepository.save(vehicle);

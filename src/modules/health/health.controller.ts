@@ -1,14 +1,16 @@
 import { Controller, Get } from "@nestjs/common";
+import { Public } from "src/common/decorators/public.decorator";
 
 @Controller()
+@Public()
 export class HealthController {
 
-  @Get('/')
+  @Get()
   rootHealth() {
     return this.healthCheck();
   }
 
-  @Get('/health')
+  @Get('health')
   healthCheck() {
     return {
       status: 'ok',

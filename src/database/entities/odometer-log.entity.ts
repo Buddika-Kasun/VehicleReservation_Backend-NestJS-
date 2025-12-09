@@ -1,4 +1,3 @@
-
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, CreateDateColumn } from 'typeorm';
 import { Vehicle } from './vehicle.entity';
 import { Trip } from './trip.entity';
@@ -25,5 +24,14 @@ export class OdometerLog {
   timestamp: Date;
 
   @ManyToOne(() => User, { nullable: true })
-  recordedBy?: User;
+  startRecordedBy?: User;  // Changed from recordedBy
+
+  @ManyToOne(() => User, { nullable: true })
+  endRecordedBy?: User;   // New field
+
+  @CreateDateColumn()
+  startRecordedAt?: Date; // New field
+
+  @CreateDateColumn()
+  endRecordedAt?: Date;   // New field
 }

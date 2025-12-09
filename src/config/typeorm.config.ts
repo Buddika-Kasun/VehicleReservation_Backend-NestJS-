@@ -1,26 +1,18 @@
-// src/config/typeorm.config.ts
 import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
+import * as path from 'path';
 
 config();
 
-// Force looking only at .js files in production
-const fileExtension = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
-const baseDir = process.env.NODE_ENV === 'production' ? 'dist' : 'src';
+const isProd = process.env.NODE_ENV === 'production';
 
-// Check if we're in production (compiled JS) or development (TypeScript)
-//const isCompiled = __filename.endsWith('.js');
-//const fileExtension = isCompiled ? 'js' : 'ts';
-//const baseDir = isCompiled ? 'dist' : 'src';
-
-const dataSource = new DataSource({
+export default new DataSource({
   type: 'postgres',
-  
-  // Use DATABASE_URL for Railway, individual vars for local
-  ...(process.env.DATABASE_URL 
+
+  ...(process.env.DATABASE_URL
     ? {
         url: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        ssl: isProd ? { rejectUnauthorized: false } : false,
       }
     : {
         host: process.env.DB_HOST || 'localhost',
@@ -28,17 +20,12 @@ const dataSource = new DataSource({
         username: process.env.DB_USER || 'postgres',
         password: process.env.DB_PASS || 'postgres',
         database: process.env.DB_NAME || 'vrapp_db',
-      }
-  ),
-  
-  // Dynamic paths based on environment
-  entities: [`${baseDir}/**/*.entity.${fileExtension}`],
-  migrations: [`${baseDir}/database/migrations/*.${fileExtension}`],
-  migrationsTableName: 'migrations',
-  
-  // NEVER synchronize in production
-  synchronize: process.env.NODE_ENV !== 'production',
-  logging: process.env.NODE_ENV !== 'production',
-});
+      }),
 
-export default dataSource;
+  // *** IMPORTANT: SAME PATHS AS NEST APP ***
+  entities: [path.join(__dirname, '..', '**', '*.entity.{ts,js}')],
+  migrations: [path.join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+
+  migrationsTableName: 'migrations',
+  synchronize: false,
+});

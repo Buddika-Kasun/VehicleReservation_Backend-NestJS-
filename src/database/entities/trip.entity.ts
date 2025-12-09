@@ -13,6 +13,7 @@ export enum TripStatus {
   DRAFT = 'draft',
   PENDING = 'pending',
   APPROVED = 'approved',
+  READ = 'read',
   REJECTED = 'rejected',
   ONGOING = 'ongoing',
   COMPLETED = 'completed',

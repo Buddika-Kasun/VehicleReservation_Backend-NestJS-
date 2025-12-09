@@ -5,12 +5,7 @@ import { Public } from "src/common/decorators/public.decorator";
 @Public()
 export class HealthController {
 
-  @Get()
-  rootHealth() {
-    return this.healthCheck();
-  }
-
-  @Get('health')
+  @Get(['','health'])
   healthCheck() {
     return {
       status: 'ok',

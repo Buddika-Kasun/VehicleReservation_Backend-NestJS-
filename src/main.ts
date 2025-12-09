@@ -1,59 +1,27 @@
-/*
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
-
-  const config = new DocumentBuilder()
-    .setTitle('NestJS Boilerplate')
-    .setDescription('API docs')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
-
-  //await app.listen(process.env.PORT || 3000);
-  await app.listen( || 3000);
-  console.log(`Server running on http://localhost:${process.env.PORT || 3000}`);
-}
-
-bootstrap();
-*/
-
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
-const fs = require('fs');
-const path = require('path');
+import * as fs from 'fs';
+import * as path from 'path';
 
 async function bootstrap() {
+
+  const hostDomain = process.env.HOST || 'your-production-domain.com';
+
   // Ensure uploads directory exists with proper permissions
   const uploadPath = process.env.UPLOAD_PATH || './uploads';
   const fullPath = path.isAbsolute(uploadPath) ? uploadPath : path.join(process.cwd(), uploadPath);
-  
+
   try {
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true, mode: 0o777 });
       console.log(`Created uploads directory: ${fullPath}`);
     }
-    
-    // Set permissions
     fs.chmodSync(fullPath, 0o777);
   } catch (error) {
     console.warn(`Could not create uploads directory: ${error.message}`);
@@ -61,23 +29,14 @@ async function bootstrap() {
     process.env.UPLOAD_PATH = '/tmp/uploads';
   }
 
-  //const app = await NestFactory.create(AppModule);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
-  
-  // Get configuration values
-  const port = configService.get<number>('port');
-  const environment = configService.get<string>('environment');
+
+  const port = configService.get<number>('port') || 3000;
+  const environment = configService.get<string>('environment') || process.env.NODE_ENV || 'development';
 
   // Global settings
   app.setGlobalPrefix('api/v1');
-  /*app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-    }),
-  );*/
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -86,25 +45,15 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  console.log('✅ Global ValidationPipe enabled');
   app.useGlobalFilters(new AllExceptionsFilter());
-  //app.useGlobalInterceptors(new TransformInterceptor());
 
-  // Serve static files from uploads directory
-  /*
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/',
-  });
-  */
-
-  // Swagger documentation
+  // Swagger docs
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Vehicle Reservation API')
     .setDescription('Vehicle Reservation System API Documentation')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
@@ -114,9 +63,11 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  
-  console.log(`🚀 Server running in ${environment} mode on http://localhost:${port}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
+
+  // Log URLs in a safe way
+  const host = environment === 'production' ? hostDomain : 'localhost';
+  console.log(`🚀 Server running in ${environment} mode on http://${host}:${port}`);
+  console.log(`📚 API Documentation: http://${host}:${port}/api/docs`);
 }
 
 bootstrap();

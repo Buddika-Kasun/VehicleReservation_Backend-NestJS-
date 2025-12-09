@@ -11,7 +11,7 @@ import * as path from 'path';
 
 async function bootstrap() {
 
-  const hostDomain = process.env.HOST || 'your-production-domain.com';
+  const host = process.env.HOST || 'your-production-domain.com';
 
   // Ensure uploads directory exists with proper permissions
   const uploadPath = process.env.UPLOAD_PATH || './uploads';
@@ -65,9 +65,10 @@ async function bootstrap() {
   await app.listen(port);
 
   // Log URLs in a safe way
-  const host = environment === 'production' ? hostDomain : 'localhost';
-  console.log(`🚀 Server running in ${environment} mode on http://${host}:${port}`);
-  console.log(`📚 API Documentation: http://${host}:${port}/api/docs`);
+  const url = environment === 'production' ? host : `http://localhost:${port}`;
+
+  console.log(`🚀 Server running in ${environment} mode on ${url}`);
+  console.log(`📚 API Documentation: ${url}/api/docs`);
 }
 
 bootstrap();

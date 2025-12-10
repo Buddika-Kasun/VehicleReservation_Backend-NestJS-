@@ -14,6 +14,7 @@ export enum TripStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   READ = 'read',
+  FINISHED = 'finished',
   REJECTED = 'rejected',
   ONGOING = 'ongoing',
   COMPLETED = 'completed',
@@ -76,6 +77,9 @@ export class Trip {
   @Column({ type: 'int', default: 1 })
   passengerCount: number;
 
+  @Column({ type: 'int', nullable: true })
+  endPassengerCount: number;
+
   @ManyToOne(() => User, { nullable: true })
   selectedIndividual?: User;
 
@@ -114,11 +118,11 @@ export class Trip {
   @Column('decimal', { precision: 12, scale: 2, nullable: true })
   mileage?: number;
 
-  @Column('decimal', { precision: 12, scale: 2, nullable: true })
-  startOdometer?: number;
+  //@Column('decimal', { precision: 12, scale: 2, nullable: true })
+  //startOdometer?: number;
 
-  @Column('decimal', { precision: 12, scale: 2, nullable: true })
-  endOdometer?: number;
+  //@Column('decimal', { precision: 12, scale: 2, nullable: true })
+  //endOdometer?: number;
 
   // Relations
   @OneToOne(() => Approval, approval => approval.trip, { 

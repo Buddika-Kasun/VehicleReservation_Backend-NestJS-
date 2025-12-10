@@ -183,4 +183,5 @@ export class ApprovalConfigService {
       { approvalConfig: updated }
     );
   }
+
 }

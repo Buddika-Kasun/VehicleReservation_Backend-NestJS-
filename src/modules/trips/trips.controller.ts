@@ -278,4 +278,139 @@ export class TripsController {
     );
   }
 
+  @Post('for-meter-reading')
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Get trips that need meter reading' })
+  @ApiResponse({ status: 200, description: 'Trips retrieved successfully' })
+  async getTripsForMeterReading(
+    @Body() filterDto: any,
+    @GetUser() user: any
+  ) {
+    return await this.tripsService.getTripsForMeterReading(filterDto);
+  }
+
+  @Post('record-odometer/:tripId')
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Record odometer reading for a trip' })
+  @ApiResponse({ status: 200, description: 'Odometer reading recorded successfully' })
+  async recordOdometerReading(
+    @Param('tripId') tripId: number,
+    @Body() recordDto: { reading: number; readingType: 'start' | 'end' },
+    @GetUser() user: any
+  ) {
+    return await this.tripsService.recordOdometerReading(
+      tripId,
+      user.userId,
+      recordDto.reading,
+      recordDto.readingType
+    );
+  }
+
+  @Post('mid-trip-approval/:tripId')
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Handle mid-trip approval scenario' })
+  @ApiResponse({ status: 200, description: 'Mid-trip approval handled successfully' })
+  async handleMidTripApproval(
+    @Param('tripId') tripId: number,
+    @GetUser() user: any
+  ) {
+    return await this.tripsService.handleMidTripApproval(tripId, user.userId);
+  }
+
+  @Post('already-read')
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Get trips that have been read' })
+  @ApiResponse({ status: 200, description: 'Read trips retrieved successfully' })
+  async getAlreadyReadTrips(
+    @Body() filterDto: any,
+    @GetUser() user: any
+  ) {
+    return await this.tripsService.getAlreadyReadTrips(filterDto);
+  }
+
+
+@Post('driver-assigned')
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@ApiOperation({ summary: 'Get driver assigned trips' })
+@ApiResponse({ status: 200, description: 'Driver trips retrieved successfully' })
+async getDriverAssignedTrips(
+  @Body() filterDto: any,
+  @GetUser() user: any
+) {
+  // Use user.userId as the driverId since only drivers can access this endpoint
+  return await this.tripsService.getDriverAssignedTrips(user.userId, filterDto);
+}
+
+
+@Post('start/:id')
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@ApiOperation({ summary: 'Start a trip' })
+@ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+@ApiResponse({ 
+  status: 200, 
+  description: 'Trip started successfully',
+  schema: {
+    type: 'object',
+    properties: {
+      success: { type: 'boolean', example: true },
+      message: { type: 'string', example: 'Trip started successfully' },
+      data: {
+        type: 'object',
+        properties: {
+          tripId: { type: 'number', example: 1 },
+          status: { type: 'string', example: 'ongoing' },
+          startedAt: { type: 'string', format: 'date-time' },
+        }
+      },
+      timestamp: { type: 'string', format: 'date-time' },
+      statusCode: { type: 'number', example: 200 }
+    }
+  }
+})
+@ApiResponse({ status: 400, description: 'Cannot start trip' })
+@ApiResponse({ status: 403, description: 'Not authorized' })
+@ApiResponse({ status: 404, description: 'Trip not found' })
+async startTrip(
+  @Param('id', ParseIntPipe) tripId: number,
+  @GetUser() user: any
+) {
+  return await this.tripsService.startTrip(tripId, user.userId);
+}
+
+@Post('end/:id')
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@ApiOperation({ summary: 'End a trip' })
+@ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+@ApiResponse({ 
+  status: 200, 
+  description: 'Trip ended successfully',
+  schema: {
+    type: 'object',
+    properties: {
+      success: { type: 'boolean', example: true },
+      message: { type: 'string', example: 'Trip ended successfully' },
+      data: {
+        type: 'object',
+        properties: {
+          tripId: { type: 'number', example: 1 },
+          status: { type: 'string', example: 'completed' },
+          endedAt: { type: 'string', format: 'date-time' },
+          seatsRestored: { type: 'number', example: 3 },
+        }
+      },
+      timestamp: { type: 'string', format: 'date-time' },
+      statusCode: { type: 'number', example: 200 }
+    }
+  }
+})
+@ApiResponse({ status: 400, description: 'Cannot end trip' })
+@ApiResponse({ status: 403, description: 'Not authorized' })
+@ApiResponse({ status: 404, description: 'Trip not found' })
+async endTrip(
+  @Param('id', ParseIntPipe) tripId: number,
+  @GetUser() user: any
+) {
+  return await this.tripsService.endTrip(tripId, user.userId);
+}
+
 }

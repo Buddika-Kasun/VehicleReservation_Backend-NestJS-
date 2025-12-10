@@ -3663,9 +3663,6 @@ private async formatDriverTrips(trips: Trip[], driverId: number): Promise<any[]>
   return formattedTrips;
 }
 
-
-// trips.service.ts - Add these methods
-
 async startTrip(tripId: number, userId: number): Promise<any> {
   // Get trip with all necessary relations
   const trip = await this.tripRepo.findOne({

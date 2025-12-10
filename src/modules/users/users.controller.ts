@@ -128,6 +128,15 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Post('get-all-by-status')
+  async getUsersByStatus(
+    @Body() body: { status?: string; page?: number; limit?: number }
+  ) {
+    const { status, page = 1, limit = 20 } = body;
+    
+    return this.usersService.findAllByStatus(status, page, limit);
+  }
+
   @Get('get-all-by-department/:id')
   @ApiOperation({ summary: 'Get all users by department' })
   @ApiResponse({ 
@@ -141,6 +150,21 @@ export class UsersController {
     @Param('id', ParseIntPipe) depId: number,
   ) {
     return this.usersService.findAllByDepartment(depId);
+  }
+
+  @Get('get-all-by-role/:role')
+  @ApiOperation({ summary: 'Get all users by department' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Users retrieved successfully.
+    `
+  })
+  async getAllByRole(
+    @Param('role') role: string,
+  ) {
+    return this.usersService.findAllByRole(role);
   }
 
   @Get('search')

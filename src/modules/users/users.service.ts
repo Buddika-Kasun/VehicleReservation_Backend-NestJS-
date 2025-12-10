@@ -215,9 +215,48 @@ export class UsersService {
     );
   }
 
+  async findAllByStatus(status?: string, page: number = 1, limit: number = 20) {
+    // Calculate skip for pagination
+    const skip = (page - 1) * limit;
+    
+    // Build where condition
+    const whereCondition: any = {
+      role: Not(UserRole.SYSADMIN),
+    };
+    
+    // Add status filter if provided
+    if (status && status.toLowerCase() !== 'all') {
+      whereCondition.isApproved = status.toLowerCase();
+    }
+
+    // Execute query with pagination
+    const [users, total] = await this.userRepo.findAndCount({
+      where: whereCondition,
+      relations: ['company', 'department'],
+      order: { id: 'DESC' },
+      take: limit,
+      skip: skip,
+    });
+
+    const sanitizedUsers = sanitizeUsers(users);
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: sanitizedUsers,
+        total: total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      }
+    );
+  }
+
   async findAllByDepartment(departmentId?: number) {
     const whereCondition = departmentId
-      ? { department: { id: departmentId }, role: Not(UserRole.SYSADMIN) }
+      ? { department: { id: departmentId }, role: Not(UserRole.SYSADMIN), isApproved: Status.APPROVED }
       : {};
 
     const users = await this.userRepo.find({
@@ -240,6 +279,39 @@ export class UsersService {
     );
   }
 
+  async findAllByRole(roleName?: string) {
+    // Create where condition properly
+    const whereCondition: any = { isApproved: Status.APPROVED };
+    
+    if (roleName && roleName.trim() !== '') {
+      // Validate role exists in enum
+      const validRoles = Object.values(UserRole);
+      if (!validRoles.includes(roleName as UserRole)) {
+        throw new BadRequestException(`Invalid role: ${roleName}`);
+      }
+      whereCondition.role = roleName;
+    }
+
+    const users = await this.userRepo.find({
+      where: whereCondition,
+      order: { createdAt: 'DESC' },
+    });
+
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role, // Include role in response if needed
+    }));
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: minimalUsers,
+        total: users.length, // Use original users length
+      },
+    );
+  }
+
   async findAllBySearching(search?: string) {
     // Create query builder
     const queryBuilder = this.userRepo
@@ -247,7 +319,9 @@ export class UsersService {
       .leftJoinAndSelect('user.company', 'company')
       .leftJoinAndSelect('user.department', 'department')
       .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
-      .orderBy('user.createdAt', 'DESC');
+      .andWhere('user.isApproved = :status', { status: Status.APPROVED })
+      .orderBy('user.createdAt', 'DESC')
+      .take(5);  // limit
 
     // Add search conditions if search term is provided
     if (search && search.trim()) {
@@ -289,8 +363,10 @@ export class UsersService {
       .leftJoinAndSelect('user.company', 'company')
       .leftJoinAndSelect('user.department', 'department')
       .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .andWhere('user.isApproved = :status', { status: Status.APPROVED })
       .andWhere('user.authenticationLevel = :authLevel', { authLevel: 0 }) // Add this line
-      .orderBy('user.createdAt', 'DESC');
+      .orderBy('user.createdAt', 'DESC')
+      .take(10);  // limit
 
     // Add search conditions if search term is provided
     if (search && search.trim()) {
@@ -386,7 +462,6 @@ export class UsersService {
       },
     );
   }
-
 
   async findByEmail(email: string) {
     const user = await this.userRepo.findOne({ where: { email, role: Not(UserRole.SYSADMIN) } });

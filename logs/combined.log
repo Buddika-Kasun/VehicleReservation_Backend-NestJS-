@@ -19136,3 +19136,441 @@
 {"context":"NotificationsGateway","level":"info","message":"Sent 4 notifications to user 9 (4 unread)","timestamp":"2025-12-14T15:32:18.420Z"}
 {"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:32:18.597Z"}
 {"context":"NotificationsGateway","level":"debug","message":"Sent unread count 4 to user 9","timestamp":"2025-12-14T15:32:18.599Z"}
+{"context":"NestFactory","level":"info","message":"Starting Nest application...","timestamp":"2025-12-14T15:35:52.860Z"}
+{"context":"InstanceLoader","level":"info","message":"AppModule dependencies initialized","timestamp":"2025-12-14T15:35:52.867Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.868Z"}
+{"context":"InstanceLoader","level":"info","message":"PassportModule dependencies initialized","timestamp":"2025-12-14T15:35:52.869Z"}
+{"context":"InstanceLoader","level":"info","message":"CommonModule dependencies initialized","timestamp":"2025-12-14T15:35:52.871Z"}
+{"context":"InstanceLoader","level":"info","message":"HttpModule dependencies initialized","timestamp":"2025-12-14T15:35:52.874Z"}
+{"context":"InstanceLoader","level":"info","message":"FeedbackModule dependencies initialized","timestamp":"2025-12-14T15:35:52.875Z"}
+{"context":"InstanceLoader","level":"info","message":"ReportsModule dependencies initialized","timestamp":"2025-12-14T15:35:52.877Z"}
+{"context":"InstanceLoader","level":"info","message":"AuditModule dependencies initialized","timestamp":"2025-12-14T15:35:52.878Z"}
+{"context":"InstanceLoader","level":"info","message":"ConfigHostModule dependencies initialized","timestamp":"2025-12-14T15:35:52.880Z"}
+{"context":"InstanceLoader","level":"info","message":"DiscoveryModule dependencies initialized","timestamp":"2025-12-14T15:35:52.882Z"}
+{"context":"InstanceLoader","level":"info","message":"ConfigModule dependencies initialized","timestamp":"2025-12-14T15:35:52.883Z"}
+{"context":"InstanceLoader","level":"info","message":"ConfigModule dependencies initialized","timestamp":"2025-12-14T15:35:52.883Z"}
+{"context":"InstanceLoader","level":"info","message":"ScheduleModule dependencies initialized","timestamp":"2025-12-14T15:35:52.884Z"}
+{"context":"InstanceLoader","level":"info","message":"EventEmitterModule dependencies initialized","timestamp":"2025-12-14T15:35:52.885Z"}
+{"context":"RedisService","level":"info","message":"Connecting to Redis: redis://default:****@redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com:15612","timestamp":"2025-12-14T15:35:52.886Z"}
+{"context":"InstanceLoader","level":"info","message":"RedisModule dependencies initialized","timestamp":"2025-12-14T15:35:52.887Z"}
+{"context":"InstanceLoader","level":"info","message":"JwtModule dependencies initialized","timestamp":"2025-12-14T15:35:52.888Z"}
+{"context":"InstanceLoader","level":"info","message":"PubSubModule dependencies initialized","timestamp":"2025-12-14T15:35:52.888Z"}
+{"context":"InstanceLoader","level":"info","message":"RoutesModule dependencies initialized","timestamp":"2025-12-14T15:35:52.890Z"}
+{"context":"InstanceLoader","level":"info","message":"LocationsModule dependencies initialized","timestamp":"2025-12-14T15:35:52.891Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmCoreModule dependencies initialized","timestamp":"2025-12-14T15:35:52.892Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.892Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.893Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.894Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.895Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.899Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.899Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.901Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.902Z"}
+{"context":"InstanceLoader","level":"info","message":"TypeOrmModule dependencies initialized","timestamp":"2025-12-14T15:35:52.904Z"}
+{"context":"InstanceLoader","level":"info","message":"HealthModule dependencies initialized","timestamp":"2025-12-14T15:35:52.906Z"}
+{"context":"InstanceLoader","level":"info","message":"UsersModule dependencies initialized","timestamp":"2025-12-14T15:35:52.908Z"}
+{"context":"InstanceLoader","level":"info","message":"CompanyModule dependencies initialized","timestamp":"2025-12-14T15:35:52.909Z"}
+{"context":"InstanceLoader","level":"info","message":"VehicleModule dependencies initialized","timestamp":"2025-12-14T15:35:52.911Z"}
+{"context":"InstanceLoader","level":"info","message":"TripsModule dependencies initialized","timestamp":"2025-12-14T15:35:52.913Z"}
+{"context":"InstanceLoader","level":"info","message":"CostCenterModule dependencies initialized","timestamp":"2025-12-14T15:35:52.914Z"}
+{"context":"InstanceLoader","level":"info","message":"DepartmentModule dependencies initialized","timestamp":"2025-12-14T15:35:52.916Z"}
+{"context":"InstanceLoader","level":"info","message":"ValidationModule dependencies initialized","timestamp":"2025-12-14T15:35:52.917Z"}
+{"context":"InstanceLoader","level":"info","message":"ApprovalConfigModule dependencies initialized","timestamp":"2025-12-14T15:35:52.919Z"}
+{"context":"InstanceLoader","level":"info","message":"AuthModule dependencies initialized","timestamp":"2025-12-14T15:35:52.920Z"}
+{"context":"InstanceLoader","level":"info","message":"NotificationsModule dependencies initialized","timestamp":"2025-12-14T15:35:52.922Z"}
+{"context":"RedisService","level":"info","message":"Redis Publisher connected","timestamp":"2025-12-14T15:35:52.925Z"}
+{"context":"NotificationsGateway","level":"info","message":"WebSocket Notifications Gateway initialized","timestamp":"2025-12-14T15:35:52.927Z"}
+{"context":"NotificationsGateway","level":"info","message":"Redis listeners initialized for all notification types","timestamp":"2025-12-14T15:35:52.929Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"get-initial-notifications\" message","timestamp":"2025-12-14T15:35:52.931Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"get-unread-count\" message","timestamp":"2025-12-14T15:35:52.932Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"mark-as-read\" message","timestamp":"2025-12-14T15:35:52.933Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"mark-all-read\" message","timestamp":"2025-12-14T15:35:52.934Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"delete-notification\" message","timestamp":"2025-12-14T15:35:52.935Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"clear-all-notifications\" message","timestamp":"2025-12-14T15:35:52.936Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"ping\" message","timestamp":"2025-12-14T15:35:52.937Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"join-room\" message","timestamp":"2025-12-14T15:35:52.937Z"}
+{"context":"WebSocketsController","level":"info","message":"NotificationsGateway subscribed to the \"leave-room\" message","timestamp":"2025-12-14T15:35:52.938Z"}
+{"context":"RoutesResolver","level":"info","message":"CleanupController {/api/v1/notifications/cleanup}:","timestamp":"2025-12-14T15:35:52.938Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/cleanup/manual, POST} route","timestamp":"2025-12-14T15:35:52.940Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/cleanup/stats, GET} route","timestamp":"2025-12-14T15:35:52.941Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/cleanup/user/:userId, POST} route","timestamp":"2025-12-14T15:35:52.942Z"}
+{"context":"RoutesResolver","level":"info","message":"NotificationsController {/api/v1/notifications}:","timestamp":"2025-12-14T15:35:52.942Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications, GET} route","timestamp":"2025-12-14T15:35:52.946Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/unread-count, GET} route","timestamp":"2025-12-14T15:35:52.947Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/:id, GET} route","timestamp":"2025-12-14T15:35:52.947Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications, POST} route","timestamp":"2025-12-14T15:35:52.948Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/broadcast, POST} route","timestamp":"2025-12-14T15:35:52.949Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/mark-as-read, PUT} route","timestamp":"2025-12-14T15:35:52.950Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/mark-all-read, PUT} route","timestamp":"2025-12-14T15:35:52.950Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/:id/read, PUT} route","timestamp":"2025-12-14T15:35:52.951Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.951Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications, DELETE} route","timestamp":"2025-12-14T15:35:52.952Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/stats/daily, GET} route","timestamp":"2025-12-14T15:35:52.952Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/notifications/types/count, GET} route","timestamp":"2025-12-14T15:35:52.953Z"}
+{"context":"RoutesResolver","level":"info","message":"AuthController {/api/v1/auth}:","timestamp":"2025-12-14T15:35:52.953Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/auth/register, POST} route","timestamp":"2025-12-14T15:35:52.954Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/auth/login, POST} route","timestamp":"2025-12-14T15:35:52.954Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/auth/refresh, POST} route","timestamp":"2025-12-14T15:35:52.955Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/auth/logout, POST} route","timestamp":"2025-12-14T15:35:52.956Z"}
+{"context":"RoutesResolver","level":"info","message":"UsersController {/api/v1/user}:","timestamp":"2025-12-14T15:35:52.956Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/create, POST} route","timestamp":"2025-12-14T15:35:52.957Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/approve/:id, PUT} route","timestamp":"2025-12-14T15:35:52.958Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/reject/:id, PUT} route","timestamp":"2025-12-14T15:35:52.959Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/get-all, GET} route","timestamp":"2025-12-14T15:35:52.960Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/get-all-by-status, POST} route","timestamp":"2025-12-14T15:35:52.960Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/get-all-by-department/:id, GET} route","timestamp":"2025-12-14T15:35:52.961Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/get-all-by-role/:role, GET} route","timestamp":"2025-12-14T15:35:52.961Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/search, GET} route","timestamp":"2025-12-14T15:35:52.962Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/get-user-by-approval, GET} route","timestamp":"2025-12-14T15:35:52.962Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/search-approval, GET} route","timestamp":"2025-12-14T15:35:52.963Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/set-approval/:id, PUT} route","timestamp":"2025-12-14T15:35:52.964Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/profile, GET} route","timestamp":"2025-12-14T15:35:52.965Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/update/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.965Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/deactivate/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.966Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/activate/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.966Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/hard-delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.967Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/toggle-active/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.967Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/profile/picture-upload, POST} route","timestamp":"2025-12-14T15:35:52.967Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/profile/picture-update, PATCH} route","timestamp":"2025-12-14T15:35:52.968Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/profile/picture-remove, DELETE} route","timestamp":"2025-12-14T15:35:52.968Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/user/profile/picture-admin-change/:id, POST} route","timestamp":"2025-12-14T15:35:52.968Z"}
+{"context":"RoutesResolver","level":"info","message":"CompanyController {/api/v1/company}:","timestamp":"2025-12-14T15:35:52.969Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/create, POST} route","timestamp":"2025-12-14T15:35:52.969Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/get-all, GET} route","timestamp":"2025-12-14T15:35:52.969Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/search, GET} route","timestamp":"2025-12-14T15:35:52.970Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/get/:id, GET} route","timestamp":"2025-12-14T15:35:52.970Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/statistics/:id, GET} route","timestamp":"2025-12-14T15:35:52.971Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/update/:id, PUT} route","timestamp":"2025-12-14T15:35:52.971Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/deactivate/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.972Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/activate/:id, PATCH} route","timestamp":"2025-12-14T15:35:52.972Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/company/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.973Z"}
+{"context":"RoutesResolver","level":"info","message":"CostConfigurationController {/api/v1/cost-configurations}:","timestamp":"2025-12-14T15:35:52.974Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/create, POST} route","timestamp":"2025-12-14T15:35:52.974Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/get-all, GET} route","timestamp":"2025-12-14T15:35:52.975Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/get-current, GET} route","timestamp":"2025-12-14T15:35:52.977Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/get-history, GET} route","timestamp":"2025-12-14T15:35:52.978Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/get/:id, GET} route","timestamp":"2025-12-14T15:35:52.978Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/update/:id, PUT} route","timestamp":"2025-12-14T15:35:52.979Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-configurations/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.980Z"}
+{"context":"RoutesResolver","level":"info","message":"VehicleController {/api/v1/vehicle}:","timestamp":"2025-12-14T15:35:52.981Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/create, POST} route","timestamp":"2025-12-14T15:35:52.982Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/get-all, GET} route","timestamp":"2025-12-14T15:35:52.982Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/get/:id, GET} route","timestamp":"2025-12-14T15:35:52.983Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/update/:id, PUT} route","timestamp":"2025-12-14T15:35:52.984Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.985Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/assign-drivers, POST} route","timestamp":"2025-12-14T15:35:52.986Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/:id/toggle-status, PUT} route","timestamp":"2025-12-14T15:35:52.986Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/:id/odometer, PUT} route","timestamp":"2025-12-14T15:35:52.987Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/company/:companyId, GET} route","timestamp":"2025-12-14T15:35:52.988Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/available-vehicles, GET} route","timestamp":"2025-12-14T15:35:52.989Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/driver/:driverId, GET} route","timestamp":"2025-12-14T15:35:52.991Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/:id/picture-upload, POST} route","timestamp":"2025-12-14T15:35:52.991Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/vehicle/:id/picture-update, PATCH} route","timestamp":"2025-12-14T15:35:52.992Z"}
+{"context":"RoutesResolver","level":"info","message":"TripsController {/api/v1/trips}:","timestamp":"2025-12-14T15:35:52.993Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/available-vehicles, POST} route","timestamp":"2025-12-14T15:35:52.993Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/create, POST} route","timestamp":"2025-12-14T15:35:52.994Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/get-by-id/:id, GET} route","timestamp":"2025-12-14T15:35:52.995Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/status/:id, GET} route","timestamp":"2025-12-14T15:35:52.996Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/combined-trip/:id, GET} route","timestamp":"2025-12-14T15:35:52.996Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/cancel/:id, DELETE} route","timestamp":"2025-12-14T15:35:52.997Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/cancelable, GET} route","timestamp":"2025-12-14T15:35:52.998Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/user-trips, POST} route","timestamp":"2025-12-14T15:35:52.998Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/pending-approvals, POST} route","timestamp":"2025-12-14T15:35:52.999Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/approve/:tripId, POST} route","timestamp":"2025-12-14T15:35:53.000Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/reject/:tripId, POST} route","timestamp":"2025-12-14T15:35:53.000Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/for-meter-reading, POST} route","timestamp":"2025-12-14T15:35:53.000Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/record-odometer/:tripId, POST} route","timestamp":"2025-12-14T15:35:53.001Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/mid-trip-approval/:tripId, POST} route","timestamp":"2025-12-14T15:35:53.001Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/already-read, POST} route","timestamp":"2025-12-14T15:35:53.002Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/driver-assigned, POST} route","timestamp":"2025-12-14T15:35:53.002Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/start/:id, POST} route","timestamp":"2025-12-14T15:35:53.003Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/trips/end/:id, POST} route","timestamp":"2025-12-14T15:35:53.004Z"}
+{"context":"RoutesResolver","level":"info","message":"FeedbackController {/api/v1/feedback}:","timestamp":"2025-12-14T15:35:53.004Z"}
+{"context":"RoutesResolver","level":"info","message":"ReportsController {/api/v1/reports}:","timestamp":"2025-12-14T15:35:53.005Z"}
+{"context":"RoutesResolver","level":"info","message":"AuditController {/api/v1/audit}:","timestamp":"2025-12-14T15:35:53.005Z"}
+{"context":"RoutesResolver","level":"info","message":"CostCenterController {/api/v1/cost-center}:","timestamp":"2025-12-14T15:35:53.006Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/create, POST} route","timestamp":"2025-12-14T15:35:53.007Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/get-all, GET} route","timestamp":"2025-12-14T15:35:53.008Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/get/:id, GET} route","timestamp":"2025-12-14T15:35:53.009Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/update/:id, PUT} route","timestamp":"2025-12-14T15:35:53.009Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:53.010Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/cost-center/toggle-status/:id, PATCH} route","timestamp":"2025-12-14T15:35:53.010Z"}
+{"context":"RoutesResolver","level":"info","message":"DepartmentController {/api/v1/department}:","timestamp":"2025-12-14T15:35:53.011Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/create, POST} route","timestamp":"2025-12-14T15:35:53.011Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/get-all, GET} route","timestamp":"2025-12-14T15:35:53.011Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/get/:id, GET} route","timestamp":"2025-12-14T15:35:53.012Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/update/:id, PUT} route","timestamp":"2025-12-14T15:35:53.012Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:53.012Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/department/toggle-status/:id, PATCH} route","timestamp":"2025-12-14T15:35:53.013Z"}
+{"context":"RoutesResolver","level":"info","message":"ValidationController {/api/v1/validate}:","timestamp":"2025-12-14T15:35:53.013Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/validate/haveCompany, GET} route","timestamp":"2025-12-14T15:35:53.014Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/validate/haveCostCenter, GET} route","timestamp":"2025-12-14T15:35:53.014Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/validate/haveDepartment, GET} route","timestamp":"2025-12-14T15:35:53.015Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/validate/canRegisterUser, GET} route","timestamp":"2025-12-14T15:35:53.015Z"}
+{"context":"RoutesResolver","level":"info","message":"ApprovalConfigController {/api/v1/approval-config}:","timestamp":"2025-12-14T15:35:53.015Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/create, POST} route","timestamp":"2025-12-14T15:35:53.016Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/get-menu-approvals, GET} route","timestamp":"2025-12-14T15:35:53.016Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/get-all, GET} route","timestamp":"2025-12-14T15:35:53.017Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/get/:id, GET} route","timestamp":"2025-12-14T15:35:53.017Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/update/:id, PUT} route","timestamp":"2025-12-14T15:35:53.018Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/delete/:id, DELETE} route","timestamp":"2025-12-14T15:35:53.018Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/approval-config/toggle-status/:id, PATCH} route","timestamp":"2025-12-14T15:35:53.019Z"}
+{"context":"RoutesResolver","level":"info","message":"LocationsController {/api/v1/locations}:","timestamp":"2025-12-14T15:35:53.019Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/locations/search, GET} route","timestamp":"2025-12-14T15:35:53.020Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/locations/reverse, GET} route","timestamp":"2025-12-14T15:35:53.020Z"}
+{"context":"RoutesResolver","level":"info","message":"RoutesController {/api/v1/routes}:","timestamp":"2025-12-14T15:35:53.021Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/routes/calculate, POST} route","timestamp":"2025-12-14T15:35:53.021Z"}
+{"context":"RoutesResolver","level":"info","message":"HealthController {/api/v1/health}:","timestamp":"2025-12-14T15:35:53.022Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/health, GET} route","timestamp":"2025-12-14T15:35:53.023Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/health/database, GET} route","timestamp":"2025-12-14T15:35:53.023Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/health/redis, GET} route","timestamp":"2025-12-14T15:35:53.024Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/health/memory, GET} route","timestamp":"2025-12-14T15:35:53.025Z"}
+{"context":"RouterExplorer","level":"info","message":"Mapped {/api/v1/health/disk, GET} route","timestamp":"2025-12-14T15:35:53.025Z"}
+{"context":"RedisService","level":"info","message":"Redis connection established successfully","timestamp":"2025-12-14T15:35:53.026Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_REGISTERED","timestamp":"2025-12-14T15:35:53.027Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_APPROVED","timestamp":"2025-12-14T15:35:53.028Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_REJECTED","timestamp":"2025-12-14T15:35:53.028Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_UPDATED","timestamp":"2025-12-14T15:35:53.029Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_DELETED","timestamp":"2025-12-14T15:35:53.029Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_AUTH_LEVEL_CHANGED","timestamp":"2025-12-14T15:35:53.030Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_ROLE_CHANGED","timestamp":"2025-12-14T15:35:53.030Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_CREATED","timestamp":"2025-12-14T15:35:53.031Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_UPDATED","timestamp":"2025-12-14T15:35:53.032Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_COMPLETED","timestamp":"2025-12-14T15:35:53.032Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: ASSIGNMENT_CREATED","timestamp":"2025-12-14T15:35:53.033Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: ASSIGNMENT_UPDATED","timestamp":"2025-12-14T15:35:53.033Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: MESSAGE_RECEIVED","timestamp":"2025-12-14T15:35:53.034Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: SYSTEM_ALERT","timestamp":"2025-12-14T15:35:53.034Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_REGISTERED","timestamp":"2025-12-14T15:35:53.035Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_APPROVED","timestamp":"2025-12-14T15:35:53.035Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_REJECTED","timestamp":"2025-12-14T15:35:53.036Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_UPDATED","timestamp":"2025-12-14T15:35:53.036Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_DELETED","timestamp":"2025-12-14T15:35:53.037Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_AUTH_LEVEL_CHANGED","timestamp":"2025-12-14T15:35:53.037Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: USER_ROLE_CHANGED","timestamp":"2025-12-14T15:35:53.037Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_CREATED","timestamp":"2025-12-14T15:35:53.038Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_UPDATED","timestamp":"2025-12-14T15:35:53.038Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: TRIP_COMPLETED","timestamp":"2025-12-14T15:35:53.040Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: ASSIGNMENT_CREATED","timestamp":"2025-12-14T15:35:53.040Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: ASSIGNMENT_UPDATED","timestamp":"2025-12-14T15:35:53.041Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: MESSAGE_RECEIVED","timestamp":"2025-12-14T15:35:53.041Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: SYSTEM_ALERT","timestamp":"2025-12-14T15:35:53.042Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: user.*","timestamp":"2025-12-14T15:35:53.042Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: user.registered","timestamp":"2025-12-14T15:35:53.043Z"}
+{"context":"PubSubService","level":"debug","message":"Subscribed to user.*","timestamp":"2025-12-14T15:35:53.043Z"}
+{"context":"PubSubService","level":"debug","message":"Subscribed to user.registered","timestamp":"2025-12-14T15:35:53.044Z"}
+{"context":"NotificationsService","level":"info","message":"All notification subscriptions initialized","timestamp":"2025-12-14T15:35:53.044Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: user.registered","timestamp":"2025-12-14T15:35:53.044Z"}
+{"context":"PubSubService","level":"debug","message":"Subscribed to user.registered","timestamp":"2025-12-14T15:35:53.044Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: user.approved","timestamp":"2025-12-14T15:35:53.045Z"}
+{"context":"RedisService","level":"debug","message":"Subscribed to channel: user.approved","timestamp":"2025-12-14T15:35:53.045Z"}
+{"context":"PubSubService","level":"debug","message":"Subscribed to user.approved","timestamp":"2025-12-14T15:35:53.046Z"}
+{"context":"PubSubService","level":"debug","message":"Subscribed to user.approved","timestamp":"2025-12-14T15:35:53.046Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"Subscribed to user events","timestamp":"2025-12-14T15:35:53.047Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"Subscribed to user events","timestamp":"2025-12-14T15:35:53.047Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"User notifications handler initialized","timestamp":"2025-12-14T15:35:53.048Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"User notifications handler initialized","timestamp":"2025-12-14T15:35:53.048Z"}
+{"context":"NotificationsService","level":"info","message":"User notifications handler initialized","timestamp":"2025-12-14T15:35:53.049Z"}
+{"context":"NestApplication","level":"info","message":"Nest application successfully started","timestamp":"2025-12-14T15:35:53.049Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-sysadmin","timestamp":"2025-12-14T15:35:55.550Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-admin","timestamp":"2025-12-14T15:35:55.551Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-hr","timestamp":"2025-12-14T15:35:55.552Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-manager","timestamp":"2025-12-14T15:35:55.553Z"}
+{"context":"NotificationsGateway","level":"info","message":"User sysadmin (9) connected to WebSocket","timestamp":"2025-12-14T15:35:55.554Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Active connections: 1","timestamp":"2025-12-14T15:35:55.556Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:35:55.574Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 4 notifications for user 9","timestamp":"2025-12-14T15:35:55.594Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.608Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 4 notifications to user 9 (4 unread)","timestamp":"2025-12-14T15:35:55.611Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:35:55.617Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:35:55.655Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.734Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 4 to user 9","timestamp":"2025-12-14T15:35:55.739Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.836Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 4 to user 9","timestamp":"2025-12-14T15:35:55.838Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.847Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 4 to user 9","timestamp":"2025-12-14T15:35:55.850Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 4 notifications for user 9","timestamp":"2025-12-14T15:35:55.864Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.873Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 4 notifications to user 9 (4 unread)","timestamp":"2025-12-14T15:35:55.875Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 4 notifications for user 9","timestamp":"2025-12-14T15:35:55.935Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 4 unread notifications","timestamp":"2025-12-14T15:35:55.942Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 4 notifications to user 9 (4 unread)","timestamp":"2025-12-14T15:35:55.945Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:36:52.813Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:36:52.814Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:37:52.816Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:37:52.817Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:38:52.821Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:38:52.822Z"}
+{"level":"info","message":"Incoming request: /api/v1/approval-config/get-menu-approvals","timestamp":"2025-12-14T15:39:03.786Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:39:03 +0000] \"GET /api/v1/approval-config/get-menu-approvals HTTP/1.1\" 200 182 \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:39:03.927Z"}
+{"level":"info","message":"Incoming request: /api/v1/approval-config/get-menu-approvals","timestamp":"2025-12-14T15:39:06.293Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:39:06 +0000] \"GET /api/v1/approval-config/get-menu-approvals HTTP/1.1\" 200 182 \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:39:06.331Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 disconnected from WebSocket","timestamp":"2025-12-14T15:39:14.852Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Active connections: 0","timestamp":"2025-12-14T15:39:14.854Z"}
+{"level":"info","message":"Incoming request: /api/v1/validate/canRegisterUser","timestamp":"2025-12-14T15:39:21.781Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:39:21 +0000] \"GET /api/v1/validate/canRegisterUser HTTP/1.1\" 200 137 \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:39:21.871Z"}
+{"level":"info","message":"Incoming request: /api/v1/department/get-all","timestamp":"2025-12-14T15:39:21.875Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:39:21 +0000] \"GET /api/v1/department/get-all HTTP/1.1\" 200 - \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:39:21.906Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:39:52.831Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:39:52.831Z"}
+{"level":"info","message":"Incoming request: /api/v1/auth/register","timestamp":"2025-12-14T15:40:14.158Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"🔔 Handling user registration: security02 (ID: 38)","timestamp":"2025-12-14T15:40:14.887Z"}
+{"context":"UserNotificationsHandler","level":"warn","message":"Duplicate event detected and skipped: USER_REGISTERED:38:2025-12-14T15:40:14.383Z","timestamp":"2025-12-14T15:40:14.888Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: user.registered","timestamp":"2025-12-14T15:40:14.890Z"}
+{"context":"UserNotificationsHandler","level":"warn","message":"Duplicate event detected and skipped: USER_REGISTERED:38:2025-12-14T15:40:14.383Z","timestamp":"2025-12-14T15:40:14.891Z"}
+{"context":"UserNotificationsHandler","level":"warn","message":"Duplicate event detected and skipped: USER_REGISTERED:38:2025-12-14T15:40:14.383Z","timestamp":"2025-12-14T15:40:14.892Z"}
+{"context":"PubSubService","level":"debug","message":"Published event to user.registered","timestamp":"2025-12-14T15:40:14.892Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:40:14 +0000] \"POST /api/v1/auth/register HTTP/1.1\" 201 479 \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:40:14.896Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"📋 Found 7 approvers to notify","timestamp":"2025-12-14T15:40:14.908Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 61 for approver 8","timestamp":"2025-12-14T15:40:14.926Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.209Z"}
+{"context":"{\n  \"id\": 61,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:14.915Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:15.210Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:15.212Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.213Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.215Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 61 for approver 8","timestamp":"2025-12-14T15:40:15.216Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 62 for approver 18","timestamp":"2025-12-14T15:40:15.232Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.526Z"}
+{"context":"{\n  \"id\": 62,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:15.224Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:15.526Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:15.528Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.528Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.530Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 62 for approver 18","timestamp":"2025-12-14T15:40:15.530Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 63 for approver 16","timestamp":"2025-12-14T15:40:15.542Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.817Z"}
+{"context":"{\n  \"id\": 63,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:15.535Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:15.818Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:15.819Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.820Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:15.823Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 63 for approver 16","timestamp":"2025-12-14T15:40:15.824Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 64 for approver 31","timestamp":"2025-12-14T15:40:15.838Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.166Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 64 for approver 31","timestamp":"2025-12-14T15:40:16.167Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.170Z"}
+{"context":"{\n  \"id\": 64,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:15.830Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:16.170Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:16.172Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.172Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 65 for approver 32","timestamp":"2025-12-14T15:40:16.181Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.494Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 65 for approver 32","timestamp":"2025-12-14T15:40:16.494Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.498Z"}
+{"context":"{\n  \"id\": 65,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:16.175Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:16.498Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:16.499Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.500Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 66 for approver 25","timestamp":"2025-12-14T15:40:16.510Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.816Z"}
+{"context":"{\n  \"id\": 66,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:16.503Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:16.816Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:16.817Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.818Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:16.819Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 66 for approver 25","timestamp":"2025-12-14T15:40:16.820Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"💾 Saved notification 67 for approver 9","timestamp":"2025-12-14T15:40:16.834Z"}
+{"context":"RedisService","level":"debug","message":"Published to channel: USER_REGISTERED","timestamp":"2025-12-14T15:40:17.156Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"✅ Created notification 67 for approver 9","timestamp":"2025-12-14T15:40:17.157Z"}
+{"context":"UserNotificationsHandler","level":"info","message":"✅ Successfully created 7 notifications (0 skipped as duplicates) for user 38","timestamp":"2025-12-14T15:40:17.157Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:17.158Z"}
+{"context":"{\n  \"id\": 67,\n  \"type\": \"USER_REGISTERED\",\n  \"title\": \"New User Registration\",\n  \"message\": \"security02 has registered for an account\",\n  \"data\": {\n    \"userId\": 38,\n    \"username\": \"security02\",\n    \"email\": null,\n    \"role\": \"security\",\n    \"displayname\": \"Security02\",\n    \"phone\": \"1234545678\",\n    \"departmentId\": 6,\n    \"registrationDate\": \"2025-12-14T15:40:14.383Z\",\n    \"actionRequired\": true,\n    \"message\": \"New user registered and awaiting approval\"\n  },\n  \"read\": false,\n  \"createdAt\": \"2025-12-14T15:40:16.825Z\",\n  \"isPending\": true,\n  \"metadata\": {\n    \"screen\": \"/users/pending\",\n    \"action\": \"approve_user\",\n    \"userId\": 38,\n    \"autoAssign\": true,\n    \"requiresScreenRefresh\": true\n  }\n}","level":"debug","message":"Notification data:","timestamp":"2025-12-14T15:40:17.159Z"}
+{"context":"NotificationsGateway","level":"info","message":"Broadcast USER_REGISTERED notification to approver rooms","timestamp":"2025-12-14T15:40:17.160Z"}
+{"context":"NotificationsService","level":"debug","message":"Received Redis notification: USER_REGISTERED","timestamp":"2025-12-14T15:40:17.160Z"}
+{"level":"info","message":"Incoming request: /api/v1/auth/login","timestamp":"2025-12-14T15:40:26.295Z"}
+{"context":"HTTP","level":"info","message":"127.0.0.1 - - [14/Dec/2025:15:40:26 +0000] \"POST /api/v1/auth/login HTTP/1.1\" 201 - \"http://localhost:60436/\" \"Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36\"","timestamp":"2025-12-14T15:40:26.499Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-sysadmin","timestamp":"2025-12-14T15:40:29.166Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-admin","timestamp":"2025-12-14T15:40:29.167Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-hr","timestamp":"2025-12-14T15:40:29.168Z"}
+{"context":"NotificationsGateway","level":"debug","message":"User 9 joined role room: role-manager","timestamp":"2025-12-14T15:40:29.169Z"}
+{"context":"NotificationsGateway","level":"info","message":"User sysadmin (9) connected to WebSocket","timestamp":"2025-12-14T15:40:29.169Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Active connections: 1","timestamp":"2025-12-14T15:40:29.171Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:40:29.177Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 1 notifications for user 9","timestamp":"2025-12-14T15:40:29.187Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 1 unread notifications","timestamp":"2025-12-14T15:40:29.195Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 1 notifications to user 9 (1 unread)","timestamp":"2025-12-14T15:40:29.198Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 1 unread notifications","timestamp":"2025-12-14T15:40:29.228Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 1 to user 9","timestamp":"2025-12-14T15:40:29.230Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:40:35.739Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 1 notifications for user 9","timestamp":"2025-12-14T15:40:35.747Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 1 unread notifications","timestamp":"2025-12-14T15:40:35.770Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 1 notifications to user 9 (1 unread)","timestamp":"2025-12-14T15:40:35.778Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 1 unread notifications","timestamp":"2025-12-14T15:40:35.945Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 1 to user 9","timestamp":"2025-12-14T15:40:35.949Z"}
+{"context":"NotificationsService","level":"debug","message":"Marked notification 67 as read for user 9","timestamp":"2025-12-14T15:40:50.125Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 marked notification 67 as read","timestamp":"2025-12-14T15:40:50.126Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:40:52.835Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:40:52.836Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:41:52.846Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:41:52.846Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 requesting initial notifications","timestamp":"2025-12-14T15:42:18.178Z"}
+{"context":"NotificationsService","level":"debug","message":"Fetched 1 notifications for user 9","timestamp":"2025-12-14T15:42:18.273Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 0 unread notifications","timestamp":"2025-12-14T15:42:18.279Z"}
+{"context":"NotificationsGateway","level":"info","message":"Sent 1 notifications to user 9 (0 unread)","timestamp":"2025-12-14T15:42:18.280Z"}
+{"context":"NotificationsService","level":"debug","message":"User 9 has 0 unread notifications","timestamp":"2025-12-14T15:42:18.381Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Sent unread count 0 to user 9","timestamp":"2025-12-14T15:42:18.383Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:42:52.853Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:42:52.853Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:43:52.860Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:43:52.862Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:44:52.861Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T15:44:52.862Z"}
+{"context":"NotificationsGateway","level":"info","message":"User 9 disconnected from WebSocket","timestamp":"2025-12-14T15:45:23.057Z"}
+{"context":"NotificationsGateway","level":"debug","message":"Active connections: 0","timestamp":"2025-12-14T15:45:23.116Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["read ECONNRESET"],"timestamp":"2025-12-14T16:38:15.557Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 0","timestamp":"2025-12-14T16:38:15.604Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["read ECONNRESET"],"timestamp":"2025-12-14T16:38:15.639Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 0","timestamp":"2025-12-14T16:38:15.650Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T16:38:15.654Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T16:38:15.655Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 0","timestamp":"2025-12-14T16:38:16.456Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:16.608Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 0","timestamp":"2025-12-14T16:38:16.911Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:17.043Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 1","timestamp":"2025-12-14T16:38:17.528Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:17.698Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 1","timestamp":"2025-12-14T16:38:17.753Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:17.802Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 2","timestamp":"2025-12-14T16:38:17.951Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:18.048Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 2","timestamp":"2025-12-14T16:38:18.170Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:18.240Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 3","timestamp":"2025-12-14T16:38:18.366Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:18.410Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 3","timestamp":"2025-12-14T16:38:18.572Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:18.620Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 4","timestamp":"2025-12-14T16:38:18.772Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:18.809Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 4","timestamp":"2025-12-14T16:38:19.027Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:19.075Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 5","timestamp":"2025-12-14T16:38:19.285Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:19.321Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 5","timestamp":"2025-12-14T16:38:19.548Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:19.572Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 6","timestamp":"2025-12-14T16:38:19.859Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:19.863Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 6","timestamp":"2025-12-14T16:38:20.119Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:20.123Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 7","timestamp":"2025-12-14T16:38:20.487Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:20.488Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 7","timestamp":"2025-12-14T16:38:20.761Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:20.762Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 8","timestamp":"2025-12-14T16:38:21.202Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:21.203Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 8","timestamp":"2025-12-14T16:38:21.466Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:21.467Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 9","timestamp":"2025-12-14T16:38:22.018Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:22.019Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 9","timestamp":"2025-12-14T16:38:22.283Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:22.284Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 10","timestamp":"2025-12-14T16:38:22.923Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:22.924Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 10","timestamp":"2025-12-14T16:38:23.192Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:23.194Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 11","timestamp":"2025-12-14T16:38:23.933Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:23.962Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 11","timestamp":"2025-12-14T16:38:24.289Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:24.321Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 12","timestamp":"2025-12-14T16:38:25.280Z"}
+{"context":"RedisService","level":"error","message":"Redis Subscriber Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:25.288Z"}
+{"context":"RedisService","level":"warn","message":"Redis reconnection attempt 12","timestamp":"2025-12-14T16:38:25.483Z"}
+{"context":"RedisService","level":"error","message":"Redis Publisher Error:","stack":["getaddrinfo ENOTFOUND redis-15612.c44.us-east-1-2.ec2.cloud.redislabs.com"],"timestamp":"2025-12-14T16:38:25.484Z"}
+{"context":"RedisService","level":"info","message":"Redis Publisher connected","timestamp":"2025-12-14T16:38:27.337Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T16:39:15.657Z"}
+{"context":"UserNotificationsHandler","level":"debug","message":"Cleared processed events cache","timestamp":"2025-12-14T16:39:15.658Z"}

@@ -1,14 +1,13 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import { compare } from '../../common/utils/hash.util';
 import { ConfigService } from '@nestjs/config';
 import { ResponseService } from 'src/common/services/response.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
-import { LoginResponseDto, LogoutResponseDto, UserData } from './dto/authResponse.dto';
 import { Status } from 'src/database/entities/user.entity';
+import { UsersService } from 'src/modules/users/users.service';
+import { compare } from 'src/common/utils/hash.util';
+import { LoginDto } from '../dto/login.dto';
+import { LoginResponseDto, LogoutResponseDto, UserData } from '../dto/authResponse.dto';
 
 @Injectable()
 export class AuthService {

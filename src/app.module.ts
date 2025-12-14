@@ -21,15 +21,31 @@ import { ApprovalConfigModule } from './modules/approval/approvalConfig.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { RoutesModule } from './modules/routes/routes.module';
 import { HealthModule } from './modules/health/health.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { RedisModule } from './modules/shared/redis/redis.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { PubSubModule } from './modules/shared/pubsub/pubsub.module';
+import websocketConfig from './config/websocket.config';
 
 @Module({
   imports: [
     // ✅ Global Configuration
     ConfigModule.forRoot({ 
-      load: [ appConfig, jwtConfig],
+      load: [ appConfig, jwtConfig, websocketConfig],
       isGlobal: true, // Makes configuration available across all modules
       cache: true, // Caches the configuration for better performance
     }),
+
+    // ✅ Event Emitter for internal events
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+      maxListeners: 20,
+    }),
+
+    // ✅ Scheduled Tasks (for notification cleanup)
+    ScheduleModule.forRoot(),
 
     // ✅ Database Configuration (Async to use ConfigService if needed)
     TypeOrmModule.forRootAsync({
@@ -44,6 +60,15 @@ import { HealthModule } from './modules/health/health.module';
         signOptions: { expiresIn: config.get<string>('jwt.expiresIn') },
       }),
     }),
+
+    // ✅ Redis Module (Global)
+    RedisModule,
+
+    // ✅ PubSub Module
+    PubSubModule,
+
+    // ✅ Notifications Module
+    NotificationsModule, 
 
     AuthModule,
     UsersModule,

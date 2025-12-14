@@ -13,6 +13,8 @@ import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
 import { Department } from 'src/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
+import { PubSubService } from '../shared/pubsub/pubsub.service';
+import { UserEventTypes } from '../shared/pubsub/events/user.events';
 
 @Injectable()
 export class UsersService {
@@ -22,6 +24,7 @@ export class UsersService {
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private readonly responseService: ResponseService,
+    private readonly pubSubService: PubSubService,
   ) {}
 
   private async validateRequiredFields(dto: CreateUserDto): Promise<void> {
@@ -119,6 +122,18 @@ export class UsersService {
 
     const sanitizedUser: UserData = sanitizeUser(savedUser);
 
+    // 🔥 PUBLISH USER REGISTERED EVENT 🔥
+    await this.pubSubService.publish(UserEventTypes.USER_REGISTERED, {
+      userId: savedUser.id,
+      username: savedUser.username,
+      email: savedUser.email,
+      role: savedUser.role,
+      displayname: savedUser.displayname,
+      phone: savedUser.phone,
+      departmentId: savedUser.department?.id,
+      timestamp: new Date().toISOString(),
+    });
+
     return this.responseService.created(
       'User registered successfully. Please wait for admin approval.',
       {
@@ -127,7 +142,7 @@ export class UsersService {
     );
   }
 
-  async approveUser(id: number, dto: ApproveUserDto) {
+  async approveUser(id: number, dto: ApproveUserDto, reqUser: User) {
     const user = await this.userRepo.findOne({
       where: { id },
       relations: ['department'],
@@ -153,6 +168,8 @@ export class UsersService {
 
     const departmentId = Number(dto.departmentId);
 
+    const oldStatus = user.isApproved;
+
     user.isApproved = Status.APPROVED;
     user.isActive = true;
     user.department.id = departmentId;
@@ -162,6 +179,16 @@ export class UsersService {
 
     const sanitizedUser = sanitizeUser(approvedUser);
 
+    // 🔥 PUBLISH USER APPROVED EVENT 🔥
+    await this.pubSubService.publish(UserEventTypes.USER_APPROVED, {
+      userId: approvedUser.id,
+      username: approvedUser.username,
+      email: approvedUser.email,
+      role: approvedUser.role,
+      approvedBy: reqUser.id, // You can pass current admin ID
+      timestamp: new Date().toISOString(),
+    });
+
     return this.responseService.success(
       'User approved successfully',
       {
@@ -169,6 +196,86 @@ export class UsersService {
       }
     );
   }
+
+  async getUsersWithAuthLevelThree(): Promise<User[]> {
+    return this.userRepo.find({
+      where: {
+        authenticationLevel: 3,
+        isActive: true,
+        role: Not(UserRole.SYSADMIN), // Exclude sysadmin if needed
+      },
+      relations: ['department', 'company'],
+    });
+  }
+
+  /*
+  async getApprovers(): Promise<User[]> {
+    // Users who can approve: HR, ADMIN, SYSADMIN, and users with authLevel == 3
+    return this.userRepo.find({
+      where: [
+        { role: UserRole.HR, isActive: true, isApproved: Status.APPROVED },
+        { role: UserRole.ADMIN, isActive: true, isApproved: Status.APPROVED },
+        { role: UserRole.SYSADMIN, isActive: true, isApproved: Status.APPROVED },
+        { authenticationLevel: 3, isActive: true, isApproved: Status.APPROVED },
+      ],
+      relations: ['department', 'company'],
+    });
+  }
+  */
+  // Replace your getApprovers method in UsersService with this:
+
+async getApprovers(): Promise<User[]> {
+  try {
+    // Get users who can approve: HR, ADMIN, SYSADMIN, and users with authLevel == 3
+    const approvers = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere(
+        '(user.role IN (:...roles) OR user.authenticationLevel = :authLevel)',
+        {
+          roles: [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN],
+          authLevel: 3,
+        }
+      )
+      .leftJoinAndSelect('user.department', 'department')
+      .leftJoinAndSelect('user.company', 'company')
+      .getMany();
+
+    /*
+    this.logger.log(`Found ${approvers.length} approvers:`, approvers.map(a => ({
+      id: a.id,
+      username: a.username,
+      role: a.role,
+      authLevel: a.authenticationLevel,
+    })));
+    */
+
+    return approvers;
+  } catch (error) {
+    //this.logger.error('Error fetching approvers:', error);
+    throw error;
+  }
+}
+
+// Also add this helper method to check if a user is an approver
+async isApprover(userId: number): Promise<boolean> {
+  try {
+    const user = await this.userRepo.findOne({
+      where: { id: userId, isActive: true, isApproved: Status.APPROVED },
+    });
+
+    if (!user) return false;
+
+    return (
+      [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN].includes(user.role) ||
+      user.authenticationLevel === 3
+    );
+  } catch (error) {
+    //this.logger.error('Error checking if user is approver:', error);
+    return false;
+  }
+}
 
   async disapproveUser(id: number) {
     const user = await this.userRepo.findOne({ where: { id } });
@@ -400,7 +507,7 @@ export class UsersService {
     );
   }
 
-  async setUserApprove(id: number, state: boolean) {
+  async setUserApprove(id: number, state: boolean, reqUser: User) {
 
     const user = await this.userRepo.findOne({
       where: { id: id }
@@ -415,6 +522,8 @@ export class UsersService {
       );
     }
 
+    const oldAuthLevel = user.authenticationLevel;
+
     if(state === true) {
       user.authenticationLevel = 3;
     }
@@ -423,6 +532,15 @@ export class UsersService {
     }
 
     const savedUser = await this.userRepo.save(user);
+
+    if (oldAuthLevel !== savedUser.authenticationLevel) {
+      await this.pubSubService.publish(UserEventTypes.USER_AUTH_LEVEL_CHANGED, {
+        userId: savedUser.id,
+        authLevel: savedUser.authenticationLevel,
+        changedBy: reqUser.id,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     const minimalUser = {
       id: savedUser.id,
@@ -502,7 +620,7 @@ export class UsersService {
   }
 
   async findAuthByUsername(username: string) {
-    const user = await this.userRepo.findOne({ where: { username }, relations: ['company'] });
+    const user = await this.userRepo.findOne({ where: { username }, relations: ['company', 'department'] });
 
     return user;
   }

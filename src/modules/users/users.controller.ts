@@ -88,9 +88,10 @@ export class UsersController {
   @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   async approve(
     @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
     @Body() dto: ApproveUserDto
   ) {
-    return this.usersService.approveUser(id, dto);
+    return this.usersService.approveUser(id, dto, reqUser);
   }
 
   @Put('reject/:id')
@@ -210,9 +211,10 @@ export class UsersController {
   })
   async setApproveUser(
     @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
     @Body('state') state: boolean,
   ) {
-    return this.usersService.setUserApprove(id, state);
+    return this.usersService.setUserApprove(id, state, reqUser);
   }
 
 

@@ -5,9 +5,13 @@ import { UsersController } from './users.controller';
 import { User } from 'src/database/entities/user.entity';
 import { Company } from 'src/database/entities/company.entity';
 import { ResponseService } from 'src/common/services/response.service';
+import { PubSubModule } from '../shared/pubsub/pubsub.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Company])],
+  imports: [
+    TypeOrmModule.forFeature([User, Company]),
+    PubSubModule,
+  ],
   providers: [UsersService, ResponseService],
   controllers: [UsersController],
   exports: [UsersService],

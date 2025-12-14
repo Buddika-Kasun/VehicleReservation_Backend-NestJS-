@@ -8,6 +8,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { DepartmentListResponseDto, DepartmentResponseDto } from './dto/department-response.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('Departments API')
 @Controller('department')
@@ -27,7 +28,8 @@ export class DepartmentController {
   }
 
   @Get('get-all')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  //@Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Public()
   @ApiOperation({ summary: 'Get all departments' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })

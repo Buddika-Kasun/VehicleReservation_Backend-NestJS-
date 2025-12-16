@@ -1,8 +1,10 @@
-#FROM node:18-alpine
-FROM node:18-bullseye-slim
+FROM node:18-alpine
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
+
+# Install Node.js crypto polyfill globally (for packages like @nestjs/schedule)
+RUN npm install -g node-global-crypto
 
 WORKDIR /app
 

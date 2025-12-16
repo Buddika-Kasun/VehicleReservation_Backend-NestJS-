@@ -1,3 +1,9 @@
+import { webcrypto } from 'crypto';
+
+if (typeof (global as any).crypto === 'undefined') {
+    (global as any).crypto = webcrypto;
+}
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';

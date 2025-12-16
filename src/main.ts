@@ -249,7 +249,8 @@ async function bootstrap() {
   // ==================== SECURITY MIDDLEWARE ====================
   console.log(blue(`${ICONS.SECURITY} ${bold('Configuring security middleware...')}`));
   
-  if (isProduction) {
+  //if (isProduction) {
+  if (false) {
     app.use(helmet({
       contentSecurityPolicy: isProduction,
       crossOriginEmbedderPolicy: isProduction,

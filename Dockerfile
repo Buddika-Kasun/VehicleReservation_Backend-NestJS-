@@ -1,4 +1,5 @@
-FROM node:18-alpine
+#FROM node:18-alpine
+FROM node:18-bullseye-slim
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++

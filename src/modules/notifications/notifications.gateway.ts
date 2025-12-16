@@ -251,8 +251,8 @@ export class NotificationsGateway
   private getNotificationMessage(notification: Notification): string {
     switch (notification.type) {
       case NotificationType.USER_REGISTERED:
-        const username = notification.data?.username || 'A new user';
-        return `${username} has registered for an account`;
+        const displayName = notification.data?.displayname || 'A new user';
+        return `${displayName} has registered for an account`;
       case NotificationType.USER_APPROVED:
         return 'Your account has been approved by an administrator';
       case NotificationType.TRIP_CREATED:

@@ -151,6 +151,20 @@ export class Trip {
   @ManyToMany(() => Trip, trip => trip.conflictingTrips)
   linkedTrips?: Trip[];
 
+  // NEW
+  @Column({ default: false })
+  isScheduled: boolean;
+
+  @Column({ default: false })
+  isInstance: boolean;
+
+  @Column({ nullable: true })
+  masterTripId?: number;
+
+  @Column({ type: 'date', nullable: true })
+  instanceDate?: Date;
+  //
+
   @CreateDateColumn()
   createdAt: Date;
 

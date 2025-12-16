@@ -413,4 +413,34 @@ async endTrip(
   return await this.tripsService.endTrip(tripId, user.userId);
 }
 
+
+// Add to your TripsController
+
+@Post('approve-scheduled/:masterTripId')
+@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR)
+@ApiOperation({ summary: 'Approve a scheduled trip and all its instances' })
+@ApiParam({ name: 'masterTripId', description: 'Master Trip ID', type: Number })
+@ApiResponse({ status: 200, description: 'Scheduled trip approved successfully' })
+async approveScheduledTrip(
+  @Param('masterTripId', ParseIntPipe) masterTripId: number,
+  @Body() approveDto: { comment?: string },
+  @GetUser() user: any
+) {
+  return await this.tripsService.approveScheduledTrip(
+    masterTripId, 
+    user.userId, 
+    approveDto.comment
+  );
+}
+
+// Add to your TripsController
+
+@Get('with-instances/:id')
+@ApiOperation({ summary: 'Get trip with its instances (for scheduled trips)' })
+@ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+@ApiResponse({ status: 200, description: 'Trip with instances retrieved successfully' })
+async getTripWithInstances(@Param('id', ParseIntPipe) id: number) {
+  return await this.tripsService.getTripWithInstances(id);
+}
+
 }

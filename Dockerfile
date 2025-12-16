@@ -3,9 +3,6 @@ FROM node:18-alpine
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
-# Install Node.js crypto polyfill globally (for packages like @nestjs/schedule)
-RUN npm install -g node-global-crypto
-
 WORKDIR /app
 
 # Copy package files
@@ -22,8 +19,6 @@ RUN npm run build
 
 # Create uploads directory with proper permissions
 RUN mkdir -p /app/uploads && chmod -R 777 /app/uploads
-
-# Create temporary directory for uploads
 RUN mkdir -p /tmp/uploads && chmod -R 777 /tmp/uploads
 
 # Create non-root user for security
@@ -38,5 +33,5 @@ USER nodejs
 
 EXPOSE 3000
 
-# Start the application
-CMD ["node", "dist/main.js"]
+# Start with crypto flag for Alpine compatibility
+CMD ["node", "--experimental-global-webcrypto", "dist/main.js"]

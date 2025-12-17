@@ -477,13 +477,16 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   // ==================== STARTUP COMPLETE ====================
-  const url = isProduction ? host : `http://localhost:${port}`;
+  const protocol = isProduction ? 'https' : 'http';
+  const hostUrl = isProduction ? host : `localhost:${port}`;
+  const url = `${protocol}://${hostUrl}`;
 
   const wsProtocol = isProduction ? 'wss' : 'ws';
-  const wsUrl =
-  wsPort === port
+  const wsUrl = `${wsProtocol}://${hostUrl}`;
+  
+  /*wsPort === port
     ? `${wsProtocol}://localhost:${port}${wsPath}`
-    : `${wsProtocol}://localhost:${wsPort}${wsPath}`;
+    : `${wsProtocol}://localhost:${wsPort}${wsPath}`;*/
 
     
     console.log(gray('─'.repeat(60)));
@@ -491,7 +494,7 @@ async function bootstrap() {
     console.log(gray('─'.repeat(60)));
     
     console.log(cyan(`${ICONS.ENV}  Environment: ${bold(environment)}`));
-    console.log(cyan(`${ICONS.PORT}  Port: ${bold(port.toString())}`));
+    environment === 'development' && console.log(cyan(`${ICONS.PORT}  Port: ${bold(port.toString())}`));
     console.log(cyan(`${ICONS.NETWORK}  URL: ${underline(bold(url))}`));
     console.log(cyan(`${ICONS.NETWORK}  WebSocket URL: ${underline(bold(wsUrl))}`));
   

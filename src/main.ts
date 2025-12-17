@@ -482,7 +482,7 @@ async function bootstrap() {
   const url = `${protocol}://${hostUrl}`;
 
   const wsProtocol = isProduction ? 'wss' : 'ws';
-  const wsUrl = `${wsProtocol}://${hostUrl}`;
+  const wsUrl = `${wsProtocol}://${hostUrl}/socket.io`;
   
   /*wsPort === port
     ? `${wsProtocol}://localhost:${port}${wsPath}`

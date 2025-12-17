@@ -28,7 +28,7 @@ import { Notification } from '../notifications/entities/notification.entity';
     credentials: true,
   },
   namespace: 'notifications',
-  transports: ['websocket', 'polling'],
+  //transports: ['websocket', 'polling'],
   pingTimeout: 60000,
   pingInterval: 25000,
 })

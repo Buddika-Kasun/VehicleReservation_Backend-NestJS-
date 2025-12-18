@@ -6,7 +6,7 @@ import { ApiBearerAuth, ApiInternalServerErrorResponse, ApiOperation, ApiRespons
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/user.decorator';
-import { User } from 'src/database/entities/user.entity';
+import { User } from 'src/infra/database/entities/user.entity';
 import { LoginResponseDto, LogoutResponseDto, RegisterResponseDto } from './dto/authResponse.dto';
 import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
 import { Public } from 'src/common/decorators/public.decorator';

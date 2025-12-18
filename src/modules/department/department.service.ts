@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Company } from 'src/database/entities/company.entity';
-import { CostCenter } from 'src/database/entities/cost-center.entity';
-import { Department } from 'src/database/entities/department.entity';
-import { User, UserRole } from 'src/database/entities/user.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
+import { Department } from 'src/infra/database/entities/department.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { ResponseService } from 'src/common/services/response.service';

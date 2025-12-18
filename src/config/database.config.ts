@@ -24,9 +24,10 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
     // SAME AS typeorm.config.ts
     entities: [
       path.join(__dirname, '..', '**', '*.entity.{ts,js}'),
-      path.join(__dirname, '..', 'modules/notifications/entities/', '*.entity.{ts,js}'),
     ],
-    migrations: [path.join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+    migrations: [
+      path.join(__dirname, '..', 'infra', 'database', 'migrations', '*.{ts,js}')
+    ],
 
     migrationsTableName: 'migrations',
 

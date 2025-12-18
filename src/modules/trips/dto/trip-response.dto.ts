@@ -1,5 +1,5 @@
-import { RepetitionType, Trip, TripStatus } from 'src/database/entities/trip.entity';
-import { Vehicle } from 'src/database/entities/vehicle.entity';
+import { RepetitionType, Trip, TripStatus } from 'src/infra/database/entities/trip.entity';
+import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
 
 export class TripResponseDto {
   id: number;

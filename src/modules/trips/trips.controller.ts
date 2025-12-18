@@ -24,7 +24,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 //import { CancelTripDto } from './dto/trip-request.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { TripListRequestDto, TripListResponseDto } from './dto/trip-list-request.dto';
 import { get } from 'http';
 

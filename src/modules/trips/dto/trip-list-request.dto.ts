@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsInt, Min, Max, IsString } from 'class-validator';
-import { TripStatus } from 'src/database/entities/trip.entity';
+import { TripStatus } from 'src/infra/database/entities/trip.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum TimeFilter {

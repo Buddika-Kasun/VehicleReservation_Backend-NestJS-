@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/typeorm';
 import { Connection } from 'typeorm';
-import { RedisService } from '../shared/redis/redis.service';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // DTOs for Swagger documentation
@@ -118,8 +117,6 @@ export class HealthCheckResult {
   })
   checks: {
     database: DatabaseHealth;
-    redis: RedisHealth;
-    memory: MemoryHealth;
     disk: DiskHealth;
     api: ApiHealth;
   };
@@ -144,23 +141,18 @@ export class HealthService {
   constructor(
     @InjectConnection()
     private readonly connection: Connection,
-    private readonly redisService: RedisService,
     private readonly configService: ConfigService,
   ) {}
 
   async checkHealth(): Promise<HealthCheckResult> {
     const checks = {
       database: await this.checkDatabase(),
-      redis: await this.checkRedis(),
-      memory: this.checkMemory(),
       disk: await this.checkDiskSpace(),
       api: { status: 'UP' } as ApiHealth,
     };
 
     const allUp = [
       checks.database.connected !== false,
-      checks.redis.connected !== false,
-      checks.memory.status === 'HEALTHY' || checks.memory.status === 'WARNING',
       checks.disk.status === 'HEALTHY' || checks.disk.status === 'WARNING',
     ].every(Boolean);
 
@@ -199,45 +191,6 @@ export class HealthService {
     }
   }
 
-  async checkRedis(): Promise<RedisHealth> {
-    try {
-      const start = Date.now();
-      const pong = await this.redisService.ping();
-      const latency = Date.now() - start;
-
-      return {
-        connected: pong === 'PONG',
-        latency,
-        status: pong === 'PONG' ? 'HEALTHY' : 'DOWN',
-      };
-    } catch (error) {
-      this.logger.error(`Redis health check failed: ${error.message}`);
-      return {
-        connected: false,
-        error: error.message,
-        status: 'DOWN',
-      };
-    }
-  }
-
-  checkMemory(): MemoryHealth {
-    const memory = process.memoryUsage();
-    const usage = (memory.heapUsed / memory.heapTotal) * 100;
-
-    let status = 'HEALTHY';
-    if (usage > 90) status = 'CRITICAL';
-    else if (usage > 80) status = 'WARNING';
-
-    return {
-      usage: Math.round(usage * 100) / 100,
-      status,
-      details: {
-        heapTotal: this.formatBytes(memory.heapTotal),
-        heapUsed: this.formatBytes(memory.heapUsed),
-        rss: this.formatBytes(memory.rss),
-      },
-    };
-  }
 
   async checkDiskSpace(): Promise<DiskHealth> {
     try {

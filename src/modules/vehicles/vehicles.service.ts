@@ -1,14 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Vehicle } from '../../database/entities/vehicle.entity';
-import { Company } from '../../database/entities/company.entity';
-import { User } from '../../database/entities/user.entity';
-import { ResponseService } from '../../common/services/response.service';
+import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
+import { ResponseService } from 'src/common/services/response.service';
 import { AssignDriverDto, CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle-request.dto';
-import { CostConfiguration } from 'src/database/entities/cost-configuration.entity';
+import { CostConfiguration } from 'src/infra/database/entities/cost-configuration.entity';
 import * as QRCode from 'qrcode';
-import { OdometerLog } from 'src/database/entities/odometer-log.entity';
+import { OdometerLog } from 'src/infra/database/entities/odometer-log.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VehicleService {
@@ -22,6 +23,7 @@ export class VehicleService {
     @InjectRepository(CostConfiguration)
     private readonly costConfigurationRepository: Repository<CostConfiguration>,
     private readonly responseService: ResponseService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async generateQRCodeBase64(data: any): Promise<string> {
@@ -167,6 +169,18 @@ Scan Date: ${new Date().toLocaleDateString()}
     //savedVehicle.qrCodeData = qrCodeData;
 
     const savedVehicleQr = await this.vehicleRepository.save(savedVehicle);
+
+    // Notify assigned drivers
+    try {
+      if (assignedDriverPrimary) {
+        await this.notificationsService.notifyVehicleAssignment(savedVehicleQr, assignedDriverPrimary.id, 'assigned');
+      }
+      if (assignedDriverSecondary) {
+        await this.notificationsService.notifyVehicleAssignment(savedVehicleQr, assignedDriverSecondary.id, 'assigned');
+      }
+    } catch (e) {
+      console.error('Failed to send vehicle assignment notification', e);
+    }
 
     return this.responseService.created(
       'Vehicle created successfully.',
@@ -330,8 +344,31 @@ Scan Date: ${new Date().toLocaleDateString()}
       }
     }
 
+    const oldPrimaryDriverId = vehicle.assignedDriverPrimary?.id;
+    const oldSecondaryDriverId = vehicle.assignedDriverSecondary?.id;
+
     Object.assign(vehicle, updateVehicleDto);
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
+
+    // Notify drivers
+    try {
+      if (updatedVehicle.assignedDriverPrimary) {
+        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverPrimary.id, 'updated');
+      }
+      if (updatedVehicle.assignedDriverSecondary) {
+        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverSecondary.id, 'updated');
+      }
+      
+      // Notify removed drivers
+      if (oldPrimaryDriverId && updatedVehicle.assignedDriverPrimary?.id !== oldPrimaryDriverId) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, oldPrimaryDriverId, 'unassigned');
+      }
+      if (oldSecondaryDriverId && updatedVehicle.assignedDriverSecondary?.id !== oldSecondaryDriverId) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, oldSecondaryDriverId, 'unassigned');
+      }
+    } catch (e) {
+      console.error('Failed to send vehicle update notification', e);
+    }
 
     return this.responseService.success(
       'Vehicle updated successfully.',
@@ -345,7 +382,7 @@ Scan Date: ${new Date().toLocaleDateString()}
   async deleteVehicle(id: number) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id },
-      relations: ['trips']
+      relations: ['trips', 'assignedDriverPrimary', 'assignedDriverSecondary']
     });
 
     if (!vehicle) {
@@ -368,6 +405,18 @@ Scan Date: ${new Date().toLocaleDateString()}
     }
 
     await this.vehicleRepository.remove(vehicle);
+
+    // Notify drivers
+    try {
+      if (vehicle.assignedDriverPrimary) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, vehicle.assignedDriverPrimary.id, 'unassigned');
+      }
+      if (vehicle.assignedDriverSecondary) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, vehicle.assignedDriverSecondary.id, 'unassigned');
+      }
+    } catch (e) {
+      console.error('Failed to send vehicle deletion notification', e);
+    }
 
     return this.responseService.success(
       'Vehicle deleted successfully.',
@@ -433,7 +482,30 @@ Scan Date: ${new Date().toLocaleDateString()}
       }
     }
 
+    const oldPrimaryDriverId = vehicle.assignedDriverPrimary?.id;
+    const oldSecondaryDriverId = vehicle.assignedDriverSecondary?.id;
+
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
+
+    // Notify drivers
+    try {
+      if (updatedVehicle.assignedDriverPrimary) {
+        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverPrimary.id, 'assigned');
+      }
+      if (updatedVehicle.assignedDriverSecondary) {
+        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverSecondary.id, 'assigned');
+      }
+
+      // Notify removed drivers
+      if (oldPrimaryDriverId && updatedVehicle.assignedDriverPrimary?.id !== oldPrimaryDriverId) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, oldPrimaryDriverId, 'unassigned');
+      }
+      if (oldSecondaryDriverId && updatedVehicle.assignedDriverSecondary?.id !== oldSecondaryDriverId) {
+        await this.notificationsService.notifyVehicleAssignment(vehicle, oldSecondaryDriverId, 'unassigned');
+      }
+    } catch (e) {
+      console.error('Failed to send driver assignment notification', e);
+    }
 
     return this.responseService.success(
       'Drivers assigned successfully.',

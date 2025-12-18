@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Company } from 'src/database/entities/company.entity';
-import { CostCenter } from 'src/database/entities/cost-center.entity';
+import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
 import { Repository } from 'typeorm';
 import { CreateCostCenterDto, UpdateCostCenterDto } from './dto/cost-center-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
+import { User } from 'src/infra/database/entities/user.entity';
 
 @Injectable()
 export class CostCenterService {

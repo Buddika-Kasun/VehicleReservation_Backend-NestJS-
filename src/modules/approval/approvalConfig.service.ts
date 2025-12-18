@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { CreateApprovalConfigDto, UpdateApprovalConfigDto } from './dto/approval-config-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
-import { ApprovalConfig } from 'src/database/entities/approval-configuration.entity';
+import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { User } from 'src/infra/database/entities/user.entity';
 
 @Injectable()
 export class ApprovalConfigService {

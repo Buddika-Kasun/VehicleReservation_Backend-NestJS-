@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ResponseService } from 'src/common/services/response.service';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
-import { Status } from 'src/database/entities/user.entity';
+import { Status } from 'src/infra/database/entities/user.entity';
 import { UsersService } from 'src/modules/users/users.service';
 import { compare } from 'src/common/utils/hash.util';
 import { LoginDto } from '../dto/login.dto';

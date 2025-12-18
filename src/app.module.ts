@@ -21,21 +21,28 @@ import { ApprovalConfigModule } from './modules/approval/approvalConfig.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { RoutesModule } from './modules/routes/routes.module';
 import { HealthModule } from './modules/health/health.module';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { RedisModule } from './modules/shared/redis/redis.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { PubSubModule } from './modules/shared/pubsub/pubsub.module';
 import websocketConfig from './config/websocket.config';
+import redisConfig from './config/redis.config';
+import { RedisModule } from './infra/redis/redis.module';
+import { FirebaseModule } from './infra/firebase/firebase.module';
+import { WsModule } from './ws/ws.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
     // ✅ Global Configuration
     ConfigModule.forRoot({ 
-      load: [ appConfig, jwtConfig, websocketConfig],
+      load: [ appConfig, jwtConfig, websocketConfig, redisConfig ],
       isGlobal: true, // Makes configuration available across all modules
       cache: true, // Caches the configuration for better performance
     }),
+
+    RedisModule, // Move infrastructure to the top
+    FirebaseModule,
+    WsModule,
 
     // ✅ Event Emitter for internal events
     EventEmitterModule.forRoot({
@@ -61,15 +68,6 @@ import websocketConfig from './config/websocket.config';
       }),
     }),
 
-    // ✅ Redis Module (Global)
-    RedisModule,
-
-    // ✅ PubSub Module
-    PubSubModule,
-
-    // ✅ Notifications Module
-    NotificationsModule, 
-
     AuthModule,
     UsersModule,
     CompanyModule,
@@ -86,6 +84,8 @@ import websocketConfig from './config/websocket.config';
     LocationsModule,
     RoutesModule,
     HealthModule,
+    NotificationsModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

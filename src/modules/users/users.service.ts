@@ -2,19 +2,18 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, ILike, Not, Repository } from 'typeorm';
-import { Status, User, UserRole } from 'src/database/entities/user.entity';
+import { Status, User, UserRole } from 'src/infra/database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
-import { Company } from 'src/database/entities/company.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
 import { hash } from 'src/common/utils/hash.util';
 import { ResponseService } from 'src/common/services/response.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { sanitizeUser, sanitizeUsers } from 'src/common/utils/sanitize-user.util';
 import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
-import { Department } from 'src/database/entities/department.entity';
+import { Department } from 'src/infra/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
-import { PubSubService } from '../shared/pubsub/pubsub.service';
-import { UserEventTypes } from '../shared/pubsub/events/user.events';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class UsersService {
@@ -24,7 +23,7 @@ export class UsersService {
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private readonly responseService: ResponseService,
-    private readonly pubSubService: PubSubService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async validateRequiredFields(dto: CreateUserDto): Promise<void> {
@@ -122,24 +121,29 @@ export class UsersService {
 
     const sanitizedUser: UserData = sanitizeUser(savedUser);
 
-    // 🔥 PUBLISH USER REGISTERED EVENT 🔥
-    await this.pubSubService.publish(UserEventTypes.USER_REGISTERED, {
-      userId: savedUser.id,
-      username: savedUser.username,
-      email: savedUser.email,
-      role: savedUser.role,
-      displayname: savedUser.displayname,
-      phone: savedUser.phone,
-      departmentId: savedUser.department?.id,
-      timestamp: new Date().toISOString(),
-    });
-
-    return this.responseService.created(
+    const response = this.responseService.created(
       'User registered successfully. Please wait for admin approval.',
       {
         user: sanitizedUser,
       }
     );
+
+    // Notify approvers
+    try {
+      const approvers = await this.getApprovers();
+      for (const approver of approvers) {
+        await this.notificationsService.createUserRegisteredNotification(String(approver.id), {
+           id: savedUser.id,
+           username: savedUser.username,
+           email: savedUser.email,
+           role: savedUser.role
+        });
+      }
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+    return response;
   }
 
   async approveUser(id: number, dto: ApproveUserDto, reqUser: User) {
@@ -179,15 +183,12 @@ export class UsersService {
 
     const sanitizedUser = sanitizeUser(approvedUser);
 
-    // 🔥 PUBLISH USER APPROVED EVENT 🔥
-    await this.pubSubService.publish(UserEventTypes.USER_APPROVED, {
-      userId: approvedUser.id,
-      username: approvedUser.username,
-      email: approvedUser.email,
-      role: approvedUser.role,
-      approvedBy: reqUser.id, // You can pass current admin ID
-      timestamp: new Date().toISOString(),
-    });
+    try {
+      await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
+      // If user has auth level 3, might want to notify them differently or just generic approval
+    } catch (e) {
+      console.error('Failed to send approval notification', e);
+    }
 
     return this.responseService.success(
       'User approved successfully',
@@ -293,6 +294,12 @@ async isApprover(userId: number): Promise<boolean> {
     const disapprovedUser = await this.userRepo.save(user);
 
     const sanitizedUser = sanitizeUser(disapprovedUser);
+
+    try {
+      await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
+    } catch (e) {
+      console.error('Failed to send rejection notification', e);
+    }
 
     return this.responseService.success(
       'User disapproved successfully',
@@ -533,14 +540,6 @@ async isApprover(userId: number): Promise<boolean> {
 
     const savedUser = await this.userRepo.save(user);
 
-    if (oldAuthLevel !== savedUser.authenticationLevel) {
-      await this.pubSubService.publish(UserEventTypes.USER_AUTH_LEVEL_CHANGED, {
-        userId: savedUser.id,
-        authLevel: savedUser.authenticationLevel,
-        changedBy: reqUser.id,
-        timestamp: new Date().toISOString(),
-      });
-    }
 
     const minimalUser = {
       id: savedUser.id,

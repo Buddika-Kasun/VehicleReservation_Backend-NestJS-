@@ -11,7 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/config/multer.config';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { User, UserRole } from 'src/database/entities/user.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 
 @Controller('user')

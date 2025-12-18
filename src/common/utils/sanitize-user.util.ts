@@ -1,5 +1,5 @@
 
-import { User } from '../../database/entities/user.entity';
+import { User } from '../../infra/database/entities/user.entity';
 
 export function sanitizeUser(user: User): any {
   if (!user) return null;

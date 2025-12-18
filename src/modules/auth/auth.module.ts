@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
@@ -12,6 +11,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { AuthService } from './services/auth.service';
 import { WsAuthService } from './services/ws-auth.service';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -35,10 +35,6 @@ import { WsAuthService } from './services/ws-auth.service';
     JwtStrategy, 
     LocalStrategy, 
     ResponseService,
-    {
-      provide: APP_GUARD,
-      useClass: JwtStrategy, // Apply globally
-    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard, // Apply globally

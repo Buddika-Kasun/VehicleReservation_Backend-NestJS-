@@ -1,33 +1,41 @@
-import { IsEnum, IsOptional, IsObject, IsUUID, IsString } from 'class-validator';
-import { NotificationType, NotificationPriority } from '../types/notification-types.enum';
+import { IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
+import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
 
 export class CreateNotificationDto {
   @IsEnum(NotificationType)
   type: NotificationType;
 
-  @IsObject()
-  data: Record<string, any>;
-
-  @IsOptional()
   @IsEnum(NotificationPriority)
-  priority?: NotificationPriority;
-
   @IsOptional()
-  @IsUUID()
+  priority?: NotificationPriority = NotificationPriority.MEDIUM;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  message?: string;
+
+  @IsObject()
+  data: any;
+
+  @IsObject()
+  @IsOptional()
+  metadata?: any;
+
+  @IsString()
+  @IsOptional()
   userId?: string;
 
+  @IsString()
   @IsOptional()
-  @IsUUID()
   createdById?: string;
 
+  @IsString()
   @IsOptional()
-  @IsUUID()
   organizationId?: string;
 
   @IsOptional()
-  @IsObject()
-  metadata?: Record<string, any>;
-
-  @IsOptional()
-  expiresIn?: number; // seconds
+  expiresAt?: Date;
 }

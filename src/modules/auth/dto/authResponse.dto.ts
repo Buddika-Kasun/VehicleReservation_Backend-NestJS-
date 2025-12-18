@@ -1,6 +1,6 @@
 // src/modules/auth/dto/login-response.dto.ts
 import { ApiProperty } from "@nestjs/swagger";
-import { UserRole } from "src/database/entities/user.entity";
+import { UserRole } from "src/infra/database/entities/user.entity";
 
 export class UserData {
   @ApiProperty({ 

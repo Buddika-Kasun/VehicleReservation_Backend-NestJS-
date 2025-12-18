@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ApprovalConfig } from 'src/database/entities/approval-configuration.entity';
+import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
 
 export class ApprovalConfigResponseDto {
   @ApiProperty()

@@ -1,6 +1,6 @@
 import { IsEnum, IsNumber, IsString, IsOptional, IsBoolean, IsDateString, IsArray, ValidateNested, IsObject } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PassengerType, RepetitionType, TripStatus } from 'src/database/entities/trip.entity';
+import { PassengerType, RepetitionType, TripStatus } from 'src/infra/database/entities/trip.entity';
 
 export class SelectedGroupUserDto {
   @IsNumber()

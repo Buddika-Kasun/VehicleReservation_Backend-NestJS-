@@ -3,7 +3,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Ht
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { DepartmentService } from './department.service';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { DepartmentListResponseDto, DepartmentResponseDto } from './dto/department-response.dto';

@@ -26,48 +26,6 @@ export class HealthController {
     return this.healthService.checkHealth();
   }
 
-  @Get('database')
-  @ApiOperation({ 
-    summary: 'Database health check',
-    description: 'Checks the database connection and performance'
-  })
-  @ApiOkResponse({ 
-    description: 'Database is healthy'
-  })
-  @ApiServiceUnavailableResponse({ 
-    description: 'Database connection failed'
-  })
-  databaseHealth() {
-    return this.healthService.checkDatabase();
-  }
-
-  @Get('redis')
-  @ApiOperation({ 
-    summary: 'Redis health check',
-    description: 'Checks the Redis connection and performance'
-  })
-  @ApiOkResponse({ 
-    description: 'Redis is healthy'
-  })
-  @ApiServiceUnavailableResponse({ 
-    description: 'Redis connection failed'
-  })
-  redisHealth() {
-    return this.healthService.checkRedis();
-  }
-
-  @Get('memory')
-  @ApiOperation({ 
-    summary: 'Memory health check',
-    description: 'Checks system memory usage'
-  })
-  @ApiOkResponse({ 
-    description: 'Memory status'
-  })
-  memoryHealth() {
-    return this.healthService.checkMemory();
-  }
-
   @Get('disk')
   @ApiOperation({ 
     summary: 'Disk space health check',

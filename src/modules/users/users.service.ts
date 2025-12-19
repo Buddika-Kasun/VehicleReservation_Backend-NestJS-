@@ -13,7 +13,7 @@ import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
 import { Department } from 'src/infra/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
-import { NotificationsService } from '../notifications/notifications.service';
+import { EventBusService } from 'src/infra/redis/event-bus.service';
 
 @Injectable()
 export class UsersService {
@@ -23,7 +23,7 @@ export class UsersService {
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private readonly responseService: ResponseService,
-    private readonly notificationsService: NotificationsService,
+    private readonly eventBus: EventBusService,
   ) {}
 
   private async validateRequiredFields(dto: CreateUserDto): Promise<void> {
@@ -128,17 +128,15 @@ export class UsersService {
       }
     );
 
-    // Notify approvers
     try {
-      const approvers = await this.getApprovers();
-      for (const approver of approvers) {
-        await this.notificationsService.createUserRegisteredNotification(String(approver.id), {
-           id: savedUser.id,
-           username: savedUser.username,
-           email: savedUser.email,
-           role: savedUser.role
-        });
-      }
+      // Publish USER.CREATE event
+    await this.eventBus.publish('USER', 'CREATE', {
+      userId: savedUser.id,
+      username: savedUser.username,
+      email: savedUser.email,
+      role: savedUser.role,
+      companyId: savedUser.company?.id,
+    });
     } catch (e) {
       console.error('Failed to send notifications', e);
     }
@@ -184,7 +182,7 @@ export class UsersService {
     const sanitizedUser = sanitizeUser(approvedUser);
 
     try {
-      await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
+      //await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
       // If user has auth level 3, might want to notify them differently or just generic approval
     } catch (e) {
       console.error('Failed to send approval notification', e);
@@ -296,7 +294,7 @@ async isApprover(userId: number): Promise<boolean> {
     const sanitizedUser = sanitizeUser(disapprovedUser);
 
     try {
-      await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
+      //await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
     } catch (e) {
       console.error('Failed to send rejection notification', e);
     }

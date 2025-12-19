@@ -48,7 +48,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     EventEmitterModule.forRoot({
       wildcard: true,
       delimiter: '.',
-      maxListeners: 20,
+      maxListeners: 50,
     }),
 
     // ✅ Scheduled Tasks (for notification cleanup)

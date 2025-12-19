@@ -9,7 +9,6 @@ import { AssignDriverDto, CreateVehicleDto, UpdateVehicleDto } from './dto/vehic
 import { CostConfiguration } from 'src/infra/database/entities/cost-configuration.entity';
 import * as QRCode from 'qrcode';
 import { OdometerLog } from 'src/infra/database/entities/odometer-log.entity';
-import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VehicleService {
@@ -23,7 +22,6 @@ export class VehicleService {
     @InjectRepository(CostConfiguration)
     private readonly costConfigurationRepository: Repository<CostConfiguration>,
     private readonly responseService: ResponseService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async generateQRCodeBase64(data: any): Promise<string> {
@@ -170,17 +168,7 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     const savedVehicleQr = await this.vehicleRepository.save(savedVehicle);
 
-    // Notify assigned drivers
-    try {
-      if (assignedDriverPrimary) {
-        await this.notificationsService.notifyVehicleAssignment(savedVehicleQr, assignedDriverPrimary.id, 'assigned');
-      }
-      if (assignedDriverSecondary) {
-        await this.notificationsService.notifyVehicleAssignment(savedVehicleQr, assignedDriverSecondary.id, 'assigned');
-      }
-    } catch (e) {
-      console.error('Failed to send vehicle assignment notification', e);
-    }
+    // TODO publish event
 
     return this.responseService.created(
       'Vehicle created successfully.',
@@ -352,20 +340,7 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // Notify drivers
     try {
-      if (updatedVehicle.assignedDriverPrimary) {
-        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverPrimary.id, 'updated');
-      }
-      if (updatedVehicle.assignedDriverSecondary) {
-        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverSecondary.id, 'updated');
-      }
-      
-      // Notify removed drivers
-      if (oldPrimaryDriverId && updatedVehicle.assignedDriverPrimary?.id !== oldPrimaryDriverId) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, oldPrimaryDriverId, 'unassigned');
-      }
-      if (oldSecondaryDriverId && updatedVehicle.assignedDriverSecondary?.id !== oldSecondaryDriverId) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, oldSecondaryDriverId, 'unassigned');
-      }
+      // TODO publish event
     } catch (e) {
       console.error('Failed to send vehicle update notification', e);
     }
@@ -408,12 +383,8 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // Notify drivers
     try {
-      if (vehicle.assignedDriverPrimary) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, vehicle.assignedDriverPrimary.id, 'unassigned');
-      }
-      if (vehicle.assignedDriverSecondary) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, vehicle.assignedDriverSecondary.id, 'unassigned');
-      }
+      
+      //TODO publish event
     } catch (e) {
       console.error('Failed to send vehicle deletion notification', e);
     }
@@ -489,20 +460,8 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // Notify drivers
     try {
-      if (updatedVehicle.assignedDriverPrimary) {
-        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverPrimary.id, 'assigned');
-      }
-      if (updatedVehicle.assignedDriverSecondary) {
-        await this.notificationsService.notifyVehicleAssignment(updatedVehicle, updatedVehicle.assignedDriverSecondary.id, 'assigned');
-      }
+            //TODO publish event
 
-      // Notify removed drivers
-      if (oldPrimaryDriverId && updatedVehicle.assignedDriverPrimary?.id !== oldPrimaryDriverId) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, oldPrimaryDriverId, 'unassigned');
-      }
-      if (oldSecondaryDriverId && updatedVehicle.assignedDriverSecondary?.id !== oldSecondaryDriverId) {
-        await this.notificationsService.notifyVehicleAssignment(vehicle, oldSecondaryDriverId, 'unassigned');
-      }
     } catch (e) {
       console.error('Failed to send driver assignment notification', e);
     }

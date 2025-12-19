@@ -13,7 +13,6 @@ import { AvailableVehiclesRequestDto, CreateTripDto, ScheduleDataDto } from './d
 import { TripListRequestDto } from './dto/trip-list-request.dto';
 import { ApproverType } from 'src/infra/database/entities/approval.entity';
 import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
-import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
 
 @Injectable()
@@ -37,7 +36,6 @@ export class TripsService {
     @InjectRepository(ApprovalConfig)
     private readonly approvalConfigRepo: Repository<ApprovalConfig>,
     private readonly responseService: ResponseService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   // Calculate distance using Haversine formula
@@ -906,10 +904,7 @@ async createTrip(createTripDto: CreateTripDto, requesterId: number) {
     ]
   });
 
-  // Notify next approver (HOD)
-  if (requiresApproval && savedTrip.approval) {
-     this.sendNextApprovalNotification(savedTrip.approval);
-  }
+          // TODO publish event
 
   return {
     success: true,
@@ -1291,16 +1286,7 @@ async approveScheduledTrip(masterTripId: number, approverId: number, remarks?: s
   await this.approvalRepo.save(approval);
   await this.tripRepo.save(masterTrip);
 
-  // Send notifications if needed
-  if (approval.overallStatus.toString() === 'approved') {
-    await this.sendTripApprovedNotification(masterTrip);
-    // Also send notifications for all instances
-    for (const instance of instances) {
-      await this.sendTripApprovedNotification(instance);
-    }
-  } else if (approval.currentStep) {
-    await this.sendNextApprovalNotification(approval);
-  }
+        // TODO publish event
     
     return {
       success: true,
@@ -1747,9 +1733,8 @@ async getTripWithInstances(tripId: number): Promise<any> {
       // 5. Save the canceled trip
       const canceledTrip = await transactionalEntityManager.save(trip);
 
-      // Notify relevant users
       try {
-        await this.notificationsService.notifyTripStatus(canceledTrip, 'cancelled');
+        // TODO publish event
       } catch (e) {
         console.error('Failed to send cancellation notification', e);
       }
@@ -2197,10 +2182,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(approval.trip);
 
-    // If approved and there's a next step, send notification
-    if (status === StatusApproval.APPROVED && approval.currentStep) {
-      await this.sendNextApprovalNotification(approval);
-    }
+    // TODO publish event
 
     return {
       success: true,
@@ -2212,34 +2194,6 @@ async getTripWithInstances(tripId: number): Promise<any> {
       },
       statusCode: 200
     };
-  }
-
-  private async sendNextApprovalNotification(approval: Approval) {
-    let nextApprover: User | undefined;
-    
-    // Determine next approver based on current step
-    switch (approval.currentStep) {
-      case ApproverType.HOD:
-        nextApprover = approval.approver1;
-        break;
-      case ApproverType.SECONDARY:
-        nextApprover = approval.approver2;
-        break;
-      case ApproverType.SAFETY:
-        nextApprover = approval.safetyApprover;
-        break;
-    }
-    
-    if (nextApprover) {
-      await this.notificationsService.create({
-        type: NotificationType.TRIP_APPROVAL_NEEDED,
-        userId: String(nextApprover.id),
-        message: `Trip approval needed for Trip ID ${approval.trip?.id || 'Unknown'}`,
-        data: { tripId: approval.trip?.id, currentStep: approval.currentStep },
-        priority: NotificationPriority.HIGH
-      });
-      console.log(`Notification sent to next approver: ${nextApprover.displayname}`);
-    }
   }
 
   async getPendingApprovalsForUser(userId: number) {
@@ -3080,12 +3034,8 @@ async getTripWithInstances(tripId: number): Promise<any> {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
-    // Send notifications if needed
-    if (approval.overallStatus.toString() === 'approved') {
-      await this.sendTripApprovedNotification(trip);
-    } else if (approval.currentStep) {
-      await this.sendNextApprovalNotification(approval);
-    }
+            // TODO publish event
+
 
     return {
       success: true,
@@ -3210,9 +3160,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     if (trip.vehicle) {
       await this.restoreVehicleSeatsForRejection(trip);
     }
-
-    // Send rejection notification
-    await this.sendTripRejectedNotification(trip, user, rejectionReason);
+        // TODO publish event
 
     return {
       success: true,
@@ -3248,56 +3196,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     }
   }
 
-  
-  // Helper methods
-  private async sendTripRejectedNotification(trip: Trip, rejectedBy: User, reason: string) {
-    // Send notification to requester
-    if (trip.requester) {
-      await this.notificationsService.create({
-        type: NotificationType.TRIP_REJECTED,
-        userId: String(trip.requester.id),
-        message: `Your trip ID ${trip.id} was rejected by ${rejectedBy.displayname}.`,
-        data: { tripId: trip.id, reason, rejectedBy: rejectedBy.displayname },
-        priority: NotificationPriority.HIGH
-      });
-      
-      // Also notify security as they need to see status changes on their list
-      await this.notificationsService.notifySecurity('Trip Rejected', `Trip #${trip.id} was rejected.`, { tripId: trip.id });
-    }
-  }
 
-  private determineCurrentApproverType(approval: Approval): ApproverType {
-    if (approval.currentStep) {
-      return approval.currentStep;
-    }
-    
-    // If no current step, determine based on what's pending
-    if (approval.requireApprover1 && approval.approver1Status === StatusApproval.PENDING) {
-      return ApproverType.HOD;
-    } else if (approval.requireApprover2 && approval.approver2Status === StatusApproval.PENDING) {
-      return ApproverType.SECONDARY;
-    } else if (approval.requireSafetyApprover && approval.safetyApproverStatus === StatusApproval.PENDING) {
-      return ApproverType.SAFETY;
-    }
-    
-    return ApproverType.HOD; // Default
-  }
-
-  private async sendTripApprovedNotification(trip: Trip) {
-    // Send notification to requester
-    if (trip.requester) {
-      await this.notificationsService.create({
-        type: NotificationType.TRIP_APPROVED,
-        userId: String(trip.requester.id),
-        message: `Your trip ID ${trip.id} has been fully approved.`,
-        data: { tripId: trip.id },
-        priority: NotificationPriority.HIGH
-      });
-      
-      // Also notify security so they can prepare for meter reading
-      await this.notificationsService.notifySecurity('Trip Approved', `Trip #${trip.id} is approved and ready for meter reading.`, { tripId: trip.id });
-    }
-  }  
 
   private async getPassengerDetails(trip: Trip) {
     const passengers = [];
@@ -4178,17 +4077,8 @@ async getTripWithInstances(tripId: number): Promise<any> {
         }
       }
 
-      // Notify relevant users about odometer reading
       try {
-        const type = readingType === 'start' ? 'read' : 'completed';
-        const title = readingType === 'start' ? 'Trip Meter Start Recorded' : 'Trip Meter End Recorded';
-        const message = `Security has recorded the ${readingType} meter reading for trip #${trip.id}.`;
-        
-        // Notify requester/driver
-        await this.notificationsService.notifyTripStatus(trip, type);
-        
-        // Notify Security staff to refresh their screens
-        await this.notificationsService.notifySecurity(title, message, { tripId: trip.id, readingType });
+                // TODO publish event
       } catch (e) {
         console.error('Failed to send odometer notification', e);
       }
@@ -4792,9 +4682,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
 
   // Notify relevant users
   try {
-    await this.notificationsService.notifyTripStatus(trip, 'ongoing');
-    // Also notify security as they need to see status changes on their list
-    await this.notificationsService.notifySecurity('Trip Started', `Trip #${trip.id} is now ongoing.`, { tripId: trip.id });
+    // TODO publish event
   } catch (e) {
     console.error('Failed to send trip start notification', e);
   }
@@ -4897,9 +4785,7 @@ async endTrip(tripId: number, userId: number): Promise<any> {
 
   // Notify relevant users
   try {
-    await this.notificationsService.notifyTripStatus(trip, 'finished');
-    // Notify security - they usually need to perform the end meter reading next
-    await this.notificationsService.notifySecurity('Trip Finished', `Trip #${trip.id} has reached destination. Ready for end meter reading.`, { tripId: trip.id });
+    // TODO publish event
   } catch (e) {
     console.error('Failed to send trip end notification', e);
   }

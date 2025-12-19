@@ -6,6 +6,8 @@ import { Notification } from 'src/infra/database/entities/notification.entity';
 import { User } from 'src/infra/database/entities/user.entity';
 import { RedisModule } from '../../infra/redis/redis.module';
 import { FirebaseModule } from '../../infra/firebase/firebase.module';
+import { UserNotificationHandler } from './handlers/user-notification.handler';
+import { TripNotificationHandler } from './handlers/trip-notification.handler';
 
 @Module({
   imports: [
@@ -14,7 +16,11 @@ import { FirebaseModule } from '../../infra/firebase/firebase.module';
     FirebaseModule,
   ],
   controllers: [NotificationsController],
-  providers: [NotificationsService],
+  providers: [
+    NotificationsService,
+    UserNotificationHandler,
+    TripNotificationHandler,
+  ],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

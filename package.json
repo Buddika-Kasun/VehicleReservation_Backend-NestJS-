@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "nest build",
-    "postbuild": "npm run build:migrations",
-    "build:migrations": "tsc --project tsconfig.migrations.json",
+    "postbuild": "npm run migration:run",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "migration:generate": "node scripts/migration-generate.js",

@@ -132,7 +132,7 @@ export class UsersService {
       // Publish USER.CREATE event
     await this.eventBus.publish('USER', 'CREATE', {
       userId: savedUser.id,
-      username: savedUser.username,
+      username: savedUser.displayname,
       email: savedUser.email,
       role: savedUser.role,
       companyId: savedUser.company?.id,

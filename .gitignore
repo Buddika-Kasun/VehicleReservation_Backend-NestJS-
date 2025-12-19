@@ -1,6 +1,8 @@
 node_modules
 dist
 .env
+.env.example
+.env.production
 npm-debug.log
 
 # Ignore compiled migrations (they're built during deployment)

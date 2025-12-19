@@ -42,25 +42,36 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   }
 
   private async handleNotificationEvent(data: any, action: string): Promise<void> {
-    try {
-      const { userId, notificationId, type } = data;
-      
-      const payload = {
-        action: action.toLowerCase(),
-        notificationId,
-        type,
-        data,
-        timestamp: new Date().toISOString()
-      };
+  try {
+    const { userId, notificationId, type, broadcast = false } = data;
+    
+    this.logger.log(`Notification Event`, {
+      action,
+      userId: userId || 'N/A',
+      type,
+      broadcast: broadcast ? 'Yes' : 'No'
+    });
+    
+    const payload = {
+      action: action.toLowerCase(),
+      notificationId,
+      type,
+      data,
+      timestamp: new Date().toISOString()
+    };
 
-      if (userId) {
-        this.server.to(`user_${userId}`).emit('notification_update', payload);
-        this.logger.debug(`Sent notification ${action} to user_${userId}`);
-      }
-      
+    if (userId) {
+      // Always send to specific user
+      this.server.to(`user_${userId}`).emit('notification_update', payload);
+      this.logger.debug(`Sent to user_${userId}`);
+    } else {
+      // No userId specified - broadcast to all
       this.server.to(`notifications`).emit('notification_update', payload);
-    } catch (error) {
-      this.logger.error(`Error handling notification event: ${error.message}`);
+      this.logger.debug(`Broadcast to all users (no specific userId)`);
     }
+    
+  } catch (error) {
+    this.logger.error(`Error handling notification event: ${error.message}`);
   }
+}
 }

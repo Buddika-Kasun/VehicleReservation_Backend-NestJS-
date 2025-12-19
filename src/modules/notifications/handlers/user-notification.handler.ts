@@ -3,6 +3,7 @@ import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { NotificationsService } from '../notifications.service';
 import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
 import { EVENTS } from 'src/common/constants/events.constants';
+import { UsersService } from 'src/modules/users/users.service';
 
 @Injectable()
 export class UserNotificationHandler implements OnModuleInit {
@@ -11,6 +12,7 @@ export class UserNotificationHandler implements OnModuleInit {
   constructor(
     private readonly eventBus: EventBusService,
     private readonly notificationsService: NotificationsService,
+    private readonly userService: UsersService,
   ) {}
 
   async onModuleInit() {
@@ -25,7 +27,8 @@ export class UserNotificationHandler implements OnModuleInit {
   private async handleUserCreated(data: any): Promise<void> {
     const { userId, username, email, role } = data;
     
-    const approvers = await this.notificationsService.getApprovers();
+    //const approvers = await this.notificationsService.getApprovers();
+    const approvers = await this.userService.getApprovers();
     
     for (const approver of approvers) {
       await this.notificationsService.create({

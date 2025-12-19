@@ -1,3 +1,4 @@
+// users.gateway.ts - Handles USER.* events
 import {
   WebSocketGateway,
   WebSocketServer,

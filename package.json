@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "scripts": {
     "build": "nest build",
-    "postbuild": "npm run migration:run:prod",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "migration:generate": "node scripts/migration-generate.js",

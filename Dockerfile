@@ -35,5 +35,4 @@ EXPOSE 3000
 
 # Start with crypto flag for Alpine compatibility
 #CMD ["node", "--experimental-global-webcrypto", "dist/main.js"]
-# CMD ["sh", "-c", "npm run migration:run:prod && node dist/main.js"]
-CMD ["sh", "-c", "node dist/main.js"]
+CMD ["sh", "-c", "npm run migration:run:prod && node dist/main.js"]

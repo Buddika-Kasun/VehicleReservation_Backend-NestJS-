@@ -109,7 +109,7 @@ export class WsAuthService {
    * Check if user can approve other users
    */
   canApproveUsers(role: string, authLevel?: number): boolean {
-    const approverRoles = ['admin', 'sysadmin', 'hr'];
+    const approverRoles = ['admin', 'sysadmin', 'hr', 'supervisor'];
     return approverRoles.includes(role.toLowerCase()) || authLevel === 3;
   }
 

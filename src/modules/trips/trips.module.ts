@@ -11,10 +11,11 @@ import { ResponseService } from 'src/common/services/response.service';
 import { TripLocation } from 'src/infra/database/entities/trip-location.entity';
 import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig]),
+    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig, Schedule]),
     NotificationsModule,
   ],
   controllers: [TripsController],

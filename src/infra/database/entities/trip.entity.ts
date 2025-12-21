@@ -8,6 +8,7 @@ import { Approval } from './approval.entity';
 import { OdometerLog } from './odometer-log.entity';
 import { Feedback } from './feedback.entity';
 import { TripLocation } from './trip-location.entity';
+import { Schedule } from './trip-schedule.entity';
 
 export enum TripStatus {
   DRAFT = 'draft',
@@ -154,6 +155,10 @@ export class Trip {
   // NEW
   @Column({ default: false })
   isScheduled: boolean;
+
+  @OneToOne(() => Schedule, schedule => schedule.trip, { cascade: true })
+  @JoinColumn()
+  schedule?: Schedule;
 
   @Column({ default: false })
   isInstance: boolean;

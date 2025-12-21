@@ -9,11 +9,13 @@ import { Status, User, UserRole } from 'src/infra/database/entities/user.entity'
 import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
 import { Repository, In, Between, MoreThanOrEqual, LessThanOrEqual, Brackets, Not } from 'typeorm';
 import { AvailableVehiclesResponseDto, AvailableVehicleDto, TripResponseDto } from './dto/trip-response.dto';
-import { AvailableVehiclesRequestDto, CreateTripDto, ScheduleDataDto } from './dto/create-trip.dto';
+import { AvailableVehiclesRequestDto, CreateTripDto, ReviewAvailableVehiclesRequest, ScheduleDataDto } from './dto/create-trip.dto';
 import { TripListRequestDto } from './dto/trip-list-request.dto';
 import { ApproverType } from 'src/infra/database/entities/approval.entity';
 import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
 import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
+import { scheduled } from 'rxjs';
+import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 
 @Injectable()
 export class TripsService {
@@ -35,6 +37,8 @@ export class TripsService {
     private readonly odometerLogRepo: Repository<OdometerLog>,
     @InjectRepository(ApprovalConfig)
     private readonly approvalConfigRepo: Repository<ApprovalConfig>,
+    @InjectRepository(Schedule)
+    private readonly scheduleRepo: Repository<Schedule>,
     private readonly responseService: ResponseService,
   ) {}
 
@@ -85,29 +89,59 @@ export class TripsService {
     return totalDistance;
   }
 
-  private calculateRouteDuration(distanceInKM: number, stops: number): number {
-    // More sophisticated duration calculation
+  private calculateRouteDuration(
+    distanceInKM: number, 
+    stops: number = 0, 
+    mixedRoadsKmph: number = 40
+  ): number {
+    // More sophisticated duration calculation using mixed roads speed as base
     const distanceInKm = distanceInKM;
     
     // Base time for traffic, stops, etc.
     const baseTime = 5; // minutes for pickup/dropoff
     
+    // Calculate other speeds based on mixed roads speed
+    const denseTrafficKmph = mixedRoadsKmph * 0.375; // 15/40 = 0.375 of mixed roads
+    const cityTrafficKmph = mixedRoadsKmph * 0.625;  // 25/40 = 0.625 of mixed roads
+    const highwayKmph = mixedRoadsKmph * 1.5;        // 60/40 = 1.5 of mixed roads
+    
     // Calculate travel time
     let travelTime;
     if (distanceInKm <= 2) {
-      travelTime = (distanceInKm / 15) * 60; // Very slow in dense traffic
+      travelTime = (distanceInKm / denseTrafficKmph) * 60; // Very slow in dense traffic
     } else if (distanceInKm <= 10) {
-      travelTime = (distanceInKm / 25) * 60; // City traffic
+      travelTime = (distanceInKm / cityTrafficKmph) * 60; // City traffic
     } else if (distanceInKm <= 50) {
-      travelTime = (distanceInKm / 40) * 60; // Mixed roads
+      travelTime = (distanceInKm / mixedRoadsKmph) * 60; // Mixed roads
     } else {
-      travelTime = (distanceInKm / 60) * 60; // Highway
+      travelTime = (distanceInKm / highwayKmph) * 60; // Highway
     }
     
     // Add time for intermediate stops (5 minutes per stop)
     const stopTime = stops * 5;
     
     return parseFloat((baseTime + travelTime + stopTime).toFixed(2));
+  }
+
+  private calculateEstimatedRestingHours(durationInMinutes: number): number {
+    // Convert minutes to hours
+    const durationInHours = durationInMinutes / 60;
+    
+    let restingMinutes = 0;
+    
+    if (durationInHours <= 3) {
+        // No resting hours for trips less than or equal to 3 hours
+        restingMinutes = 0;
+    } else if (durationInHours <= 8) {
+        // For trips between 3-8 hours: 15 minutes per 2 hours
+        // Calculate how many 2-hour segments
+        const twoHourSegments = Math.floor((durationInHours - 3) / 2);
+        restingMinutes = twoHourSegments * 15;
+    } else {        
+        restingMinutes = 4 * 60;
+    }
+    
+    return restingMinutes;
   }
 
   private toRad(degrees: number): number {
@@ -421,6 +455,402 @@ export class TripsService {
     };
   }
   */
+ 
+  // First, update the AvailableVehicleDto type to include the hasTimeExceeded property
+  // In your dto file (trip-response.dto.ts), update the AvailableVehicleDto:
+  async getReviewAvailableVehicles(request: ReviewAvailableVehiclesRequest): Promise<{
+    allVehicles: AvailableVehicleDto[];
+    pagination: {
+      total: number;
+      page: number;
+      pageSize: number;
+      totalPages: number;
+      hasNext: boolean;
+      hasPrevious: boolean;
+    };
+  }> {
+  const { tripId, page = 0, pageSize = 10, search } = request;
+  
+  // Get the existing trip
+  const existingTrip = await this.tripRepo.findOne({
+    where: { id: parseInt(tripId) },
+    relations: [
+      'location',
+      'conflictingTrips',
+      'conflictingTrips.location',
+      'conflictingTrips.vehicle'
+    ]
+  });
+
+  if (!existingTrip) {
+    throw new NotFoundException(this.responseService.error('Trip not found', 404));
+  }
+
+  // Calculate passenger count from existing trip
+  const passengerCount = existingTrip.passengerCount;
+
+  // Extract schedule data from existing trip
+  const scheduleData = {
+    startDate: existingTrip.startDate,
+    startTime: existingTrip.startTime,
+    repetition: existingTrip.repetition,
+    validTillDate: existingTrip.validTillDate,
+    includeWeekends: existingTrip.includeWeekends,
+    repeatAfterDays: existingTrip.repeatAfterDays
+  };
+
+  // Extract location data from existing trip
+  const locationData = {
+    startLocation: {
+      address: existingTrip.location.startAddress,
+      coordinates: {
+        coordinates: [existingTrip.location.startLongitude, existingTrip.location.startLatitude]
+      }
+    },
+    endLocation: {
+      address: existingTrip.location.endAddress,
+      coordinates: {
+        coordinates: [existingTrip.location.endLongitude, existingTrip.location.endLatitude]
+      }
+    },
+    intermediateStops: existingTrip.location.intermediateStops,
+    totalStops: existingTrip.location.totalStops,
+    routeData: existingTrip.location.locationData
+  };
+
+  // Get trips at same time (for ALL vehicle availability check)
+  const tripsAtSameTime = await this.findAllTripsAtSameTime(scheduleData);
+  
+  // Get REAL conflicting trips (same time AND route proximity)
+  const conflictingTrips = await this.findConflictingTrips(
+    locationData,
+    scheduleData,
+    passengerCount
+  );
+
+  // Build query for all active vehicles with search
+  const queryBuilder = this.vehicleRepo
+    .createQueryBuilder('vehicle')
+    .leftJoinAndSelect('vehicle.vehicleType', 'vehicleType')
+    .where('vehicle.isActive = :isActive', { isActive: true });
+
+  // Apply search filter if provided
+  if (search) {
+    queryBuilder.andWhere(
+      new Brackets(qb => {
+        qb.where('vehicle.model ILIKE :search', { search: `%${search}%` })
+          .orWhere('vehicle.regNo ILIKE :search', { search: `%${search}%` })
+          .orWhere('vehicle.vehicleType.vehicleType ILIKE :search', { search: `%${search}%` })
+          .orWhere('CAST(vehicle.seatingCapacity AS TEXT) ILIKE :search', { search: `%${search}%` });
+      })
+    );
+  }
+
+  // Get total count for pagination
+  const total = await queryBuilder.getCount();
+
+  // Apply pagination
+  const skip = page * pageSize;
+  const allVehicles = await queryBuilder
+    .skip(skip)
+    .take(pageSize)
+    .getMany();
+
+  console.log(`Total vehicles: ${total}, Current page: ${page}, Page size: ${pageSize}`);
+  console.log(`Vehicles with trips at same time: ${tripsAtSameTime.size}`);
+  console.log(`Vehicles with REAL route conflicts: ${conflictingTrips.length}`);
+
+  const activeTripsByVehicle = await this.findAllActiveTrips();
+
+  // Filter vehicles based on your new logic
+  const availableVehicles = allVehicles.filter(vehicle => {
+    // Rule 1: seating capacity
+    if (vehicle.seatingAvailability < passengerCount) {
+      console.log(`Vehicle ${vehicle.id} excluded: Insufficient capacity (${vehicle.seatingAvailability} < ${passengerCount})`);
+      return false;
+    }
+
+    const tripAtSameTime = tripsAtSameTime.get(vehicle.id);
+    const isRealConflict = conflictingTrips.some(
+      trip => trip.vehicle?.id === vehicle.id
+    );
+
+    // CASE 1: Vehicle has a trip at same time AND same route (REAL conflict)
+    if (tripAtSameTime && isRealConflict) {
+      // Check if the conflicting trip's end time has exceeded
+      const conflictingTrip = tripAtSameTime;
+      const hasTimeExceeded = this.hasTripTimeExceeded(conflictingTrip);
+      
+      if (hasTimeExceeded) {
+        console.log(`Vehicle ${vehicle.id} INCLUDED: Has conflicting trip but time has exceeded`);
+        return true;
+      } else {
+        console.log(`Vehicle ${vehicle.id} INCLUDED (Recommended): Has conflicting trip at same time + same route`);
+        return true; // This is the recommended case
+      }
+    }
+
+    // CASE 2: Vehicle has a trip at same time but DIFFERENT route
+    if (tripAtSameTime && !isRealConflict) {
+      console.log(`Vehicle ${vehicle.id} EXCLUDED: Has trip at same time but different route`);
+      return false;
+    }
+
+    // CASE 3: Vehicle has active trips (not completed/finished)
+    const activeTrips = activeTripsByVehicle.get(vehicle.id);
+    if (activeTrips && activeTrips.length > 0) {
+      // Check if any active trip's time has exceeded
+      const hasAnyActiveTripTimeExceeded = activeTrips.some(trip => 
+        this.hasTripTimeExceeded(trip)
+      );
+      
+      if (!hasAnyActiveTripTimeExceeded) {
+        console.log(`Vehicle ${vehicle.id} EXCLUDED: Has active trip that hasn't completed`);
+        return false;
+      }
+      // If all active trips have exceeded time, vehicle is available
+      console.log(`Vehicle ${vehicle.id} INCLUDED: All active trips have completed`);
+    }
+
+    // CASE 4: Vehicle has no trips or only completed trips
+    console.log(`Vehicle ${vehicle.id} INCLUDED: No conflicting/active trips`);
+    return true;
+  });
+
+  console.log(`Available vehicles after filtering: ${availableVehicles.length}`);
+
+  // Get vehicle locations
+  const vehicleLocations = await this.getVehicleLocations();
+
+  // Analyze and recommend vehicles with your specific logic
+  const analyzedVehicles = await this.analyzeAndRecommendVehiclesForReview(
+    availableVehicles,
+    vehicleLocations,
+    locationData,
+    scheduleData,
+    conflictingTrips,
+    tripsAtSameTime,
+    existingTrip
+  );
+
+  // Calculate pagination metadata
+  const totalPages = Math.ceil(total / pageSize);
+  const hasNext = page < totalPages - 1;
+  const hasPrevious = page > 0;
+
+  return {
+    allVehicles: analyzedVehicles,
+    pagination: {
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasNext,
+      hasPrevious
+    }
+  };
+}
+
+  // Fix the type in analyzeAndRecommendVehiclesForReview method:
+  private async analyzeAndRecommendVehiclesForReview(
+    vehicles: Vehicle[],
+    vehicleLocations: Map<number, { lat: number; lng: number; lastUpdated: Date }>,
+    locationData: any,
+    scheduleData: any,
+    conflictingTrips: Trip[],
+    tripsAtSameTime: Map<number, Trip>,
+    existingTrip: Trip
+  ): Promise<AvailableVehicleDto[]> {
+    const startCoords = locationData.startLocation.coordinates.coordinates;
+    const startLat = startCoords[1];
+    const startLng = startCoords[0];
+
+    const result: AvailableVehicleDto[] = [];
+
+    // Create a Map of vehicle IDs to REAL conflicting trips
+    const conflictingTripsMap = new Map<number, Trip>();
+    conflictingTrips.forEach(trip => {
+      if (trip.vehicle?.id) {
+        conflictingTripsMap.set(trip.vehicle.id, trip);
+      }
+    });
+
+    for (const vehicle of vehicles) {
+      const vehicleLocation = vehicleLocations.get(vehicle.id);
+      let distanceFromStart = 0;
+      let estimatedArrivalTime = 0;
+      let isRecommended = false;
+      let recommendationReason = 'Available vehicle';
+      let conflictingTripData: any = null;
+
+      if (vehicleLocation) {
+        // Calculate distance from start location
+        distanceFromStart = this.calculateDistance(
+          startLat, startLng,
+          vehicleLocation.lat, vehicleLocation.lng
+        ) * 1000; // Convert to meters
+
+        // Estimate arrival time (assuming average speed of 30 km/h in city traffic)
+        estimatedArrivalTime = (distanceFromStart / 1000) / 30 * 60; // in minutes
+      }
+
+      // Check if vehicle is in REAL conflicting trips (same time + route proximity)
+      const conflictingTrip = conflictingTripsMap.get(vehicle.id);
+      const isInConflict = !!conflictingTrip;
+      
+      if (isInConflict && conflictingTrip) {
+        // Check if conflicting trip's time has exceeded
+        const hasTimeExceeded = this.hasTripTimeExceeded(conflictingTrip);
+        
+        if (!hasTimeExceeded) {
+          // REAL CONFLICT VEHICLE: Already scheduled for nearby route at same time
+          isRecommended = true;
+          recommendationReason = 'Already scheduled for nearby route at same time';
+          
+          conflictingTripData = {
+            tripId: conflictingTrip.id,
+            startTime: conflictingTrip.startTime,
+            startDate: conflictingTrip.startDate,
+            estimatedEndTime: this.calculateEstimatedEndTime(conflictingTrip),
+            hasTimeExceeded: false, // This is important!
+            startLocation: {
+              address: conflictingTrip.location?.startAddress,
+              latitude: conflictingTrip.location?.startLatitude,
+              longitude: conflictingTrip.location?.startLongitude
+            },
+            endLocation: {
+              address: conflictingTrip.location?.endAddress,
+              latitude: conflictingTrip.location?.endLatitude,
+              longitude: conflictingTrip.location?.endLongitude
+            },
+          };
+        } else {
+          // Conflict trip has completed, vehicle is available
+          isRecommended = false;
+          recommendationReason = 'Previously scheduled trip has completed';
+          
+          conflictingTripData = {
+            tripId: conflictingTrip.id,
+            startTime: conflictingTrip.startTime,
+            startDate: conflictingTrip.startDate,
+            estimatedEndTime: this.calculateEstimatedEndTime(conflictingTrip),
+            hasTimeExceeded: true, // This is important!
+            startLocation: {
+              address: conflictingTrip.location?.startAddress,
+              latitude: conflictingTrip.location?.startLatitude,
+              longitude: conflictingTrip.location?.startLongitude
+            },
+            endLocation: {
+              address: conflictingTrip.location?.endAddress,
+              latitude: conflictingTrip.location?.endLatitude,
+              longitude: conflictingTrip.location?.endLongitude
+            },
+          };
+        }
+      } else {
+        // Check if vehicle has ANY trip at same time (even if route not nearby)
+        const tripAtSameTime = tripsAtSameTime.get(vehicle.id);
+        if (tripAtSameTime) {
+          // Vehicle is booked at same time but route is NOT nearby
+          // Check if that trip's time has exceeded
+          const hasTimeExceeded = this.hasTripTimeExceeded(tripAtSameTime);
+          
+          if (hasTimeExceeded) {
+            isRecommended = false;
+            recommendationReason = 'Previous trip at same time has completed';
+          } else {
+            isRecommended = false;
+            recommendationReason = 'Booked at same time (different route)';
+          }
+        } else {
+          // Vehicle is completely free - normal recommendation logic
+          if (distanceFromStart <= 5000) { // Within 5 km
+            isRecommended = true;
+            recommendationReason = 'Close to pickup location';
+          } else if (this.isVehicleSuitableForTime(vehicle, scheduleData)) {
+            isRecommended = true;
+            recommendationReason = 'Suitable for scheduled time';
+          }
+        }
+      }
+
+      result.push({
+        vehicle,
+        isRecommended,
+        recommendationReason,
+        distanceFromStart,
+        estimatedArrivalTime,
+        isInConflict,
+        conflictingTripData
+      } as AvailableVehicleDto);
+    }
+
+    // Sort with priority: Recommended vehicles with real conflicts first, then recommended, then others
+    return result.sort((a, b) => {
+      // Both have real conflicts
+      if (a.isInConflict && b.isInConflict) {
+        if (a.conflictingTripData?.hasTimeExceeded === false && b.conflictingTripData?.hasTimeExceeded === true) {
+          return -1; // a first (active conflict)
+        }
+        if (a.conflictingTripData?.hasTimeExceeded === true && b.conflictingTripData?.hasTimeExceeded === false) {
+          return 1; // b first
+        }
+      }
+      
+      // Only a has real conflict
+      if (a.isInConflict && !b.isInConflict) {
+        return a.conflictingTripData?.hasTimeExceeded === false ? -1 : 1;
+      }
+      
+      // Only b has real conflict
+      if (!a.isInConflict && b.isInConflict) {
+        return b.conflictingTripData?.hasTimeExceeded === false ? 1 : -1;
+      }
+      
+      // Sort by recommendation status
+      if (a.isRecommended && !b.isRecommended) return -1;
+      if (!a.isRecommended && b.isRecommended) return 1;
+      
+      // Finally sort by distance
+      return a.distanceFromStart - b.distanceFromStart;
+    });
+  }
+
+  private calculateEstimatedEndTime(trip: Trip): string {
+    if (!trip.location) return 'Unknown';
+    
+    const startDateTime = new Date(`${trip.startDate}T${trip.startTime}`);
+    const estimatedDuration = trip.location.estimatedDuration || 60;
+    const estimatedRestingHours = trip.location.estimatedRestingHours || 0;
+    
+    // Calculate total trip time in minutes
+    const totalTripMinutes = (estimatedDuration * 2) + estimatedRestingHours;
+    
+    // Calculate end time
+    const endDateTime = new Date(startDateTime.getTime() + totalTripMinutes * 60000);
+    
+    // Format to HH:MM
+    return endDateTime.toTimeString().split(' ')[0].substring(0, 5);
+  }
+
+  private hasTripTimeExceeded(trip: Trip): boolean {
+    // Calculate trip end time = start time + (estimated duration * 2 + resting hours)
+    const startDateTime = new Date(`${trip.startDate}T${trip.startTime}`);
+    
+    // Get estimated duration in minutes from location
+    const estimatedDuration = trip.location?.estimatedDuration || 60; // Default 60 minutes if not available
+    const estimatedRestingHours = trip.location?.estimatedRestingHours || 0;
+    
+    // Calculate total trip time in minutes (estimatedDuration * 2 + resting hours converted to minutes)
+    const totalTripMinutes = (estimatedDuration * 2) + estimatedRestingHours;
+    
+    // Calculate end time
+    const endDateTime = new Date(startDateTime.getTime() + totalTripMinutes * 60000);
+    
+    // Check if current time is after end time
+    const now = new Date();
+    return now > endDateTime;
+  }
 
   async getAvailableVehicles(requestDto: AvailableVehiclesRequestDto): Promise<AvailableVehiclesResponseDto> {
     const passengerCount = this.calculatePassengerCount(requestDto.passengerData); 
@@ -646,395 +1076,1050 @@ export class TripsService {
     }
   }
 
-//
-async createTrip(createTripDto: CreateTripDto, requesterId: number) { 
-  const requester = await this.userRepo.findOne({ 
-    where: { id: requesterId },
-    relations: ['department', 'department.head'] 
-  }); 
-  if (!requester) {
-    throw new NotFoundException(this.responseService.error('Requester not found', 404));
-  }
-
-  // Check if it's a scheduled trip
-  const isScheduledTrip = createTripDto.scheduleData.repetition !== RepetitionType.ONCE;
-  
-  // For scheduled trips, validate schedule
-  if (isScheduledTrip) {
-    await this.validateScheduleData(createTripDto.scheduleData);
-  }
-
-  // Calculate passenger count
-  const passengerCount = this.calculatePassengerCount(createTripDto.passengerData);
-
-  // Validate vehicle if provided
-  let vehicle: Vehicle | undefined;
-  if (createTripDto.vehicleId) {
-    vehicle = await this.vehicleRepo.findOne({ 
-      where: { id: createTripDto.vehicleId },
-      relations: ['assignedDriverPrimary', 'assignedDriverSecondary']
-    });
-    if (!vehicle) {
-      throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
+  //
+  async createTrip(createTripDto: CreateTripDto, requesterId: number) { 
+    const requester = await this.userRepo.findOne({ 
+      where: { id: requesterId },
+      relations: ['department', 'department.head'] 
+    }); 
+    if (!requester) {
+      throw new NotFoundException(this.responseService.error('Requester not found', 404));
     }
 
-    // Check vehicle capacity
-    if (vehicle.seatingAvailability < passengerCount) {
-      throw new BadRequestException(
-        this.responseService.error('Vehicle does not have enough seating capacity', 400)
-      );
-    }
-  }
-
-  // Check for conflicting trip if conflictTripId is provided
-  let conflictTrip: Trip | null = null;
-  if (createTripDto.conflictingTripId) {
-    conflictTrip = await this.tripRepo.findOne({
-      where: { id: createTripDto.conflictingTripId },
-      relations: ['conflictingTrips', 'vehicle', 'location']
-    });
+    // Check if it's a scheduled trip
+    const isScheduledTrip = createTripDto.scheduleData.repetition !== RepetitionType.ONCE;
     
-    if (!conflictTrip) {
-      throw new NotFoundException(
-        this.responseService.error('Conflicting trip not found', 404)
-      );
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip) {
+      await this.validateScheduleData(createTripDto.scheduleData);
     }
 
-    // Verify the conflicting trip is for the same vehicle
-    if (conflictTrip.vehicle?.id !== createTripDto.vehicleId) {
-      throw new BadRequestException(
-        this.responseService.error('Conflicting trip is not for the same vehicle', 400)
-      );
+    // Calculate passenger count
+    const passengerCount = this.calculatePassengerCount(createTripDto.passengerData);
+
+    // Validate vehicle if provided
+    let vehicle: Vehicle | undefined;
+    if (createTripDto.vehicleId) {
+      vehicle = await this.vehicleRepo.findOne({ 
+        where: { id: createTripDto.vehicleId },
+        relations: ['assignedDriverPrimary', 'assignedDriverSecondary']
+      });
+      if (!vehicle) {
+        throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
+      }
+
+      // Check vehicle capacity
+      if (vehicle.seatingAvailability < passengerCount) {
+        throw new BadRequestException(
+          this.responseService.error('Vehicle does not have enough seating capacity', 400)
+        );
+      }
     }
-  }
 
-  // Create trip location
-  const startCoords = createTripDto.locationData.startLocation.coordinates.coordinates;
-  const endCoords = createTripDto.locationData.endLocation.coordinates.coordinates;
-
-  // Prepare intermediate stops
-  const intermediateStops = createTripDto.locationData.intermediateStops?.map((stop, index) => ({
-    latitude: stop.coordinates?.coordinates?.[1] ?? 0,
-    longitude: stop.coordinates?.coordinates?.[0] ?? 0,
-    address: stop.address ?? '',
-    order: index + 1
-  })) ?? [];
-
-  // Calculate route distance
-  const routeDistance = this.calculateRouteDistanceWithStops(
-    startCoords[1],
-    startCoords[0],
-    endCoords[1],
-    endCoords[0],
-    intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
-  );
-
-  // Calculate estimated duration
-  const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
-
-  // Create trip location
-  const tripLocation = this.tripLocationRepo.create({
-    startLatitude: startCoords[1],
-    startLongitude: startCoords[0],
-    startAddress: createTripDto.locationData.startLocation.address,
-    endLatitude: endCoords[1],
-    endLongitude: endCoords[0],
-    endAddress: createTripDto.locationData.endLocation.address,
-    intermediateStops: intermediateStops,
-    totalStops: createTripDto.locationData.totalStops,
-    locationData: createTripDto.locationData.routeData,
-    distance: parseFloat(routeDistance.toFixed(2)),
-    estimatedDuration: estimatedDuration,
-  });
-
-  const savedLocation = await this.tripLocationRepo.save(tripLocation);
-
-  // Handle passenger data
-  let selectedIndividual: User | undefined;
-  const selectedGroupUserIds: number[] = [];
-
-  if (createTripDto.passengerData.selectedIndividual) {
-    selectedIndividual = await this.userRepo.findOne({
-      where: { id: createTripDto.passengerData.selectedIndividual.id }
-    });
-  }
-
-  if (createTripDto.passengerData.selectedGroupUsers?.length) {
-    createTripDto.passengerData.selectedGroupUsers.forEach(user => {
-      selectedGroupUserIds.push(user.id);
-    });
-    
-    if (selectedGroupUserIds.length > 0) {
-      const users = await this.userRepo.find({
-        where: { id: In(selectedGroupUserIds) }
+    // Check for conflicting trip if conflictTripId is provided
+    let conflictTrip: Trip | null = null;
+    if (createTripDto.conflictingTripId) {
+      conflictTrip = await this.tripRepo.findOne({
+        where: { id: createTripDto.conflictingTripId },
+        relations: ['conflictingTrips', 'vehicle', 'location']
       });
       
-      if (users.length !== selectedGroupUserIds.length) {
-        const foundIds = users.map(u => u.id);
-        const missingIds = selectedGroupUserIds.filter(id => !foundIds.includes(id));
-        
+      if (!conflictTrip) {
+        throw new NotFoundException(
+          this.responseService.error('Conflicting trip not found', 404)
+        );
+      }
+
+      // Verify the conflicting trip is for the same vehicle
+      if (conflictTrip.vehicle?.id !== createTripDto.vehicleId) {
         throw new BadRequestException(
-          this.responseService.error(`Users not found: ${missingIds.join(', ')}`, 400)
+          this.responseService.error('Conflicting trip is not for the same vehicle', 400)
+        );
+      }
+    }
+
+    // Create trip location
+    const startCoords = createTripDto.locationData.startLocation.coordinates.coordinates;
+    const endCoords = createTripDto.locationData.endLocation.coordinates.coordinates;
+
+    // Prepare intermediate stops
+    const intermediateStops = createTripDto.locationData.intermediateStops?.map((stop, index) => ({
+      latitude: stop.coordinates?.coordinates?.[1] ?? 0,
+      longitude: stop.coordinates?.coordinates?.[0] ?? 0,
+      address: stop.address ?? '',
+      order: index + 1
+    })) ?? [];
+
+    // Calculate route distance
+    const routeDistance = this.calculateRouteDistanceWithStops(
+      startCoords[1],
+      startCoords[0],
+      endCoords[1],
+      endCoords[0],
+      intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
+    );
+
+    // Calculate estimated duration
+    const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
+
+    // Create trip location
+    const tripLocation = this.tripLocationRepo.create({
+      startLatitude: startCoords[1],
+      startLongitude: startCoords[0],
+      startAddress: createTripDto.locationData.startLocation.address,
+      endLatitude: endCoords[1],
+      endLongitude: endCoords[0],
+      endAddress: createTripDto.locationData.endLocation.address,
+      intermediateStops: intermediateStops,
+      totalStops: createTripDto.locationData.totalStops,
+      locationData: createTripDto.locationData.routeData,
+      distance: parseFloat(routeDistance.toFixed(2)),
+      estimatedDuration: estimatedDuration,
+    });
+
+    const savedLocation = await this.tripLocationRepo.save(tripLocation);
+
+    // Handle passenger data
+    let selectedIndividual: User | undefined;
+    const selectedGroupUserIds: number[] = [];
+
+    if (createTripDto.passengerData.selectedIndividual) {
+      selectedIndividual = await this.userRepo.findOne({
+        where: { id: createTripDto.passengerData.selectedIndividual.id }
+      });
+    }
+
+    if (createTripDto.passengerData.selectedGroupUsers?.length) {
+      createTripDto.passengerData.selectedGroupUsers.forEach(user => {
+        selectedGroupUserIds.push(user.id);
+      });
+      
+      if (selectedGroupUserIds.length > 0) {
+        const users = await this.userRepo.find({
+          where: { id: In(selectedGroupUserIds) }
+        });
+        
+        if (users.length !== selectedGroupUserIds.length) {
+          const foundIds = users.map(u => u.id);
+          const missingIds = selectedGroupUserIds.filter(id => !foundIds.includes(id));
+          
+          throw new BadRequestException(
+            this.responseService.error(`Users not found: ${missingIds.join(', ')}`, 400)
+          );
+        }
+      }
+    }
+
+    // Fix selectedOthers
+    const selectedOthers = createTripDto.passengerData.selectedOthers?.map(other => ({
+      id: String(other.id),
+      displayName: other.displayName,
+      contactNo: other.contactNo,
+    })) || [];
+
+    // Determine status and if approval is needed
+    let tripStatus = createTripDto.status || TripStatus.PENDING;
+    let requiresApproval = true;
+    
+    // Scheduled trips always need approval
+    if (isScheduledTrip) {
+      requiresApproval = true;
+      tripStatus = TripStatus.PENDING;
+    } else if (createTripDto.status === TripStatus.DRAFT) {
+      // One-time draft doesn't need approval
+      requiresApproval = false;
+    }
+
+    // Create the master trip
+    const trip = this.tripRepo.create({
+      ...createTripDto.scheduleData,
+      startDate: this.formatDateForDB(createTripDto.scheduleData.startDate),
+      startTime: this.formatTimeWithSeconds(createTripDto.scheduleData.startTime),
+      validTillDate: createTripDto.scheduleData.validTillDate 
+        ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
+        : null,
+      location: savedLocation,
+      mileage: routeDistance,
+      passengerType: createTripDto.passengerData.passengerType,
+      passengerCount,
+      selectedIndividual,
+      selectedOthers,
+      includeMeInGroup: createTripDto.passengerData.includeMeInGroup ?? true,
+      purpose: createTripDto.purpose,
+      specialRemarks: createTripDto.specialRemarks,
+      vehicle,
+      requester,
+      status: tripStatus,
+      conflictingTrips: conflictTrip ? [conflictTrip] : [],
+      // NEW: Add scheduled trip metadata
+      isScheduled: isScheduledTrip,
+      isInstance: false,
+      masterTripId: null,
+      instanceDate: null,
+    });
+
+    const savedTrip = await this.tripRepo.save(trip);
+
+    // Add selected group users
+    if (selectedGroupUserIds.length > 0) {
+      await this.tripRepo
+        .createQueryBuilder()
+        .relation(Trip, 'selectedGroupUsers')
+        .of(savedTrip.id)
+        .add(selectedGroupUserIds);
+    }
+
+    // Handle conflict trip relationship
+    if (conflictTrip) {
+      const conflictTripWithRelations = await this.tripRepo.findOne({
+        where: { id: conflictTrip.id },
+        relations: ['conflictingTrips']
+      });
+
+      if (conflictTripWithRelations) {
+        if (!conflictTripWithRelations.conflictingTrips) {
+          conflictTripWithRelations.conflictingTrips = [];
+        }
+        
+        conflictTripWithRelations.conflictingTrips.push(savedTrip);
+        await this.tripRepo.save(conflictTripWithRelations);
+      }
+    }
+
+    // Update vehicle seating
+    if (vehicle) {
+      vehicle.seatingAvailability -= passengerCount;
+      if (vehicle.seatingAvailability < 0) {
+        throw new BadRequestException(
+          this.responseService.error('Not enough seats available', 400)
+        );
+      }
+      await this.vehicleRepo.save(vehicle);
+    }
+
+    // Create approval if needed
+    let approvalMessage = '';
+    let tripInstances: Trip[] = [];
+    
+    if (requiresApproval) {
+      // Create approval for master trip
+      //await this.createSingleApproval(savedTrip, requester);
+      const approval = await this.createApprovalRecord(savedTrip.id, requester, createTripDto, tripLocation, routeDistance);
+      savedTrip.approval = approval;
+      await this.tripRepo.save(savedTrip);
+
+      approvalMessage = isScheduledTrip 
+        ? 'Scheduled trip submitted for single approval' 
+        : 'Trip submitted for single approval';
+    } else {
+      approvalMessage = 'Trip saved as draft';
+    }
+
+    // Generate trip instances for scheduled trips
+    if (isScheduledTrip) {
+      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData);
+    }
+
+    // Reload trip with relations
+    const tripWithRelations = await this.tripRepo.findOne({
+      where: { id: savedTrip.id },
+      relations: [
+        'vehicle', 
+        'vehicle.assignedDriverPrimary', 
+        'vehicle.assignedDriverSecondary',
+        'conflictingTrips',
+        'conflictingTrips.location',
+        'conflictingTrips.requester',
+        'selectedGroupUsers'
+      ]
+    });
+
+            // TODO publish event
+
+    return {
+      success: true,
+      message: approvalMessage,
+      trip: new TripResponseDto(tripWithRelations!),
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      instanceCount: tripInstances.length,
+      instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  async assignVehicleToTrip(
+    tripId: number,
+    vehicleId: number,
+    userId: number,
+  ): Promise<any> {
+    // Get the trip with all necessary relations
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'location',
+        'conflictingTrips',
+        'vehicle',
+        'requester',
+        'selectedGroupUsers',
+        'selectedIndividual',
+        'approval'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    // Check if trip already has a vehicle assigned
+    /*
+    if (trip.vehicle) {
+      throw new BadRequestException(
+        this.responseService.error('Trip already has a vehicle assigned', 400)
+      );
+    }
+    */
+
+    // Get the vehicle with relations
+    const vehicle = await this.vehicleRepo.findOne({
+      where: { id: vehicleId, isActive: true },
+      relations: ['assignedDriverPrimary', 'assignedDriverSecondary', 'vehicleType']
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException(this.responseService.error('Vehicle not found or inactive', 404));
+    }
+
+    // Check vehicle seating capacity
+    if (vehicle.seatingAvailability < trip.passengerCount) {
+      throw new BadRequestException(
+        this.responseService.error(
+          `Vehicle does not have enough seating capacity. Available: ${vehicle.seatingAvailability}, Required: ${trip.passengerCount}`,
+          400
+        )
+      );
+    }
+
+    // Update vehicle seating availability
+    const previousAvailability = vehicle.seatingAvailability;
+    const seatingAvailability = vehicle.seatingAvailability - trip.passengerCount;
+    
+    if (seatingAvailability < 0) {
+      throw new BadRequestException(
+        this.responseService.error('Not enough seats available after assignment', 400)
+      );
+    }
+
+    // Update trip with vehicle
+    trip.vehicle = vehicle;
+
+    // If trip was DRAFT, change status to PENDING (requires approval)
+    /*
+    if (trip.status === TripStatus.DRAFT) {
+      trip.status = TripStatus.PENDING;
+      
+      // Create approval record if not exists
+      if (!trip.approval) {
+        await this.createApprovalRecord(trip.id, trip.requester, {
+          scheduleData: {
+            startDate: trip.startDate.toString(),
+            startTime: trip.startTime,
+            repetition: trip.repetition
+          }
+        } as CreateTripDto, trip.location, trip.mileage);
+      }
+    }
+    */
+
+    // Save changes in a transaction
+    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      // Save trip with vehicle assignment
+      await transactionalEntityManager.save(trip); 
+    });
+
+    // Send notifications
+    try {
+      // TODO: Publish event for notifications
+      // this.eventEmitter.emit('vehicle.assigned', {
+      //   tripId: trip.id,
+      //   vehicleId: vehicle.id,
+      //   assignedBy: userId,
+      //   passengerCount: trip.passengerCount,
+      //   vehicleModel: vehicle.model,
+      //   vehicleRegNo: vehicle.regNo
+      // });
+    } catch (e) {
+      console.error('Failed to send notification:', e);
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle assigned to trip successfully',
+      data: {
+        trip: trip.id,
+        vehicle: vehicle.model
+      },
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  async confirmReviewTrip(tripId: number, userId: number){
+    const requester = await this.userRepo.findOne({ 
+      where: { id: userId },
+      relations: ['department', 'department.head'] 
+    }); 
+    if (!requester) {
+      throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Get the current trip with necessary relations
+    const currentTrip = await this.tripRepo.findOne({ 
+      where: { id: tripId },
+      relations: [
+        'vehicle', 
+        'location',
+        'schedule',
+        'requester',
+        'selectedIndividual',
+        'selectedGroupUsers'
+      ] 
+    }); 
+    
+    if (!currentTrip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    // Check if it's a scheduled trip
+    const isScheduledTrip = currentTrip.isScheduled;
+    
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip && currentTrip.schedule) {
+      const scheduleData = {
+        startDate: currentTrip.schedule.startDate.toString(),
+        startTime: currentTrip.schedule.startTime,
+        repetition: currentTrip.schedule.repetition,
+        validTillDate: currentTrip.schedule.validTillDate?.toString(),
+        includeWeekends: currentTrip.schedule.includeWeekends,
+        repeatAfterDays: currentTrip.schedule.repeatAfterDays
+      };
+      await this.validateScheduleData(scheduleData);
+    }
+
+    // Get passenger count from existing trip
+    const passengerCount = currentTrip.passengerCount;
+
+    // Validate vehicle if provided
+    let vehicle: Vehicle | undefined;
+    if (currentTrip.vehicle) {
+      vehicle = await this.vehicleRepo.findOne({ 
+        where: { id: currentTrip.vehicle.id },
+        relations: ['assignedDriverPrimary', 'assignedDriverSecondary']
+      });
+      if (!vehicle) {
+        throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
+      }
+
+      // Check vehicle capacity
+      if (vehicle.seatingAvailability < passengerCount) {
+        throw new BadRequestException(
+          this.responseService.error('Vehicle does not have enough seating capacity', 400)
+        );
+      }
+    } else if (currentTrip.vehicle) {
+      vehicle = currentTrip.vehicle;
+    }
+
+    // Check for conflicting trips based on vehicle
+    let conflictingTrips: Trip[] = [];
+    if (vehicle) {
+      // Check if vehicle has any trips at the same time that could conflict
+      conflictingTrips = await this.findVehicleConflictingTrips(
+        vehicle.id,
+        currentTrip.startDate.toString(),
+        currentTrip.startTime,
+        currentTrip.location,
+        currentTrip.id // Exclude current trip from conflict check
+      );
+    }
+
+    // Determine status and if approval is needed
+    let tripStatus = TripStatus.PENDING;
+    let requiresApproval = true;
+    
+    // Scheduled trips always need approval
+    if (isScheduledTrip) {
+      requiresApproval = true;
+      tripStatus = TripStatus.PENDING;
+    } else if (currentTrip.status === TripStatus.DRAFT) {
+      // One-time draft changes to pending when confirmed
+      requiresApproval = true;
+      tripStatus = TripStatus.PENDING;
+    }
+
+    // Update trip status
+    currentTrip.status = tripStatus;
+    const savedTrip = await this.tripRepo.save(currentTrip);
+
+    // Handle conflict trip relationships
+    if (conflictingTrips.length > 0) {
+      for (const conflictTrip of conflictingTrips) {
+        const conflictTripWithRelations = await this.tripRepo.findOne({
+          where: { id: conflictTrip.id },
+          relations: ['conflictingTrips']
+        });
+
+        if (conflictTripWithRelations) {
+          if (!conflictTripWithRelations.conflictingTrips) {
+            conflictTripWithRelations.conflictingTrips = [];
+          }
+          
+          // Add current trip to conflict trip's conflictingTrips
+          if (!conflictTripWithRelations.conflictingTrips.some(t => t.id === savedTrip.id)) {
+            conflictTripWithRelations.conflictingTrips.push(savedTrip);
+            await this.tripRepo.save(conflictTripWithRelations);
+          }
+
+          // Also add conflict trip to current trip's conflictingTrips
+          if (!currentTrip.conflictingTrips) {
+            currentTrip.conflictingTrips = [];
+          }
+          
+          if (!currentTrip.conflictingTrips.some(t => t.id === conflictTrip.id)) {
+            currentTrip.conflictingTrips.push(conflictTrip);
+            await this.tripRepo.save(currentTrip);
+          }
+        }
+      }
+    }
+
+    // Update vehicle seating
+    if (vehicle) {
+      // Only update if the trip wasn't already counted in vehicle seating
+      if (currentTrip.status == TripStatus.DRAFT.toString()) {
+        vehicle.seatingAvailability -= passengerCount;
+        if (vehicle.seatingAvailability < 0) {
+          throw new BadRequestException(
+            this.responseService.error('Not enough seats available', 400)
+          );
+        }
+        await this.vehicleRepo.save(vehicle);
+      }
+    }
+
+    // Create approval 
+    let approvalMessage = '';
+    let tripInstances: Trip[] = [];
+    
+    if (requiresApproval) {
+      // Create approval record
+      const createTripDtoMock = {
+        scheduleData: {
+          startDate: currentTrip.startDate.toString(),
+          startTime: currentTrip.startTime,
+          repetition: currentTrip.repetition
+        },
+        specialRemarks: currentTrip.specialRemarks
+      } as CreateTripDto;
+      
+      const approval = await this.createApprovalRecord(
+        savedTrip.id, 
+        currentTrip.requester, 
+        createTripDtoMock, 
+        currentTrip.location!, 
+        currentTrip.mileage
+      );
+      savedTrip.approval = approval;
+      await this.tripRepo.save(savedTrip);
+
+      approvalMessage = isScheduledTrip 
+        ? 'Scheduled trip submitted for approval' 
+        : 'Trip submitted for approval';
+    }
+
+    // Generate trip instances for scheduled trips
+    if (isScheduledTrip && currentTrip.schedule) {
+      const scheduleData = {
+        startDate: currentTrip.schedule.startDate.toString(),
+        startTime: currentTrip.schedule.startTime,
+        repetition: currentTrip.schedule.repetition,
+        validTillDate: currentTrip.schedule.validTillDate?.toString(),
+        includeWeekends: currentTrip.schedule.includeWeekends,
+        repeatAfterDays: currentTrip.schedule.repeatAfterDays
+      };
+      tripInstances = await this.generateTripInstances(savedTrip, scheduleData);
+    }
+
+    // Reload trip with relations
+    const tripWithRelations = await this.tripRepo.findOne({
+      where: { id: savedTrip.id },
+      relations: [
+        'vehicle', 
+        'vehicle.assignedDriverPrimary', 
+        'vehicle.assignedDriverSecondary',
+        'conflictingTrips',
+        'conflictingTrips.location',
+        'conflictingTrips.requester',
+        'selectedGroupUsers'
+      ]
+    });
+
+    // TODO publish event
+
+    return {
+      success: true,
+      message: approvalMessage || 'Trip confirmed successfully',
+      trip: new TripResponseDto(tripWithRelations!),
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      instanceCount: tripInstances.length,
+      instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  // Helper method to find vehicle conflicting trips
+  private async findVehicleConflictingTrips(
+    vehicleId: number,
+    startDate: string,
+    startTime: string,
+    tripLocation: TripLocation,
+    excludeTripId?: number
+  ): Promise<Trip[]> {
+    const dbDate = this.formatDateForDB(startDate);
+    const dbTime = this.formatTimeWithSeconds(startTime);
+    
+    // Get time in minutes for comparison
+    const [hours, minutes] = dbTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+
+    // Get all trips for this vehicle at same time
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .where('vehicle.id = :vehicleId', { vehicleId })
+      .andWhere('trip.status IN (:...statuses)', {
+        statuses: [TripStatus.PENDING, TripStatus.APPROVED, TripStatus.READ, TripStatus.ONGOING]
+      })
+      .andWhere('trip.startDate = :date', { date: dbDate });
+
+    if (excludeTripId) {
+      queryBuilder.andWhere('trip.id != :excludeTripId', { excludeTripId });
+    }
+
+    const vehicleTrips = await queryBuilder.getMany();
+    const conflictingTrips: Trip[] = [];
+
+    // Check each trip for time and route conflicts
+    for (const existingTrip of vehicleTrips) {
+      if (!existingTrip.location) continue;
+
+      // Check time within window
+      const tripTimeStr = this.formatTimeWithSeconds(existingTrip.startTime);
+      const [tripHours, tripMinutes] = tripTimeStr.split(':').map(Number);
+      const tripTotalMinutes = tripHours * 60 + tripMinutes;
+      
+      // Calculate time difference
+      let timeDiff = Math.abs(tripTotalMinutes - totalMinutes);
+      timeDiff = Math.min(timeDiff, 1440 - timeDiff);
+      
+      if (timeDiff > this.CONFLICT_TIME_WINDOW) {
+        continue;
+      }
+
+      // Check route proximity
+      const isNearby = this.areTripLocationsNearby(
+        tripLocation.startLatitude,
+        tripLocation.startLongitude,
+        tripLocation.endLatitude,
+        tripLocation.endLongitude,
+        existingTrip.location
+      );
+
+      if (isNearby) {
+        conflictingTrips.push(existingTrip);
+      }
+    }
+
+    return conflictingTrips;
+  }
+
+  private async checkVehicleScheduleConflict(
+    vehicleId: number,
+    startDate: string,
+    startTime: string,
+    tripLocation: TripLocation,
+    excludeTripId?: number
+  ): Promise<boolean> {
+    // Format date and time for comparison
+    const dbDate = this.formatDateForDB(startDate);
+    const dbTime = this.formatTimeWithSeconds(startTime);
+    
+    // Get time in minutes for comparison
+    const [hours, minutes] = dbTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+
+    // Get all trips for this vehicle at same time
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .where('vehicle.id = :vehicleId', { vehicleId })
+      .andWhere('trip.status IN (:...statuses)', {
+        statuses: [TripStatus.PENDING, TripStatus.APPROVED, TripStatus.READ, TripStatus.ONGOING]
+      })
+      .andWhere('trip.startDate = :date', { date: dbDate });
+
+    if (excludeTripId) {
+      queryBuilder.andWhere('trip.id != :excludeTripId', { excludeTripId });
+    }
+
+    const vehicleTrips = await queryBuilder.getMany();
+
+    // Check each trip for time and route conflicts
+    for (const existingTrip of vehicleTrips) {
+      if (!existingTrip.location) continue;
+
+      // Check time within window
+      const tripTimeStr = this.formatTimeWithSeconds(existingTrip.startTime);
+      const [tripHours, tripMinutes] = tripTimeStr.split(':').map(Number);
+      const tripTotalMinutes = tripHours * 60 + tripMinutes;
+      
+      // Calculate time difference
+      let timeDiff = Math.abs(tripTotalMinutes - totalMinutes);
+      timeDiff = Math.min(timeDiff, 1440 - timeDiff);
+      
+      if (timeDiff > this.CONFLICT_TIME_WINDOW) {
+        continue;
+      }
+
+      // Check route proximity
+      const isNearby = this.areTripLocationsNearby(
+        tripLocation.startLatitude,
+        tripLocation.startLongitude,
+        tripLocation.endLatitude,
+        tripLocation.endLongitude,
+        existingTrip.location
+      );
+
+      if (isNearby) {
+        return true; // Found a conflict
+      }
+    }
+
+    return false; // No conflicts found
+  }
+
+  async createTripAsDraft(createTripDto: CreateTripDto, requesterId: number) { 
+    const requester = await this.userRepo.findOne({ 
+      where: { id: requesterId },
+      relations: ['department', 'department.head'] 
+    }); 
+    if (!requester) {
+      throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Check if it's a scheduled trip
+    const isScheduledTrip = createTripDto.scheduleData.repetition !== RepetitionType.ONCE;
+    
+    let schedule: Schedule | null;
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip) {
+      await this.validateScheduleData(createTripDto.scheduleData);
+
+      schedule = await this.createSchedule(createTripDto.scheduleData);
+    }
+
+    // Calculate passenger count
+    const passengerCount = this.calculatePassengerCount(createTripDto.passengerData);
+
+    // Create trip location
+    const startCoords = createTripDto.locationData.startLocation.coordinates.coordinates;
+    const endCoords = createTripDto.locationData.endLocation.coordinates.coordinates;
+
+    // Prepare intermediate stops
+    const intermediateStops = createTripDto.locationData.intermediateStops?.map((stop, index) => ({
+      latitude: stop.coordinates?.coordinates?.[1] ?? 0,
+      longitude: stop.coordinates?.coordinates?.[0] ?? 0,
+      address: stop.address ?? '',
+      order: index + 1
+    })) ?? [];
+
+    // Calculate route distance
+    const routeDistance = this.calculateRouteDistanceWithStops(
+      startCoords[1],
+      startCoords[0],
+      endCoords[1],
+      endCoords[0],
+      intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
+    );
+
+    // Calculate estimated duration
+    //const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
+    const estimatedDuration = this.calculateRouteDuration(routeDistance);
+    
+    const estimatedRestingHours = this.calculateEstimatedRestingHours(estimatedDuration * 2);
+
+    //const upNdownDistance = routeDistance * 2;
+    //const upNdownDuration = estimatedDuration * 2;
+
+    // Create trip location
+    const tripLocation = this.tripLocationRepo.create({
+      startLatitude: startCoords[1],
+      startLongitude: startCoords[0],
+      startAddress: createTripDto.locationData.startLocation.address,
+      endLatitude: endCoords[1],
+      endLongitude: endCoords[0],
+      endAddress: createTripDto.locationData.endLocation.address,
+      intermediateStops: intermediateStops,
+      totalStops: createTripDto.locationData.totalStops,
+      locationData: createTripDto.locationData.routeData,
+      distance: parseFloat(routeDistance.toFixed(2)),
+      estimatedDuration: estimatedDuration,
+      estimatedRestingHours: estimatedRestingHours,
+    });
+
+    const savedLocation = await this.tripLocationRepo.save(tripLocation);
+
+    // Handle passenger data
+    let selectedIndividual: User | undefined;
+    const selectedGroupUserIds: number[] = [];
+
+    if (createTripDto.passengerData.selectedIndividual) {
+      selectedIndividual = await this.userRepo.findOne({
+        where: { id: createTripDto.passengerData.selectedIndividual.id }
+      });
+    }
+
+    if (createTripDto.passengerData.selectedGroupUsers?.length) {
+      createTripDto.passengerData.selectedGroupUsers.forEach(user => {
+        selectedGroupUserIds.push(user.id);
+      });
+      
+      if (selectedGroupUserIds.length > 0) {
+        const users = await this.userRepo.find({
+          where: { id: In(selectedGroupUserIds) }
+        });
+        
+        if (users.length !== selectedGroupUserIds.length) {
+          const foundIds = users.map(u => u.id);
+          const missingIds = selectedGroupUserIds.filter(id => !foundIds.includes(id));
+          
+          throw new BadRequestException(
+            this.responseService.error(`Users not found: ${missingIds.join(', ')}`, 400)
+          );
+        }
+      }
+    }
+
+    // Fix selectedOthers
+    const selectedOthers = createTripDto.passengerData.selectedOthers?.map(other => ({
+      id: String(other.id),
+      displayName: other.displayName,
+      contactNo: other.contactNo,
+    })) || [];
+
+    // Determine status and if approval is needed
+    let tripStatus = TripStatus.DRAFT;
+    let requiresApproval = true;
+    
+    // Scheduled trips always need approval
+    if (isScheduledTrip) {
+      requiresApproval = true;
+      tripStatus = TripStatus.DRAFT;
+    } else if (createTripDto.status === TripStatus.DRAFT) {
+      // One-time draft doesn't need approval
+      requiresApproval = false;
+    }
+
+    // Create the master trip
+    const trip = this.tripRepo.create({
+      ...createTripDto.scheduleData,
+      startDate: this.formatDateForDB(createTripDto.scheduleData.startDate),
+      startTime: this.formatTimeWithSeconds(createTripDto.scheduleData.startTime),
+      validTillDate: createTripDto.scheduleData.validTillDate 
+        ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
+        : null,
+      location: savedLocation,
+      mileage: routeDistance,
+      passengerType: createTripDto.passengerData.passengerType,
+      passengerCount,
+      selectedIndividual,
+      selectedOthers,
+      includeMeInGroup: createTripDto.passengerData.includeMeInGroup ?? true,
+      purpose: createTripDto.purpose,
+      specialRemarks: createTripDto.specialRemarks,
+      //vehicle,
+      requester,
+      status: tripStatus,
+      //conflictingTrips: conflictTrip ? [conflictTrip] : [],
+      // NEW: Add scheduled trip metadata
+      isScheduled: isScheduledTrip,
+      schedule: schedule,
+      isInstance: false,
+      masterTripId: null,
+      instanceDate: null,
+    });
+
+    const savedTrip = await this.tripRepo.save(trip);
+
+    // Add selected group users
+    if (selectedGroupUserIds.length > 0) {
+      await this.tripRepo
+        .createQueryBuilder()
+        .relation(Trip, 'selectedGroupUsers')
+        .of(savedTrip.id)
+        .add(selectedGroupUserIds);
+    }
+            // TODO publish event
+
+    return {
+      success: true,
+      //message: approvalMessage,
+      trip: savedTrip,
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      //instanceCount: tripInstances.length,
+      //instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  private async createSchedule(scheduleData: ScheduleDataDto): Promise<Schedule> {
+    const schedule = this.scheduleRepo.create({
+      startDate: new Date(scheduleData.startDate),
+      validTillDate: scheduleData.validTillDate ? new Date(scheduleData.validTillDate) : undefined,
+      startTime: scheduleData.startTime,
+      repetition: scheduleData.repetition,
+      includeWeekends: scheduleData.includeWeekends || false,
+      repeatAfterDays: scheduleData.repeatAfterDays,
+    });
+
+    return await this.scheduleRepo.save(schedule);
+  }
+
+  // NEW HELPER METHODS TO ADD TO YOUR SERVICE:
+
+  private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
+    const startDate = new Date(scheduleData.startDate);
+    const today = new Date();
+
+    startDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    if (startDate < today) {
+      throw new BadRequestException(
+        this.responseService.error('Start date cannot be in the past', 400)
+      );
+    }
+    
+    if (scheduleData.validTillDate) {
+      const validTillDate = new Date(scheduleData.validTillDate);
+      if (validTillDate < startDate) {
+        throw new BadRequestException(
+          this.responseService.error('Valid till date cannot be before start date', 400)
+        );
+      }
+    }
+    
+    if (scheduleData.repetition === RepetitionType.DAILY && scheduleData.repeatAfterDays) {
+      if (scheduleData.repeatAfterDays < 1) {
+        throw new BadRequestException(
+          this.responseService.error('Repeat after days must be at least 1', 400)
         );
       }
     }
   }
 
-  // Fix selectedOthers
-  const selectedOthers = createTripDto.passengerData.selectedOthers?.map(other => ({
-    id: String(other.id),
-    displayName: other.displayName,
-    contactNo: other.contactNo,
-  })) || [];
-
-  // Determine status and if approval is needed
-  let tripStatus = createTripDto.status || TripStatus.PENDING;
-  let requiresApproval = true;
-  
-  // Scheduled trips always need approval
-  if (isScheduledTrip) {
-    requiresApproval = true;
-    tripStatus = TripStatus.PENDING;
-  } else if (createTripDto.status === TripStatus.DRAFT) {
-    // One-time draft doesn't need approval
-    requiresApproval = false;
-  }
-
-  // Create the master trip
-  const trip = this.tripRepo.create({
-    ...createTripDto.scheduleData,
-    startDate: this.formatDateForDB(createTripDto.scheduleData.startDate),
-    startTime: this.formatTimeWithSeconds(createTripDto.scheduleData.startTime),
-    validTillDate: createTripDto.scheduleData.validTillDate 
-      ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
-      : null,
-    location: savedLocation,
-    mileage: routeDistance,
-    passengerType: createTripDto.passengerData.passengerType,
-    passengerCount,
-    selectedIndividual,
-    selectedOthers,
-    includeMeInGroup: createTripDto.passengerData.includeMeInGroup ?? true,
-    purpose: createTripDto.purpose,
-    specialRemarks: createTripDto.specialRemarks,
-    vehicle,
-    requester,
-    status: tripStatus,
-    conflictingTrips: conflictTrip ? [conflictTrip] : [],
-    // NEW: Add scheduled trip metadata
-    isScheduled: isScheduledTrip,
-    isInstance: false,
-    masterTripId: null,
-    instanceDate: null,
-  });
-
-  const savedTrip = await this.tripRepo.save(trip);
-
-  // Add selected group users
-  if (selectedGroupUserIds.length > 0) {
-    await this.tripRepo
-      .createQueryBuilder()
-      .relation(Trip, 'selectedGroupUsers')
-      .of(savedTrip.id)
-      .add(selectedGroupUserIds);
-  }
-
-  // Handle conflict trip relationship
-  if (conflictTrip) {
-    const conflictTripWithRelations = await this.tripRepo.findOne({
-      where: { id: conflictTrip.id },
-      relations: ['conflictingTrips']
+  private async createSingleApproval(trip: Trip, requester: User): Promise<void> {
+    // Find appropriate approver
+    let approver: User | null = null;
+    
+    if (requester.department?.head) {
+      approver = await this.userRepo.findOne({
+        where: { id: requester.department.head.id }
+      });
+    }
+    
+    if (!approver) {
+      approver = await this.userRepo.findOne({
+        where: { role: UserRole.ADMIN }
+      });
+    }
+    
+    // Create approval record
+    const approval = this.approvalRepo.create({
+      trip: { id: trip.id } as Trip,
+      approver1: approver,
+      approver1Status: StatusApproval.PENDING,
+      overallStatus: StatusApproval.PENDING,
+      currentStep: ApproverType.HOD,
+      requireApprover1: true,
     });
+    
+    await this.approvalRepo.save(approval);
+  }
 
-    if (conflictTripWithRelations) {
-      if (!conflictTripWithRelations.conflictingTrips) {
-        conflictTripWithRelations.conflictingTrips = [];
-      }
+  private async generateTripInstances(masterTrip: Trip, scheduleData: ScheduleDataDto): Promise<Trip[]> {
+    const { repetition, startDate, validTillDate, includeWeekends, repeatAfterDays } = scheduleData;
+    
+    const start = new Date(startDate);
+    const end = validTillDate ? new Date(validTillDate) : this.getDefaultEndDate(start, repetition);
+    
+    const instanceDates = this.calculateInstanceDates(start, end, repetition, includeWeekends, repeatAfterDays);
+    
+    const instances: Trip[] = [];
+    
+    for (const instanceDate of instanceDates) {
+      // Clone location for each instance
+      const locationCopy = await this.cloneTripLocation(masterTrip.location);
       
-      conflictTripWithRelations.conflictingTrips.push(savedTrip);
-      await this.tripRepo.save(conflictTripWithRelations);
+      // Create instance
+      const tripInstance = this.tripRepo.create({
+        location: locationCopy,
+        mileage: masterTrip.mileage,
+        passengerType: masterTrip.passengerType,
+        passengerCount: masterTrip.passengerCount,
+        selectedIndividual: masterTrip.selectedIndividual,
+        selectedOthers: masterTrip.selectedOthers,
+        includeMeInGroup: masterTrip.includeMeInGroup,
+        purpose: masterTrip.purpose,
+        specialRemarks: masterTrip.specialRemarks,
+        vehicle: masterTrip.vehicle,
+        requester: masterTrip.requester,
+        startDate: instanceDate.toISOString().split('T')[0],
+        startTime: masterTrip.startTime,
+        repetition: RepetitionType.ONCE,
+        status: TripStatus.PENDING,
+        isScheduled: false,
+        isInstance: true,
+        masterTripId: masterTrip.id,
+        instanceDate: instanceDate,
+      });
+      
+      const savedInstance = await this.tripRepo.save(tripInstance);
+      instances.push(savedInstance);
+      
+      // Copy selected group users
+      if (masterTrip.selectedGroupUsers && masterTrip.selectedGroupUsers.length > 0) {
+        const groupUserIds = masterTrip.selectedGroupUsers.map(user => user.id);
+        await this.tripRepo
+          .createQueryBuilder()
+          .relation(Trip, 'selectedGroupUsers')
+          .of(savedInstance.id)
+          .add(groupUserIds);
+      }
     }
-  }
-
-  // Update vehicle seating
-  if (vehicle) {
-    vehicle.seatingAvailability -= passengerCount;
-    if (vehicle.seatingAvailability < 0) {
-      throw new BadRequestException(
-        this.responseService.error('Not enough seats available', 400)
-      );
-    }
-    await this.vehicleRepo.save(vehicle);
-  }
-
-  // Create approval if needed
-  let approvalMessage = '';
-  let tripInstances: Trip[] = [];
-  
-  if (requiresApproval) {
-    // Create approval for master trip
-    //await this.createSingleApproval(savedTrip, requester);
-    const approval = await this.createApprovalRecord(savedTrip.id, requester, createTripDto, tripLocation, routeDistance);
-    savedTrip.approval = approval;
-    await this.tripRepo.save(savedTrip);
-
-    approvalMessage = isScheduledTrip 
-      ? 'Scheduled trip submitted for single approval' 
-      : 'Trip submitted for single approval';
-  } else {
-    approvalMessage = 'Trip saved as draft';
-  }
-
-  // Generate trip instances for scheduled trips
-  if (isScheduledTrip) {
-    tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData);
-  }
-
-  // Reload trip with relations
-  const tripWithRelations = await this.tripRepo.findOne({
-    where: { id: savedTrip.id },
-    relations: [
-      'vehicle', 
-      'vehicle.assignedDriverPrimary', 
-      'vehicle.assignedDriverSecondary',
-      'conflictingTrips',
-      'conflictingTrips.location',
-      'conflictingTrips.requester',
-      'selectedGroupUsers'
-    ]
-  });
-
-          // TODO publish event
-
-  return {
-    success: true,
-    message: approvalMessage,
-    trip: new TripResponseDto(tripWithRelations!),
-    masterTripId: savedTrip.id,
-    isScheduled: isScheduledTrip,
-    instanceCount: tripInstances.length,
-    instanceIds: tripInstances.map(inst => inst.id),
-    requiresApproval: requiresApproval,
-    timestamp: new Date().toISOString(),
-    statusCode: 200
-  };
-}
-
-// NEW HELPER METHODS TO ADD TO YOUR SERVICE:
-
-private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
-  const startDate = new Date(scheduleData.startDate);
-  const today = new Date();
-
-  startDate.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  
-  if (startDate < today) {
-    throw new BadRequestException(
-      this.responseService.error('Start date cannot be in the past', 400)
-    );
-  }
-  
-  if (scheduleData.validTillDate) {
-    const validTillDate = new Date(scheduleData.validTillDate);
-    if (validTillDate < startDate) {
-      throw new BadRequestException(
-        this.responseService.error('Valid till date cannot be before start date', 400)
-      );
-    }
-  }
-  
-  if (scheduleData.repetition === RepetitionType.DAILY && scheduleData.repeatAfterDays) {
-    if (scheduleData.repeatAfterDays < 1) {
-      throw new BadRequestException(
-        this.responseService.error('Repeat after days must be at least 1', 400)
-      );
-    }
-  }
-}
-
-private async createSingleApproval(trip: Trip, requester: User): Promise<void> {
-  // Find appropriate approver
-  let approver: User | null = null;
-  
-  if (requester.department?.head) {
-    approver = await this.userRepo.findOne({
-      where: { id: requester.department.head.id }
-    });
-  }
-  
-  if (!approver) {
-    approver = await this.userRepo.findOne({
-      where: { role: UserRole.ADMIN }
-    });
-  }
-  
-  // Create approval record
-  const approval = this.approvalRepo.create({
-    trip: { id: trip.id } as Trip,
-    approver1: approver,
-    approver1Status: StatusApproval.PENDING,
-    overallStatus: StatusApproval.PENDING,
-    currentStep: ApproverType.HOD,
-    requireApprover1: true,
-  });
-  
-  await this.approvalRepo.save(approval);
-}
-
-private async generateTripInstances(masterTrip: Trip, scheduleData: ScheduleDataDto): Promise<Trip[]> {
-  const { repetition, startDate, validTillDate, includeWeekends, repeatAfterDays } = scheduleData;
-  
-  const start = new Date(startDate);
-  const end = validTillDate ? new Date(validTillDate) : this.getDefaultEndDate(start, repetition);
-  
-  const instanceDates = this.calculateInstanceDates(start, end, repetition, includeWeekends, repeatAfterDays);
-  
-  const instances: Trip[] = [];
-  
-  for (const instanceDate of instanceDates) {
-    // Clone location for each instance
-    const locationCopy = await this.cloneTripLocation(masterTrip.location);
     
-    // Create instance
-    const tripInstance = this.tripRepo.create({
-      location: locationCopy,
-      mileage: masterTrip.mileage,
-      passengerType: masterTrip.passengerType,
-      passengerCount: masterTrip.passengerCount,
-      selectedIndividual: masterTrip.selectedIndividual,
-      selectedOthers: masterTrip.selectedOthers,
-      includeMeInGroup: masterTrip.includeMeInGroup,
-      purpose: masterTrip.purpose,
-      specialRemarks: masterTrip.specialRemarks,
-      vehicle: masterTrip.vehicle,
-      requester: masterTrip.requester,
-      startDate: instanceDate.toISOString().split('T')[0],
-      startTime: masterTrip.startTime,
-      repetition: RepetitionType.ONCE,
-      status: TripStatus.PENDING,
-      isScheduled: false,
-      isInstance: true,
-      masterTripId: masterTrip.id,
-      instanceDate: instanceDate,
-    });
-    
-    const savedInstance = await this.tripRepo.save(tripInstance);
-    instances.push(savedInstance);
-    
-    // Copy selected group users
-    if (masterTrip.selectedGroupUsers && masterTrip.selectedGroupUsers.length > 0) {
-      const groupUserIds = masterTrip.selectedGroupUsers.map(user => user.id);
-      await this.tripRepo
-        .createQueryBuilder()
-        .relation(Trip, 'selectedGroupUsers')
-        .of(savedInstance.id)
-        .add(groupUserIds);
-    }
+    return instances;
   }
-  
-  return instances;
-}
 
 private getDefaultEndDate(start: Date, repetition: RepetitionType): Date {
   const end = new Date(start);
@@ -1547,8 +2632,13 @@ async getTripWithInstances(tripId: number): Promise<any> {
   private async getRequesterHOD(requester: User): Promise<User | undefined> {
     // Implement logic to get requester's department HOD
     // This depends on your user structure
-    if (requester.department?.head) {
-      return requester.department.head;
+    const user = await this.userRepo.findOne({ 
+      where: { id: requester.id },
+      relations: ['department', 'department.head'] 
+    }); 
+
+    if (user.department?.head) {
+      return user.department.head;
     }
 
     return undefined;
@@ -1669,7 +2759,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
       throw new NotFoundException(this.responseService.error('Trip not found', 404));
     }
 
-    console.log("ids: ", trip.requester.id, userId);
+    //console.log("ids: ", trip.requester.id, userId);
     
     // Check if requester is the trip owner
     if (trip.requester.id !== userId) { 
@@ -1690,9 +2780,9 @@ async getTripWithInstances(tripId: number): Promise<any> {
       );
     }
     */
-    if (trip.approval.approver1Status === StatusApproval.APPROVED ||
-        trip.approval.approver2Status === StatusApproval.APPROVED ||
-        trip.approval.safetyApproverStatus === StatusApproval.APPROVED) {
+    if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
+        trip.approval?.approver2Status === StatusApproval.APPROVED ||
+        trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
       throw new BadRequestException(
         this.responseService.error(
           `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
@@ -1714,7 +2804,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     // Start transaction to ensure data consistency
     return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
       // 1. Handle vehicle seating availability if trip has a vehicle
-      if (trip.vehicle) {
+      if (trip.vehicle && trip.status != TripStatus.DRAFT) {
         await this.restoreVehicleSeats(trip, transactionalEntityManager);
       }
 
@@ -1887,11 +2977,6 @@ async getTripWithInstances(tripId: number): Promise<any> {
   }
 
   async getUserTrips(userId: number, requestDto: TripListRequestDto) {
-    // Validate user exists
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(this.responseService.error('User not found', 404));
-    }
 
     // Create base query builder
     const queryBuilder = this.tripRepo
@@ -1901,14 +2986,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
       .leftJoinAndSelect('trip.requester', 'requester')
       .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
-      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers')
-      .where(new Brackets(qb => {
-        // User is either the requester OR in selectedGroupUsers OR in linkedTrips
-        qb.where('requester.id = :userId', { userId })
-          .orWhere('selectedGroupUsers.id = :userId', { userId })
-          .orWhere('linkedTrips.requester.id = :userId', { userId })
-          .orWhere('conflictingTrips.requester.id = :userId', { userId });
-      }));
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
     // Apply time filter
     const now = new Date();
@@ -3364,7 +4442,8 @@ async getTripWithInstances(tripId: number): Promise<any> {
       },
       metrics: {
         distance: trip.location.distance,
-        estimatedDuration: trip.location.estimatedDuration
+        estimatedDuration: trip.location.estimatedDuration,
+        estimatedRestingMinutes: trip.location.estimatedRestingHours,
       },
       rawData: trip.location.locationData
     };
@@ -3937,7 +5016,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
       throw new NotFoundException(this.responseService.error('User not found', 404));
     }
 
-    // Check user authorization (only SYSADMIN, ADMIN, HR, DRIVER can record)
+    // Check user authorization (only SYSADMIN, SECURITY can record)
     const allowedRoles = [UserRole.SYSADMIN, UserRole.SECURITY];
     if (!allowedRoles.includes(user.role)) {
       throw new ForbiddenException(
@@ -4375,7 +5454,7 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
     console.log('==================RUN============')
     // Default: exclude DRAFT and CANCELED trips for drivers
     queryBuilder.andWhere('trip.status NOT IN (:...excludedStatuses)', {
-      excludedStatuses: [TripStatus.DRAFT, TripStatus.CANCELED, TripStatus.REJECTED, TripStatus.PENDING]
+      excludedStatuses: [TripStatus.DRAFT, TripStatus.CANCELED, TripStatus.REJECTED]
     });
   }
 

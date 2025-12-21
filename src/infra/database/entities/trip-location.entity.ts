@@ -54,4 +54,8 @@ export class TripLocation {
   // Estimated duration in minutes
   @Column('decimal', { precision: 10, scale: 2, nullable: true })
   estimatedDuration: number;
+
+  // Estimated resting hours in minutes
+  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  estimatedRestingHours: number;
 }

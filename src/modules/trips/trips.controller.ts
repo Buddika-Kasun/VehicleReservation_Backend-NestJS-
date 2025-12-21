@@ -18,7 +18,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
 import { TripResponseDto, AvailableVehiclesResponseDto } from './dto/trip-response.dto';
-import { AvailableVehiclesRequestDto, CreateTripDto } from './dto/create-trip.dto';
+import { AssignVehicleToTripDto, AvailableVehiclesRequestDto, CreateTripDto } from './dto/create-trip.dto';
 import { GetUser } from 'src/common/decorators/user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 //import { CancelTripDto } from './dto/trip-request.dto';
@@ -45,6 +45,25 @@ export class TripsController {
     return this.tripsService.getAvailableVehicles(requestDto);
   }
 
+  @Post('available-vehicles-review')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Get available vehicles for trip review with pagination' })
+  @ApiResponse({ status: 200, description: 'Available vehicles retrieved successfully', type: AvailableVehiclesResponseDto })
+  async getReviewAvailableVehicles(
+    @Query('tripId') tripId: string,
+    @Query('page') page: number = 0,
+    @Query('pageSize') pageSize: number = 10,
+    @Query('search') search?: string,
+  ) {
+    const requestDto = { 
+      tripId, 
+      page: Number(page), 
+      pageSize: Number(pageSize), 
+      search 
+    };
+    return this.tripsService.getReviewAvailableVehicles(requestDto);
+  }
+
   @Post('create')
   @ApiOperation({ summary: 'FR-04.1: Create a trip' })
   @ApiBody({ type: CreateTripDto })
@@ -56,6 +75,50 @@ export class TripsController {
     @GetUser() user: any
   ) {
     return this.tripsService.createTrip(createTripDto, user.userId);
+  }
+
+  @Post('create-as-draft')
+  @ApiOperation({ summary: 'FR-04.1: Create a trip' })
+  @ApiBody({ type: CreateTripDto })
+  @ApiResponse({ status: 201, description: 'Trip created successfully', type: TripResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Vehicle not found' })
+  async createTripAsDraft(
+    @Body() createTripDto: CreateTripDto, 
+    @GetUser() user: any
+  ) {
+    return this.tripsService.createTripAsDraft(createTripDto, user.userId);
+  }
+
+  @Post('assign-trip-vehicle')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'FR-04.1: Add vehicle to trip' })
+  @ApiResponse({ status: 201, description: 'Trip created successfully', type: TripResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Vehicle not found' })
+  async assignVehicle(
+    @GetUser() user: any,
+    @Body() assignVehicleDto: AssignVehicleToTripDto, 
+  ) {
+    return this.tripsService.assignVehicleToTrip(
+      assignVehicleDto.tripId,
+      assignVehicleDto.vehicleId,
+      user.userId
+    );
+  }
+
+  @Post('confirm-review/:tripId')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'FR-XX.X: Confirm trip review completion' })
+  @ApiParam({ name: 'tripId', description: 'ID of the trip to confirm review', type: Number })
+  async confirmReviewTrip(
+    @GetUser() user: any,
+    @Param('tripId', ParseIntPipe) tripId: number,
+  ) {
+    return this.tripsService.confirmReviewTrip(
+      tripId,
+      user.userId
+    );
   }
 
   @Get('get-by-id/:id')
@@ -138,7 +201,7 @@ export class TripsController {
     return this.tripsService.getCombinedTripForDriver(id);
   }
 
-  @Delete('cancel/:id')
+  @Post('cancel/:id')
   @ApiOperation({ summary: 'Cancel a trip' })
   @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
   async cancelTrip(
@@ -220,6 +283,27 @@ export class TripsController {
     type: TripListResponseDto,
   })
   async getUserTrips(
+    @GetUser() user: any,
+    @Body() tripListRequest: TripListRequestDto,
+  ) {
+
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    
+    return this.tripsService.getUserTrips(user.userId, tripListRequest);
+  }
+
+  @Post('supervisor-trips')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Get user trips with filters' })
+  @ApiBody({ type: TripListRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'User trips retrieved successfully',
+    type: TripListResponseDto,
+  })
+  async getSupervisorTrips(
     @GetUser() user: any,
     @Body() tripListRequest: TripListRequestDto,
   ) {

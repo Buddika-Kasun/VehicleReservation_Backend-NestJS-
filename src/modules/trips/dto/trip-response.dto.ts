@@ -59,6 +59,7 @@ export class AvailableVehicleDto {
   isInConflict: boolean;
   conflictingTripData?: {
     tripId: number;
+    hasTimeExceeded: boolean;
     //status: TripStatus;
     //startDate: Date;
     startTime: string;

@@ -194,7 +194,8 @@ function applyGlobalSettings(app: NestExpressApplication, configService: ConfigS
   // Security
   app.use(helmet());
   app.enableCors({
-    origin: isProduction ? configService.get('cors.origins', '').split(',') : true,
+    //origin: isProduction ? configService.get('cors.origins', '').split(',') : true,
+    origin: true,
     credentials: true,
   });
 

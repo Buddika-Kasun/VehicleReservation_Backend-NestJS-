@@ -2976,7 +2976,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     };
   }
 
-  async getUserTrips(userId: number, requestDto: TripListRequestDto) {
+  async getUserTrips(user: any, requestDto: TripListRequestDto) {
 
     // Create base query builder
     const queryBuilder = this.tripRepo
@@ -2987,6 +2987,13 @@ async getTripWithInstances(tripId: number): Promise<any> {
       .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
       .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+      console.log("==================================user :",user)
+
+    if(user.role != 'sysadmin') {
+      queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    }
+
 
     // Apply time filter
     const now = new Date();
@@ -3034,7 +3041,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     // Transform trips to TripCardDto format
     const tripCards = await Promise.all(
       trips.map(async (trip) => {
-        const tripType = await this.determineTripType(trip, userId);
+        const tripType = await this.determineTripType(trip, user.userId);
         
         return {
           id: trip.id,

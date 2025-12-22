@@ -291,7 +291,7 @@ export class TripsController {
       throw new ForbiddenException('User not authenticated');
     }
     
-    return this.tripsService.getUserTrips(user.userId, tripListRequest);
+    return this.tripsService.getUserTrips(user, tripListRequest);
   }
 
   @Post('supervisor-trips')

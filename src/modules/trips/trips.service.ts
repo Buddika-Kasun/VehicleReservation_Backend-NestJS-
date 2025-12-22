@@ -2988,7 +2988,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
       .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
-    if(user.role != 'sysadmin' || user.role != 'supervisor') {
+    if(user.role != 'sysadmin' && user.role != 'supervisor') {
       queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
     }
 

@@ -1528,8 +1528,6 @@ export class TripsService {
           this.responseService.error('Vehicle does not have enough seating capacity', 400)
         );
       }
-    } else if (currentTrip.vehicle) {
-      vehicle = currentTrip.vehicle;
     }
 
     // Check for conflicting trips based on vehicle
@@ -2725,129 +2723,134 @@ async getTripWithInstances(tripId: number): Promise<any> {
   }
 
   async cancelTrip(tripId: number, user: any, cancellationReason?: string) {
-    if (user === null || user === undefined) {
-      throw new ForbiddenException('User not authenticated');
-    }
-
-    // Find the trip with all necessary relations
-    const trip = await this.tripRepo.findOne({
-      where: { id: tripId },
-      relations: [
-        'vehicle',
-        'conflictingTrips',
-        'linkedTrips',
-        'conflictingTrips.vehicle',
-        'conflictingTrips.linkedTrips',
-        'approval',
-        'requester'
-      ]
-    });
-
-    if (!trip) {
-      throw new NotFoundException(this.responseService.error('Trip not found', 404));
-    }
-
-    //console.log("ids: ", trip.requester.id, userId);
-    
-    // Check if requester is the trip owner
-    if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
-      throw new ForbiddenException(
-        this.responseService.error('You are not authorized to cancel this trip', 403)
-      );
-    }
-
-    // Check if trip can be canceled (only PENDING or DRAFT status)
-    /*
-    const allowedStatuses = [TripStatus.PENDING, TripStatus.DRAFT];
-    if (!allowedStatuses.includes(trip.status)) {
-      throw new BadRequestException(
-        this.responseService.error(
-          `Cannot cancel trip with status: ${trip.status}. Only trips with PENDING status can be cancelled.`,
-          400
-        )
-      );
-    }
-    */
-    if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
-        trip.approval?.approver2Status === StatusApproval.APPROVED ||
-        trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
-      throw new BadRequestException(
-        this.responseService.error(
-          `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
-          400
-        )
-      );
-    }
-
-    // Check if trip has approval record and it's still pending
-    if (trip.approval && trip.approval.overallStatus !== StatusApproval.PENDING) {
-      throw new BadRequestException(
-        this.responseService.error(
-          `Cannot cancel trip that has already been ${trip.approval.overallStatus}`,
-          400
-        )
-      );
-    }
-
-    // Start transaction to ensure data consistency
-    return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
-      // 1. Handle vehicle seating availability if trip has a vehicle
-      if (trip.vehicle && trip.status != TripStatus.DRAFT) {
-        await this.restoreVehicleSeats(trip, transactionalEntityManager);
-      }
-
-      // 2. Handle conflict trips
-      await this.handleConflictTrips(trip, transactionalEntityManager);
-
-      // 3. Delete approval record if exists
-      if (trip.approval) {
-        await transactionalEntityManager.remove(Approval, trip.approval);
-        trip.approval = null; // Clear the reference
-      }
-
-      // 4. Update trip status to CANCELED
-      trip.status = TripStatus.CANCELED;
-      
-      // 5. Save the canceled trip
-      const canceledTrip = await transactionalEntityManager.save(trip);
-
-      try {
-        // TODO publish event
-      } catch (e) {
-        console.error('Failed to send cancellation notification', e);
-      }
-
-      return {
-        success: true,
-        message: 'Trip canceled successfully',
-        data: {
-          tripId: canceledTrip.id,
-          status: canceledTrip.status,
-          timestamp: new Date().toISOString()
-        },
-        statusCode: 200
-      };
-    });
+  if (user === null || user === undefined) {
+    throw new ForbiddenException('User not authenticated');
   }
 
-  private async restoreVehicleSeats(trip: Trip, transactionalEntityManager) {
-    const vehicle = await transactionalEntityManager.findOne(
-      Vehicle,
-      { where: { id: trip.vehicle.id } }
+  // Find the trip with all necessary relations
+  const trip = await this.tripRepo.findOne({
+    where: { id: tripId },
+    relations: [
+      'vehicle',
+      'conflictingTrips',
+      'linkedTrips',
+      'conflictingTrips.vehicle',
+      'conflictingTrips.linkedTrips',
+      'approval',
+      'requester'
+    ]
+  });
+
+  if (!trip) {
+    throw new NotFoundException(this.responseService.error('Trip not found', 404));
+  }
+  
+  // Check if requester is the trip owner
+  if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
+    throw new ForbiddenException(
+      this.responseService.error('You are not authorized to cancel this trip', 403)
+    );
+  }
+
+  if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
+      trip.approval?.approver2Status === StatusApproval.APPROVED ||
+      trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
+    throw new BadRequestException(
+      this.responseService.error(
+        `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
+        400
+      )
+    );
+  }
+
+  // Check if trip has approval record and it's still pending
+  if (trip.approval && trip.approval.overallStatus !== StatusApproval.PENDING) {
+    throw new BadRequestException(
+      this.responseService.error(
+        `Cannot cancel trip that has already been ${trip.approval.overallStatus}`,
+        400
+      )
+    );
+  }
+
+  // Store passenger count before transaction
+  const passengerCount = trip.passengerCount;
+  const vehicleId = trip.vehicle?.id;
+
+  // Start transaction to ensure data consistency
+  return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+    // 1. Handle vehicle seating availability if trip has a vehicle
+    if (trip.vehicle) {
+      // Pass the transactional entity manager to restoreVehicleSeats
+      await this.restoreVehicleSeats(vehicleId, passengerCount, transactionalEntityManager);
+    }
+
+    // 2. Handle conflict trips
+    await this.handleConflictTrips(trip, transactionalEntityManager);
+
+    // 3. Delete approval record if exists
+    if (trip.approval) {
+      await transactionalEntityManager.remove(Approval, trip.approval);
+    }
+    
+    // 4. Update trip status to CANCELED
+    await transactionalEntityManager.update(
+      Trip,
+      { id: tripId },
+      { 
+        status: TripStatus.CANCELED,
+        // Add any other fields you want to update
+        updatedAt: new Date()
+      }
     );
 
-    if (vehicle) {
-      // Restore seats that were allocated for this trip
-      vehicle.seatingAvailability += trip.passengerCount;
-      
-      // Ensure seating availability doesn't exceed max capacity
-      if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-        vehicle.seatingAvailability = vehicle.seatingCapacity;
-      }
-
-      await transactionalEntityManager.save(vehicle);
+    try {
+      // TODO publish event
+    } catch (e) {
+      console.error('Failed to send cancellation notification', e);
     }
+
+    return {
+      success: true,
+      message: 'Trip canceled successfully',
+      data: {
+        tripId: tripId, // Return the original ID
+        status: TripStatus.CANCELED,
+        timestamp: new Date().toISOString()
+      },
+      statusCode: 200
+    };
+  });
+}
+
+private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
+  if (!vehicleId) return;
+  
+  const vehicle = await transactionalEntityManager.findOne(
+    Vehicle,
+    { where: { id: vehicleId } }
+  );
+
+  if (vehicle) {
+    console.log(`Restoring ${passengerCount} seats to vehicle ${vehicleId}`);
+    console.log(`Before: ${vehicle.seatingAvailability} seats available`);
+    
+    // Restore seats that were allocated for this trip
+    vehicle.seatingAvailability += passengerCount;
+    
+    // Ensure seating availability doesn't exceed max capacity
+    const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
+    if (vehicle.seatingAvailability > maxAvailable) {
+      vehicle.seatingAvailability = maxAvailable;
+    }
+    
+    console.log(`After: ${vehicle.seatingAvailability} seats available`);
+    
+    await transactionalEntityManager.save(Vehicle, vehicle);
+  } else {
+    console.warn(`Vehicle ${vehicleId} not found when trying to restore seats`);
   }
+}
 
   private async handleConflictTrips(trip: Trip, transactionalEntityManager) {
     // Remove this trip from all conflicting trips' linkedTrips
@@ -4255,15 +4258,17 @@ async getTripWithInstances(tripId: number): Promise<any> {
     });
 
     if (vehicle) {
-      // Restore seats
+      // Restore seats that were allocated for this trip
       vehicle.seatingAvailability += trip.passengerCount;
       
       // Ensure seating availability doesn't exceed max capacity
-      if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-        vehicle.seatingAvailability = vehicle.seatingCapacity;
+      const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
+      if (vehicle.seatingAvailability > maxAvailable) {
+        vehicle.seatingAvailability = maxAvailable;
       }
-
+      
       await this.vehicleRepo.save(vehicle);
+
     }
   }
 

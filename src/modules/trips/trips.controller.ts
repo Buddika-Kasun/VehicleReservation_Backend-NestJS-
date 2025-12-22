@@ -219,7 +219,7 @@ export class TripsController {
       }
     }
     
-    return this.tripsService.cancelTrip(tripId, user.userId, reason);
+    return this.tripsService.cancelTrip(tripId, user, reason);
   }
 
   @Get('cancelable')

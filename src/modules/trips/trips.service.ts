@@ -1548,16 +1548,6 @@ export class TripsService {
     // Determine status and if approval is needed
     let tripStatus = TripStatus.PENDING;
     let requiresApproval = true;
-    
-    // Scheduled trips always need approval
-    if (isScheduledTrip) {
-      requiresApproval = true;
-      tripStatus = TripStatus.PENDING;
-    } else if (currentTrip.status === TripStatus.DRAFT) {
-      // One-time draft changes to pending when confirmed
-      requiresApproval = true;
-      tripStatus = TripStatus.PENDING;
-    }
 
     // Update trip status
     currentTrip.status = tripStatus;
@@ -1598,15 +1588,13 @@ export class TripsService {
     // Update vehicle seating
     if (vehicle) {
       // Only update if the trip wasn't already counted in vehicle seating
-      if (currentTrip.status == TripStatus.DRAFT.toString()) {
-        vehicle.seatingAvailability -= passengerCount;
-        if (vehicle.seatingAvailability < 0) {
-          throw new BadRequestException(
-            this.responseService.error('Not enough seats available', 400)
-          );
-        }
-        await this.vehicleRepo.save(vehicle);
+      vehicle.seatingAvailability -= passengerCount;
+      if (vehicle.seatingAvailability < 0) {
+        throw new BadRequestException(
+          this.responseService.error('Not enough seats available', 400)
+        );
       }
+      await this.vehicleRepo.save(vehicle);
     }
 
     // Create approval 
@@ -2736,8 +2724,8 @@ async getTripWithInstances(tripId: number): Promise<any> {
     };
   }
 
-  async cancelTrip(tripId: number, userId: number, cancellationReason?: string) {
-    if (userId === null || userId === undefined) {
+  async cancelTrip(tripId: number, user: any, cancellationReason?: string) {
+    if (user === null || user === undefined) {
       throw new ForbiddenException('User not authenticated');
     }
 
@@ -2762,7 +2750,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     //console.log("ids: ", trip.requester.id, userId);
     
     // Check if requester is the trip owner
-    if (trip.requester.id !== userId) { 
+    if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
       throw new ForbiddenException(
         this.responseService.error('You are not authorized to cancel this trip', 403)
       );

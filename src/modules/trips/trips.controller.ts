@@ -122,7 +122,7 @@ export class TripsController {
   }
 
   @Get('get-by-id/:id')
-  //@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, )
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get trip by ID' })
   @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
   @ApiResponse({

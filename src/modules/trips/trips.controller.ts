@@ -316,7 +316,7 @@ export class TripsController {
   }
 
   @Post('pending-approvals')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get trips pending user approvals' })
   @ApiResponse({
     status: 200,
@@ -331,7 +331,7 @@ export class TripsController {
   }
 
   @Post('approve/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Approve a trip' })
   @ApiResponse({ status: 200, description: 'Trip approved successfully' })
   async approveTrip(
@@ -347,7 +347,7 @@ export class TripsController {
   }
 
   @Post('reject/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Reject a trip' })
   @ApiResponse({ status: 200, description: 'Trip rejected successfully' })
   async rejectTrip(

@@ -581,7 +581,32 @@ Scan Date: ${new Date().toLocaleDateString()}
   }
 
   // Get vehicles by driver
-  async getDriverVehicles(driverId: number) {
+  async getDriverVehicles(driverId: number, currentUser: any) {
+
+    // If current user is sysadmin, return all vehicles
+    if (currentUser?.role == UserRole.SYSADMIN) {
+      const allVehicles = await this.vehicleRepository.find({
+        relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary'],
+        order: { regNo: 'ASC' }
+      });
+
+      // Filter for the specific driver if needed
+      const primaryVehicles = allVehicles;
+
+      const secondaryVehicles = [];
+
+      return this.responseService.success(
+        'All vehicles retrieved for sysadmin.',
+        {
+          primaryVehicles,
+          secondaryVehicles,
+          total: allVehicles.length,
+          primaryTotal: primaryVehicles.length,
+          secondaryTotal: secondaryVehicles.length
+        }
+      );
+    }
+
     const vehicles = await this.vehicleRepository.find({
       where: [
         { assignedDriverPrimary: { id: driverId } },

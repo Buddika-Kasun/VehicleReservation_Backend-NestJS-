@@ -117,7 +117,7 @@ export class HealthCheckResult {
   })
   checks: {
     database: DatabaseHealth;
-    disk: DiskHealth;
+    //disk: DiskHealth;
     api: ApiHealth;
   };
 
@@ -147,13 +147,13 @@ export class HealthService {
   async checkHealth(): Promise<HealthCheckResult> {
     const checks = {
       database: await this.checkDatabase(),
-      disk: await this.checkDiskSpace(),
+      //disk: await this.checkDiskSpace(),
       api: { status: 'UP' } as ApiHealth,
     };
 
     const allUp = [
       checks.database.connected !== false,
-      checks.disk.status === 'HEALTHY' || checks.disk.status === 'WARNING',
+      //checks.disk.status === 'HEALTHY' || checks.disk.status === 'WARNING',
     ].every(Boolean);
 
     return {

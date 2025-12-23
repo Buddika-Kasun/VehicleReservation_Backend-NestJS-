@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/config/multer.config';
 import { VehiclePictureDto } from './dto/vehicle-picture.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { GetUser } from 'src/common/decorators/user.decorator';
 
 @ApiTags('Vehicles API')
 @Controller('vehicle')
@@ -150,8 +151,11 @@ export class VehicleController {
   @ApiOperation({ summary: 'Get all vehicles assigned to a specific driver' })
   @ApiResponse({ status: 200, description: 'Driver vehicles retrieved successfully', type: VehicleListResponseDto })
   @ApiResponse({ status: 404, description: 'Driver not found' })
-  async getDriverVehicles(@Param('driverId', ParseIntPipe) driverId: number) {
-    return await this.vehicleService.getDriverVehicles(driverId);
+  async getDriverVehicles(
+    @Param('driverId', ParseIntPipe) driverId: number,
+    @GetUser() user: any,
+  ) {
+    return await this.vehicleService.getDriverVehicles(driverId, user);
   }
 
   @Post(':id/picture-upload')

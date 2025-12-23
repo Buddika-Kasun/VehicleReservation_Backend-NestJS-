@@ -37,7 +37,7 @@ export class UsersService {
     if (!password) missingFields.push('password');
 
     // Email is required for non-driver/security roles
-    if (role !== UserRole.DRIVER && role !== UserRole.SECURITY && !email) {
+    if (role !== UserRole.DRIVER && role !== UserRole.SECURITY && role !== UserRole.SUPERVISOR && !email) {
       missingFields.push('email');
     }
 

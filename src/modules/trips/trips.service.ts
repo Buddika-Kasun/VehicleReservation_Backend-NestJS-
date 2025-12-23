@@ -2994,13 +2994,13 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
 
     switch (requestDto.timeFilter) {
       case 'today':
-        queryBuilder.andWhere('trip.startDate = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
         break;
       case 'week':
-        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
         break;
       case 'month':
-        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
         break;
       case 'all':
       default:

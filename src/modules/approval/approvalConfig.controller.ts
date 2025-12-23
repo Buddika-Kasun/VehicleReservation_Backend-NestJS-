@@ -24,7 +24,7 @@ export class ApprovalConfigController {
   }
 
   @Get('get-menu-approvals')
-  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN, UserRole.EMPLOYEE, UserRole.DRIVER, UserRole.SECURITY)
+  @Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN, UserRole.EMPLOYEE, UserRole.DRIVER, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get all approvals for menu' })
   async findMenuApproval(
     @GetUser() user: any

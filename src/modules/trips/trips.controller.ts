@@ -32,7 +32,7 @@ import { get } from 'http';
 @Controller('trips')
 @UsePipes(new ValidationPipe({ transform: true }))
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY)
+@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
 @ApiBearerAuth()
 export class TripsController {
   constructor(private readonly tripsService: TripsService) {}

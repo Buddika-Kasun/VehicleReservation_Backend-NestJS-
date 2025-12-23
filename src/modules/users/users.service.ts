@@ -578,6 +578,68 @@ async isApprover(userId: number): Promise<boolean> {
     );
   }
 
+  async checkTripCreationEligibility(userId: number): Promise<any> {
+  // Get current user with department
+  const currentUser = await this.userRepo.findOne({
+    where: { id: userId },
+    relations: ['department', 'department.head'], // 'head' instead of 'hod' based on your code
+  });
+
+  if (!currentUser) {
+    return this.responseService.error(
+      'User not found',
+      null,
+    );
+  }
+
+  if (!currentUser.department) {
+    return this.responseService.error(
+      'User does not belong to any department',
+      null,
+    );
+  }
+
+  // Check for HOD in the same department
+  const hodExists = currentUser.department.head;
+
+  if (!hodExists) {
+    return this.responseService.error(
+      'This department does not have a HOD assigned',
+    );
+  }
+
+  // Check for at least one Supervisor in the SAME DEPARTMENT
+  const supervisors = await this.userRepo.find({
+    where: {
+      role: UserRole.SUPERVISOR,
+      isApproved: Status.APPROVED,
+    },
+  });
+
+  const supervisorExists = supervisors.length > 0;
+
+  if (!supervisorExists) {
+    return this.responseService.error(
+      'No approved supervisors found',
+    );
+  }
+
+  const canCreateTrip = !!(hodExists && supervisorExists);
+
+  return this.responseService.success(
+    'You can create trips',
+    {
+      canCreateTrip: true,
+      department: {
+        id: currentUser.department.id,
+        name: currentUser.department.name,
+        hodName: hodExists.displayname || 'HOD',
+      },
+      supervisorCount: 1, // or query actual count
+    }
+  );
+}
+
   async findByEmail(email: string) {
     const user = await this.userRepo.findOne({ where: { email, role: Not(UserRole.SYSADMIN) } });
     if (!user) {

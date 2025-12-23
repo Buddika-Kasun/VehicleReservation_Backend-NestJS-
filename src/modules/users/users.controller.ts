@@ -190,6 +190,21 @@ export class UsersController {
     return this.usersService.findAllByApproval();
   }
 
+  @Get('can-create-trip')
+  @ApiOperation({ summary: 'Check if user can create a new trip' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip creation eligibility check completed.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User not authorized to create trips.',
+  })
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE, UserRole.HR)
+  async checkTripCreationEligibility(@GetUser() user: any) {
+    return this.usersService.checkTripCreationEligibility(user.userId);
+  }
+
   @Get('search-approval')
   @ApiOperation({ summary: 'Search users' })
   @ApiResponse({

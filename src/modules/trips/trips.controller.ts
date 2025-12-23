@@ -505,7 +505,7 @@ async endTrip(
 // Add to your TripsController
 
 @Post('approve-scheduled/:masterTripId')
-@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR)
+@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'Approve a scheduled trip and all its instances' })
 @ApiParam({ name: 'masterTripId', description: 'Master Trip ID', type: Number })
 @ApiResponse({ status: 200, description: 'Scheduled trip approved successfully' })

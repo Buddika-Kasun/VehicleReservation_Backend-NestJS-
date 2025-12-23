@@ -12,6 +12,7 @@ import { TripLocation } from 'src/infra/database/entities/trip-location.entity';
 import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
+import { VehicleRecommendService } from './vehicleRecommend.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
     NotificationsModule,
   ],
   controllers: [TripsController],
-  providers: [TripsService, ResponseService],
-  exports: [TripsService],
+  providers: [TripsService, VehicleRecommendService, ResponseService],
+  exports: [TripsService, VehicleRecommendService],
 })
 export class TripsModule {}

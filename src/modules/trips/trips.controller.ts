@@ -27,6 +27,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/infra/database/entities/user.entity';
 import { TripListRequestDto, TripListResponseDto } from './dto/trip-list-request.dto';
 import { get } from 'http';
+import { VehicleRecommendService } from './vehicleRecommend.service';
 
 @ApiTags('trips')
 @Controller('trips')
@@ -35,7 +36,10 @@ import { get } from 'http';
 @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
 @ApiBearerAuth()
 export class TripsController {
-  constructor(private readonly tripsService: TripsService) {}
+  constructor(
+    private readonly tripsService: TripsService,
+    private readonly vehicleRecommendService: VehicleRecommendService,
+  ) {}
 
   @Post('available-vehicles')
   @ApiOperation({ summary: 'Get available vehicles for trip' })
@@ -61,7 +65,7 @@ export class TripsController {
       pageSize: Number(pageSize), 
       search 
     };
-    return this.tripsService.getReviewAvailableVehicles(requestDto);
+    return this.vehicleRecommendService.getReviewAvailableVehicles(requestDto);
   }
 
   @Post('create')

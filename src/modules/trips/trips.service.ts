@@ -2987,6 +2987,9 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
     // Apply time filter
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     
@@ -2994,7 +2997,10 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
 
     switch (requestDto.timeFilter) {
       case 'today':
-        queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
         break;
       case 'week':
         queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });

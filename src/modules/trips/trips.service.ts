@@ -1018,9 +1018,6 @@ export class TripsService {
       );
     }
 
-    // Update trip with vehicle
-    trip.vehicle = vehicle;
-
     // If trip was DRAFT, change status to PENDING (requires approval)
     /*
     if (trip.status === TripStatus.DRAFT) {
@@ -1040,7 +1037,26 @@ export class TripsService {
     */
 
     // Save changes in a transaction
-    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => { 
+      
+      if (trip.status != TripStatus.DRAFT) {
+        // 1. Handle vehicle seating availability if trip has a vehicle
+        if (trip.vehicle) {
+          // Pass the transactional entity manager to restoreVehicleSeats
+          await this.restoreVehicleSeats(trip.vehicle.id, trip.passengerCount, transactionalEntityManager);
+        }
+        
+        // 2. Delete approval record if exists
+        if (trip.approval) {
+          await transactionalEntityManager.remove(Approval, trip.approval);
+        }
+      }
+      
+      trip.status = TripStatus.DRAFT;
+        
+      // Update trip with vehicle
+      trip.vehicle = vehicle;      
+      
       // Save trip with vehicle assignment
       await transactionalEntityManager.save(trip); 
     });
@@ -2250,6 +2266,7 @@ async getTripWithInstances(tripId: number): Promise<any> {
     );
   }
 
+  /*
   if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
       trip.approval?.approver2Status === StatusApproval.APPROVED ||
       trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
@@ -2266,6 +2283,21 @@ async getTripWithInstances(tripId: number): Promise<any> {
     throw new BadRequestException(
       this.responseService.error(
         `Cannot cancel trip that has already been ${trip.approval.overallStatus}`,
+        400
+      )
+    );
+  }
+  */
+
+  if (
+    trip.status == TripStatus.READ ||
+    trip.status == TripStatus.ONGOING ||
+    trip.status == TripStatus.COMPLETED ||
+    trip.status == TripStatus.FINISHED
+  ) {
+      throw new BadRequestException(
+      this.responseService.error(
+        `Cannot cancel trip.`,
         400
       )
     );

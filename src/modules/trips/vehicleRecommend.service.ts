@@ -99,7 +99,7 @@ export class VehicleRecommendService {
       requestedWindow
     );
 
-    let availableSeats = vehicle.seatingCapacity;
+    let availableSeats = vehicle.seatingCapacity - 1;
     let isAvailable = true;
     let isInConflict = false;
     let conflictingTripData = null;
@@ -157,7 +157,7 @@ export class VehicleRecommendService {
       vehicle: {
         ...vehicle,
         // Add calculated available seats to vehicle object
-        availableSeats,
+        seatingAvailability: availableSeats,
         seatingCapacity: vehicle.seatingCapacity // Keep original capacity
       },
       isRecommended: false,
@@ -365,6 +365,7 @@ export class VehicleRecommendService {
   /**
    * Helper methods (keep your existing implementations)
    */
+
   private calculateTimeDiffScore(conflictingTripData: any): number {
     return Math.max(50, 200 - (this.TIME_WINDOW_MINUTES / 2));
   }
@@ -461,4 +462,30 @@ export class VehicleRecommendService {
   private toRad(value: number): number {
     return value * Math.PI / 180;
   }
+
 }
+
+
+/*
+
+get all vehicles
+
+for loop vehicles:
+	if this vehicle start any trip in current trip start date&time(befor after 1h ok):
+		if matching route(10 km near ok):
+			cal >> availabale seats = this vehicle seatingCapacity - this date&time perod all tips passenger count of this vehicle
+			if available seat enough for current trip passenger count:
+				include this vehicle
+			else: 
+				exclude this vehicle
+		else:
+			exclude this vehicle
+			
+	else:
+		check any ongoing trip have in this date&time >> isOngoing = current trip start date&time < any trip of this vehicle end date&time(start date&time + trip.location.estimateDuration)
+		if isOngoing:
+			exclude this vehicle
+		else:
+			include this vehicle
+
+*/

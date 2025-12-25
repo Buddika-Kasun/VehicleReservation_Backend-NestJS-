@@ -157,7 +157,7 @@ export class VehicleRecommendService {
       vehicle: {
         ...vehicle,
         // Add calculated available seats to vehicle object
-        seatingAvailability: availableSeats,
+        seatingAvailability: availableSeats - requestedTrip.passengerCount,
         seatingCapacity: vehicle.seatingCapacity // Keep original capacity
       },
       isRecommended: false,

@@ -47,6 +47,12 @@ export class LocationDataDto {
     };
   };
 
+  @IsNumber()
+  totalDistance: number;
+
+  @IsNumber()
+  totalDuration: number;
+
   /*
   @IsObject()
   @IsOptional()

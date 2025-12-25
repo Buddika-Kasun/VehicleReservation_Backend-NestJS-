@@ -1393,6 +1393,7 @@ export class TripsService {
     })) ?? [];
 
     // Calculate route distance
+    /*
     const routeDistance = this.calculateRouteDistanceWithStops(
       startCoords[1],
       startCoords[0],
@@ -1400,10 +1401,13 @@ export class TripsService {
       endCoords[0],
       intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
     );
+    */
+    const routeDistance = createTripDto.locationData.totalDistance;
 
     // Calculate estimated duration
     //const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
-    const estimatedDuration = this.calculateRouteDuration(routeDistance);
+    //const estimatedDuration = this.calculateRouteDuration(routeDistance);
+    const estimatedDuration = createTripDto.locationData.totalDuration;
     
     const estimatedRestingHours = this.calculateEstimatedRestingHours(estimatedDuration * 2);
 
@@ -1633,346 +1637,346 @@ export class TripsService {
     return instances;
   }
 
-private getDefaultEndDate(start: Date, repetition: RepetitionType): Date {
-  const end = new Date(start);
-  
-  switch (repetition) {
-    case RepetitionType.DAILY:
-      end.setDate(end.getDate() + 30);
-      break;
-    case RepetitionType.WEEKLY:
-      end.setDate(end.getDate() + 90);
-      break;
-    case RepetitionType.MONTHLY:
-      end.setMonth(end.getMonth() + 6);
-      break;
-    default:
-      end.setDate(end.getDate() + 30);
-  }
-  
-  return end;
-}
-
-private calculateInstanceDates(
-  start: Date,
-  end: Date,
-  repetition: RepetitionType,
-  includeWeekends?: boolean,
-  repeatAfterDays?: number
-): Date[] {
-  const dates: Date[] = [];
-  let current = new Date(start);
-  
-  // Skip the start date - move to next occurrence
-  switch (repetition) {
-    case RepetitionType.DAILY:
-      const interval = repeatAfterDays || 1;
-      // Move current to next occurrence
-      current.setDate(current.getDate() + interval);
-      
-      while (current <= end) {
-        if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
-          dates.push(new Date(current));
-        }
-        current.setDate(current.getDate() + interval);
-      }
-      break;
-      
-    case RepetitionType.WEEKLY:
-      // Skip the start week, move to next week
-      current.setDate(current.getDate() + 7);
-      
-      while (current <= end) {
-        dates.push(new Date(current));
-        current.setDate(current.getDate() + 7);
-      }
-      break;
-      
-    case RepetitionType.MONTHLY:
-      // Skip the start month, move to next month
-      current.setMonth(current.getMonth() + 1);
-      
-      while (current <= end) {
-        dates.push(new Date(current));
-        current.setMonth(current.getMonth() + 1);
-      }
-      break;
-  }
-  
-  return dates;
-}
-
-private async cloneTripLocation(location: TripLocation): Promise<TripLocation> {
-  const locationCopy = this.tripLocationRepo.create({
-    startLatitude: location.startLatitude,
-    startLongitude: location.startLongitude,
-    startAddress: location.startAddress,
-    endLatitude: location.endLatitude,
-    endLongitude: location.endLongitude,
-    endAddress: location.endAddress,
-    intermediateStops: location.intermediateStops ? [...location.intermediateStops] : [],
-    totalStops: location.totalStops,
-    locationData: location.locationData ? { ...location.locationData } : null,
-    distance: location.distance,
-    estimatedDuration: location.estimatedDuration,
-  });
-  
-  return await this.tripLocationRepo.save(locationCopy);
-}
-
-// Add to your TripsService
-
-async approveScheduledTrip(masterTripId: number, approverId: number, remarks?: string): Promise<any> {
-  try {
-  // Get master trip
-  const masterTrip = await this.tripRepo.findOne({
-    where: { id: masterTripId, isScheduled: true, isInstance: false },
-    relations: [
-      'approval', 
-      'approval.approver1', 
-      'approval.approver2', 
-      'approval.safetyApprover', 
-      'requester',
-      'vehicle'
-    ]
-  });
-
-  if (!masterTrip) {
-    throw new NotFoundException(this.responseService.error('Master scheduled trip not found', 404));
-  }
-
-  // Get all instances
-  const instances = await this.tripRepo.find({
-    where: { 
-      masterTripId: masterTripId,
-      isInstance: true 
-    }
-  });
-
-  // Get user making the request
-  const user = await this.userRepo.findOne({ where: { id: approverId } });
-  if (!user) {
-    throw new NotFoundException(this.responseService.error('User not found', 404));
-  }
-
-  const approval = masterTrip.approval;
-  const isSysAdmin = user.role === UserRole.SYSADMIN;
-
-  // Check if already approved
-  if (approval?.overallStatus === StatusApproval.APPROVED) {
-    throw new BadRequestException(this.responseService.error('Master scheduled trip is already approved', 400));
-  }
-
-  // Check if rejected
-  if (approval?.overallStatus === StatusApproval.REJECTED) {
-    throw new BadRequestException(this.responseService.error('Master scheduled trip is already rejected', 400));
-  }
-
-  // Check authorization (SAME AS NORMAL APPROVAL)
-  let isAuthorized = false;
-  let approverType: ApproverType | null = null;
-
-  if (isSysAdmin) {
-    isAuthorized = true;
-  } else {
-    if (approval?.approver1?.id === approverId) {
-      isAuthorized = true;
-      approverType = ApproverType.HOD;
-    } else if (approval?.approver2?.id === approverId) {
-      isAuthorized = true;
-      approverType = ApproverType.SECONDARY;
-    } else if (approval?.safetyApprover?.id === approverId) {
-      isAuthorized = true;
-      approverType = ApproverType.SAFETY;
-    }
-  }
-
-  if (!isAuthorized) {
-    throw new ForbiddenException(
-      this.responseService.error('You are not authorized to approve this scheduled trip', 403)
-    );
-  }
-
-  // Process approval (SAME AS NORMAL APPROVAL)
-  const now = new Date();
-  
-  // Update approval based on approver type
-  if (approverType === ApproverType.HOD) {
-    approval.approver1Status = StatusApproval.APPROVED;
-    approval.approver1ApprovedAt = now;
-    approval.approver1Comments = remarks;
-  } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-    approval.approver2Status = StatusApproval.APPROVED;
-    approval.approver2ApprovedAt = now;
-    approval.approver2Comments = remarks;
-  } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-    approval.safetyApproverStatus = StatusApproval.APPROVED;
-    approval.safetyApproverApprovedAt = now;
-    approval.safetyApproverComments = remarks;
-  } else if (isSysAdmin) {
-    approval.approver1Status = StatusApproval.APPROVED;
-    approval.approver1ApprovedAt = now;
-    approval.approver1Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
-
-    approval.approver2Status = StatusApproval.APPROVED;
-    approval.approver2ApprovedAt = now;
-    approval.approver2Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
-
-    approval.safetyApproverStatus = StatusApproval.APPROVED;
-    approval.safetyApproverApprovedAt = now;
-    approval.safetyApproverComments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
-  }
-
-  // Update overall status and move to next step
-  approval.updateOverallStatus();
-  
-  // If no rejection, move to next step
-  if (!approval.hasAnyRejection()) {
-    approval.moveToNextStep();
-  }
-
-  // If fully approved, update master trip status and create approvals for instances
-  if (approval.overallStatus.toString() === 'approved') {
-    masterTrip.status = TripStatus.APPROVED;
+  private getDefaultEndDate(start: Date, repetition: RepetitionType): Date {
+    const end = new Date(start);
     
-    // Create approvals for all instances (same as master)
-    for (const instance of instances) {
-      // Check if instance already has approval
-      const existingApproval = await this.approvalRepo.findOne({
-        where: { trip: { id: instance.id } }
-      });
+    switch (repetition) {
+      case RepetitionType.DAILY:
+        end.setDate(end.getDate() + 30);
+        break;
+      case RepetitionType.WEEKLY:
+        end.setDate(end.getDate() + 90);
+        break;
+      case RepetitionType.MONTHLY:
+        end.setMonth(end.getMonth() + 6);
+        break;
+      default:
+        end.setDate(end.getDate() + 30);
+    }
+    
+    return end;
+  }
 
-      if (!existingApproval) {
-        // Create new approval for instance (copy from master)
-        const instanceApproval = this.approvalRepo.create({
-          trip: instance,
-          approver1: approval.approver1 || null,
-          approver1Status: approval.approver1Status || StatusApproval.APPROVED,
-          approver1ApprovedAt: approval.approver1ApprovedAt || now,
-          approver1Comments: approval.approver1Comments || `Approved as part of scheduled trip #${masterTripId}`,
-          approver2: approval.approver2 || null,
-          approver2Status: approval.approver2Status || StatusApproval.APPROVED,
-          approver2ApprovedAt: approval.approver2ApprovedAt || now,
-          approver2Comments: approval.approver2Comments || `Approved as part of scheduled trip #${masterTripId}`,
-          safetyApprover: approval.safetyApprover || null,
-          safetyApproverStatus: approval.safetyApproverStatus || StatusApproval.APPROVED,
-          safetyApproverApprovedAt: approval.safetyApproverApprovedAt || now,
-          safetyApproverComments: approval.safetyApproverComments || `Approved as part of scheduled trip #${masterTripId}`,
-          overallStatus: StatusApproval.APPROVED,
-          currentStep: ApproverType.COMPLETED,
-          requireApprover1: approval.requireApprover1 || true,
-          requireApprover2: approval.requireApprover2 || false,
-          requireSafetyApprover: approval.requireSafetyApprover || false,
+  private calculateInstanceDates(
+    start: Date,
+    end: Date,
+    repetition: RepetitionType,
+    includeWeekends?: boolean,
+    repeatAfterDays?: number
+  ): Date[] {
+    const dates: Date[] = [];
+    let current = new Date(start);
+    
+    // Skip the start date - move to next occurrence
+    switch (repetition) {
+      case RepetitionType.DAILY:
+        const interval = repeatAfterDays || 1;
+        // Move current to next occurrence
+        current.setDate(current.getDate() + interval);
+        
+        while (current <= end) {
+          if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
+            dates.push(new Date(current));
+          }
+          current.setDate(current.getDate() + interval);
+        }
+        break;
+        
+      case RepetitionType.WEEKLY:
+        // Skip the start week, move to next week
+        current.setDate(current.getDate() + 7);
+        
+        while (current <= end) {
+          dates.push(new Date(current));
+          current.setDate(current.getDate() + 7);
+        }
+        break;
+        
+      case RepetitionType.MONTHLY:
+        // Skip the start month, move to next month
+        current.setMonth(current.getMonth() + 1);
+        
+        while (current <= end) {
+          dates.push(new Date(current));
+          current.setMonth(current.getMonth() + 1);
+        }
+        break;
+    }
+    
+    return dates;
+  }
+
+  private async cloneTripLocation(location: TripLocation): Promise<TripLocation> {
+    const locationCopy = this.tripLocationRepo.create({
+      startLatitude: location.startLatitude,
+      startLongitude: location.startLongitude,
+      startAddress: location.startAddress,
+      endLatitude: location.endLatitude,
+      endLongitude: location.endLongitude,
+      endAddress: location.endAddress,
+      intermediateStops: location.intermediateStops ? [...location.intermediateStops] : [],
+      totalStops: location.totalStops,
+      locationData: location.locationData ? { ...location.locationData } : null,
+      distance: location.distance,
+      estimatedDuration: location.estimatedDuration,
+    });
+    
+    return await this.tripLocationRepo.save(locationCopy);
+  }
+
+  // Add to your TripsService
+
+  async approveScheduledTrip(masterTripId: number, approverId: number, remarks?: string): Promise<any> {
+    try {
+    // Get master trip
+    const masterTrip = await this.tripRepo.findOne({
+      where: { id: masterTripId, isScheduled: true, isInstance: false },
+      relations: [
+        'approval', 
+        'approval.approver1', 
+        'approval.approver2', 
+        'approval.safetyApprover', 
+        'requester',
+        'vehicle'
+      ]
+    });
+
+    if (!masterTrip) {
+      throw new NotFoundException(this.responseService.error('Master scheduled trip not found', 404));
+    }
+
+    // Get all instances
+    const instances = await this.tripRepo.find({
+      where: { 
+        masterTripId: masterTripId,
+        isInstance: true 
+      }
+    });
+
+    // Get user making the request
+    const user = await this.userRepo.findOne({ where: { id: approverId } });
+    if (!user) {
+      throw new NotFoundException(this.responseService.error('User not found', 404));
+    }
+
+    const approval = masterTrip.approval;
+    const isSysAdmin = user.role === UserRole.SYSADMIN;
+
+    // Check if already approved
+    if (approval?.overallStatus === StatusApproval.APPROVED) {
+      throw new BadRequestException(this.responseService.error('Master scheduled trip is already approved', 400));
+    }
+
+    // Check if rejected
+    if (approval?.overallStatus === StatusApproval.REJECTED) {
+      throw new BadRequestException(this.responseService.error('Master scheduled trip is already rejected', 400));
+    }
+
+    // Check authorization (SAME AS NORMAL APPROVAL)
+    let isAuthorized = false;
+    let approverType: ApproverType | null = null;
+
+    if (isSysAdmin) {
+      isAuthorized = true;
+    } else {
+      if (approval?.approver1?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.HOD;
+      } else if (approval?.approver2?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.SECONDARY;
+      } else if (approval?.safetyApprover?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.SAFETY;
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new ForbiddenException(
+        this.responseService.error('You are not authorized to approve this scheduled trip', 403)
+      );
+    }
+
+    // Process approval (SAME AS NORMAL APPROVAL)
+    const now = new Date();
+    
+    // Update approval based on approver type
+    if (approverType === ApproverType.HOD) {
+      approval.approver1Status = StatusApproval.APPROVED;
+      approval.approver1ApprovedAt = now;
+      approval.approver1Comments = remarks;
+    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+      approval.approver2Status = StatusApproval.APPROVED;
+      approval.approver2ApprovedAt = now;
+      approval.approver2Comments = remarks;
+    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+      approval.safetyApproverStatus = StatusApproval.APPROVED;
+      approval.safetyApproverApprovedAt = now;
+      approval.safetyApproverComments = remarks;
+    } else if (isSysAdmin) {
+      approval.approver1Status = StatusApproval.APPROVED;
+      approval.approver1ApprovedAt = now;
+      approval.approver1Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+
+      approval.approver2Status = StatusApproval.APPROVED;
+      approval.approver2ApprovedAt = now;
+      approval.approver2Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+
+      approval.safetyApproverStatus = StatusApproval.APPROVED;
+      approval.safetyApproverApprovedAt = now;
+      approval.safetyApproverComments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+    }
+
+    // Update overall status and move to next step
+    approval.updateOverallStatus();
+    
+    // If no rejection, move to next step
+    if (!approval.hasAnyRejection()) {
+      approval.moveToNextStep();
+    }
+
+    // If fully approved, update master trip status and create approvals for instances
+    if (approval.overallStatus.toString() === 'approved') {
+      masterTrip.status = TripStatus.APPROVED;
+      
+      // Create approvals for all instances (same as master)
+      for (const instance of instances) {
+        // Check if instance already has approval
+        const existingApproval = await this.approvalRepo.findOne({
+          where: { trip: { id: instance.id } }
         });
 
-        await this.approvalRepo.save(instanceApproval);
-      } else {
-        // If instance already has approval, update it
-        existingApproval.overallStatus = StatusApproval.APPROVED;
-        existingApproval.currentStep = ApproverType.COMPLETED;
-        await this.approvalRepo.save(existingApproval);
-      }
+        if (!existingApproval) {
+          // Create new approval for instance (copy from master)
+          const instanceApproval = this.approvalRepo.create({
+            trip: instance,
+            approver1: approval.approver1 || null,
+            approver1Status: approval.approver1Status || StatusApproval.APPROVED,
+            approver1ApprovedAt: approval.approver1ApprovedAt || now,
+            approver1Comments: approval.approver1Comments || `Approved as part of scheduled trip #${masterTripId}`,
+            approver2: approval.approver2 || null,
+            approver2Status: approval.approver2Status || StatusApproval.APPROVED,
+            approver2ApprovedAt: approval.approver2ApprovedAt || now,
+            approver2Comments: approval.approver2Comments || `Approved as part of scheduled trip #${masterTripId}`,
+            safetyApprover: approval.safetyApprover || null,
+            safetyApproverStatus: approval.safetyApproverStatus || StatusApproval.APPROVED,
+            safetyApproverApprovedAt: approval.safetyApproverApprovedAt || now,
+            safetyApproverComments: approval.safetyApproverComments || `Approved as part of scheduled trip #${masterTripId}`,
+            overallStatus: StatusApproval.APPROVED,
+            currentStep: ApproverType.COMPLETED,
+            requireApprover1: approval.requireApprover1 || true,
+            requireApprover2: approval.requireApprover2 || false,
+            requireSafetyApprover: approval.requireSafetyApprover || false,
+          });
 
-      // Update instance status
-      instance.status = TripStatus.APPROVED;
-      await this.tripRepo.save(instance);
+          await this.approvalRepo.save(instanceApproval);
+        } else {
+          // If instance already has approval, update it
+          existingApproval.overallStatus = StatusApproval.APPROVED;
+          existingApproval.currentStep = ApproverType.COMPLETED;
+          await this.approvalRepo.save(existingApproval);
+        }
+
+        // Update instance status
+        instance.status = TripStatus.APPROVED;
+        await this.tripRepo.save(instance);
+      }
+    }
+
+    // Save master changes
+    await this.approvalRepo.save(approval);
+    await this.tripRepo.save(masterTrip);
+
+          // TODO publish event
+      
+      return {
+        success: true,
+        message: `Scheduled trip ${approverType} approval submitted successfully`,
+        data: {
+          masterTripId: masterTrip.id,
+          approvalStatus: approval.overallStatus,
+          currentStep: approval.currentStep,
+          approvedBy: user.displayname,
+          approvedAt: now,
+          nextStep: approval.currentStep ? `Waiting for ${approval.currentStep} approval` : 'Fully approved',
+          instanceCount: instances.length
+        },
+        timestamp: now.toISOString(),
+        statusCode: 200
+      };
+    } catch (error) {
+      console.error('Error in approveScheduledTrip:', error);
+      throw new InternalServerErrorException(
+        this.responseService.error('Failed to approve scheduled trip', 500)
+      );
     }
   }
 
-  // Save master changes
-  await this.approvalRepo.save(approval);
-  await this.tripRepo.save(masterTrip);
+  // Add to your TripsService
 
-        // TODO publish event
+  async getTripWithInstances(tripId: number): Promise<any> {
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'location',
+        'vehicle',
+        'requester',
+        'selectedGroupUsers'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    let instances: Trip[] = [];
     
+    // If this is a master scheduled trip, get its instances
+    if (trip.isScheduled && !trip.isInstance) {
+      instances = await this.tripRepo.find({
+        where: { 
+          masterTripId: tripId,
+          isInstance: true 
+        },
+        relations: ['location', 'vehicle', 'requester'],
+        order: { instanceDate: 'ASC' }
+      });
+    }
+    
+    // If this is an instance, get its master and sibling instances
+    if (trip.isInstance && trip.masterTripId) {
+      const masterTrip = await this.tripRepo.findOne({
+        where: { id: trip.masterTripId },
+        relations: ['location', 'vehicle', 'requester']
+      });
+      
+      instances = await this.tripRepo.find({
+        where: { 
+          masterTripId: trip.masterTripId,
+          isInstance: true,
+          id: Not(tripId) // Exclude current instance
+        },
+        relations: ['location', 'vehicle', 'requester'],
+        order: { instanceDate: 'ASC' }
+      });
+      
+      return {
+        masterTrip: masterTrip ? new TripResponseDto(masterTrip) : null,
+        currentInstance: new TripResponseDto(trip),
+        siblingInstances: instances.map(inst => new TripResponseDto(inst)),
+        isInstance: true
+      };
+    }
+
     return {
-      success: true,
-      message: `Scheduled trip ${approverType} approval submitted successfully`,
-      data: {
-        masterTripId: masterTrip.id,
-        approvalStatus: approval.overallStatus,
-        currentStep: approval.currentStep,
-        approvedBy: user.displayname,
-        approvedAt: now,
-        nextStep: approval.currentStep ? `Waiting for ${approval.currentStep} approval` : 'Fully approved',
-        instanceCount: instances.length
-      },
-      timestamp: now.toISOString(),
-      statusCode: 200
-    };
-  } catch (error) {
-    console.error('Error in approveScheduledTrip:', error);
-    throw new InternalServerErrorException(
-      this.responseService.error('Failed to approve scheduled trip', 500)
-    );
-  }
-}
-
-// Add to your TripsService
-
-async getTripWithInstances(tripId: number): Promise<any> {
-  const trip = await this.tripRepo.findOne({
-    where: { id: tripId },
-    relations: [
-      'location',
-      'vehicle',
-      'requester',
-      'selectedGroupUsers'
-    ]
-  });
-
-  if (!trip) {
-    throw new NotFoundException(this.responseService.error('Trip not found', 404));
-  }
-
-  let instances: Trip[] = [];
-  
-  // If this is a master scheduled trip, get its instances
-  if (trip.isScheduled && !trip.isInstance) {
-    instances = await this.tripRepo.find({
-      where: { 
-        masterTripId: tripId,
-        isInstance: true 
-      },
-      relations: ['location', 'vehicle', 'requester'],
-      order: { instanceDate: 'ASC' }
-    });
-  }
-  
-  // If this is an instance, get its master and sibling instances
-  if (trip.isInstance && trip.masterTripId) {
-    const masterTrip = await this.tripRepo.findOne({
-      where: { id: trip.masterTripId },
-      relations: ['location', 'vehicle', 'requester']
-    });
-    
-    instances = await this.tripRepo.find({
-      where: { 
-        masterTripId: trip.masterTripId,
-        isInstance: true,
-        id: Not(tripId) // Exclude current instance
-      },
-      relations: ['location', 'vehicle', 'requester'],
-      order: { instanceDate: 'ASC' }
-    });
-    
-    return {
-      masterTrip: masterTrip ? new TripResponseDto(masterTrip) : null,
-      currentInstance: new TripResponseDto(trip),
-      siblingInstances: instances.map(inst => new TripResponseDto(inst)),
-      isInstance: true
+      masterTrip: new TripResponseDto(trip),
+      instances: instances.map(inst => new TripResponseDto(inst)),
+      instanceCount: instances.length,
+      isScheduled: trip.isScheduled,
+      isInstance: false
     };
   }
-
-  return {
-    masterTrip: new TripResponseDto(trip),
-    instances: instances.map(inst => new TripResponseDto(inst)),
-    instanceCount: instances.length,
-    isScheduled: trip.isScheduled,
-    isInstance: false
-  };
-}
-//
+  //
 
   async getCombinedTripForDriver(tripId: number) {
     const trip = await this.tripRepo.findOne({
@@ -2237,150 +2241,150 @@ async getTripWithInstances(tripId: number): Promise<any> {
   }
 
   async cancelTrip(tripId: number, user: any, cancellationReason?: string) {
-  if (user === null || user === undefined) {
-    throw new ForbiddenException('User not authenticated');
-  }
+    if (user === null || user === undefined) {
+      throw new ForbiddenException('User not authenticated');
+    }
 
-  // Find the trip with all necessary relations
-  const trip = await this.tripRepo.findOne({
-    where: { id: tripId },
-    relations: [
-      'vehicle',
-      'conflictingTrips',
-      'linkedTrips',
-      'conflictingTrips.vehicle',
-      'conflictingTrips.linkedTrips',
-      'approval',
-      'requester'
-    ]
-  });
+    // Find the trip with all necessary relations
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'vehicle',
+        'conflictingTrips',
+        'linkedTrips',
+        'conflictingTrips.vehicle',
+        'conflictingTrips.linkedTrips',
+        'approval',
+        'requester'
+      ]
+    });
 
-  if (!trip) {
-    throw new NotFoundException(this.responseService.error('Trip not found', 404));
-  }
-  
-  // Check if requester is the trip owner
-  if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
-    throw new ForbiddenException(
-      this.responseService.error('You are not authorized to cancel this trip', 403)
-    );
-  }
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+    
+    // Check if requester is the trip owner
+    if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
+      throw new ForbiddenException(
+        this.responseService.error('You are not authorized to cancel this trip', 403)
+      );
+    }
 
-  /*
-  if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
-      trip.approval?.approver2Status === StatusApproval.APPROVED ||
-      trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
-    throw new BadRequestException(
-      this.responseService.error(
-        `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
-        400
-      )
-    );
-  }
-
-  // Check if trip has approval record and it's still pending
-  if (trip.approval && trip.approval.overallStatus !== StatusApproval.PENDING) {
-    throw new BadRequestException(
-      this.responseService.error(
-        `Cannot cancel trip that has already been ${trip.approval.overallStatus}`,
-        400
-      )
-    );
-  }
-  */
-
-  if (
-    trip.status == TripStatus.READ ||
-    trip.status == TripStatus.ONGOING ||
-    trip.status == TripStatus.COMPLETED ||
-    trip.status == TripStatus.FINISHED
-  ) {
+    /*
+    if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
+        trip.approval?.approver2Status === StatusApproval.APPROVED ||
+        trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
       throw new BadRequestException(
-      this.responseService.error(
-        `Cannot cancel trip.`,
-        400
-      )
-    );
-  }
-
-  // Store passenger count before transaction
-  const passengerCount = trip.passengerCount;
-  const vehicleId = trip.vehicle?.id;
-
-  // Start transaction to ensure data consistency
-  return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
-    // 1. Handle vehicle seating availability if trip has a vehicle
-    if (trip.vehicle) {
-      // Pass the transactional entity manager to restoreVehicleSeats
-      await this.restoreVehicleSeats(vehicleId, passengerCount, transactionalEntityManager);
+        this.responseService.error(
+          `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
+          400
+        )
+      );
     }
 
-    // 2. Handle conflict trips
-    await this.handleConflictTrips(trip, transactionalEntityManager);
-
-    // 3. Delete approval record if exists
-    if (trip.approval) {
-      await transactionalEntityManager.remove(Approval, trip.approval);
+    // Check if trip has approval record and it's still pending
+    if (trip.approval && trip.approval.overallStatus !== StatusApproval.PENDING) {
+      throw new BadRequestException(
+        this.responseService.error(
+          `Cannot cancel trip that has already been ${trip.approval.overallStatus}`,
+          400
+        )
+      );
     }
-    
-    // 4. Update trip status to CANCELED
-    await transactionalEntityManager.update(
-      Trip,
-      { id: tripId },
-      { 
-        status: TripStatus.CANCELED,
-        // Add any other fields you want to update
-        updatedAt: new Date()
+    */
+
+    if (
+      trip.status == TripStatus.READ ||
+      trip.status == TripStatus.ONGOING ||
+      trip.status == TripStatus.COMPLETED ||
+      trip.status == TripStatus.FINISHED
+    ) {
+        throw new BadRequestException(
+        this.responseService.error(
+          `Cannot cancel trip.`,
+          400
+        )
+      );
+    }
+
+    // Store passenger count before transaction
+    const passengerCount = trip.passengerCount;
+    const vehicleId = trip.vehicle?.id;
+
+    // Start transaction to ensure data consistency
+    return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      // 1. Handle vehicle seating availability if trip has a vehicle
+      if (trip.vehicle) {
+        // Pass the transactional entity manager to restoreVehicleSeats
+        await this.restoreVehicleSeats(vehicleId, passengerCount, transactionalEntityManager);
       }
+
+      // 2. Handle conflict trips
+      await this.handleConflictTrips(trip, transactionalEntityManager);
+
+      // 3. Delete approval record if exists
+      if (trip.approval) {
+        await transactionalEntityManager.remove(Approval, trip.approval);
+      }
+      
+      // 4. Update trip status to CANCELED
+      await transactionalEntityManager.update(
+        Trip,
+        { id: tripId },
+        { 
+          status: TripStatus.CANCELED,
+          // Add any other fields you want to update
+          updatedAt: new Date()
+        }
+      );
+
+      try {
+        // TODO publish event
+      } catch (e) {
+        console.error('Failed to send cancellation notification', e);
+      }
+
+      return {
+        success: true,
+        message: 'Trip canceled successfully',
+        data: {
+          tripId: tripId, // Return the original ID
+          status: TripStatus.CANCELED,
+          timestamp: new Date().toISOString()
+        },
+        statusCode: 200
+      };
+    });
+  }
+
+  private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
+    if (!vehicleId) return;
+    
+    const vehicle = await transactionalEntityManager.findOne(
+      Vehicle,
+      { where: { id: vehicleId } }
     );
 
-    try {
-      // TODO publish event
-    } catch (e) {
-      console.error('Failed to send cancellation notification', e);
+    if (vehicle) {
+      console.log(`Restoring ${passengerCount} seats to vehicle ${vehicleId}`);
+      console.log(`Before: ${vehicle.seatingAvailability} seats available`);
+      
+      // Restore seats that were allocated for this trip
+      vehicle.seatingAvailability += passengerCount;
+      
+      // Ensure seating availability doesn't exceed max capacity
+      const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
+      if (vehicle.seatingAvailability > maxAvailable) {
+        vehicle.seatingAvailability = maxAvailable;
+      }
+      
+      console.log(`After: ${vehicle.seatingAvailability} seats available`);
+      
+      await transactionalEntityManager.save(Vehicle, vehicle);
+    } else {
+      console.warn(`Vehicle ${vehicleId} not found when trying to restore seats`);
     }
-
-    return {
-      success: true,
-      message: 'Trip canceled successfully',
-      data: {
-        tripId: tripId, // Return the original ID
-        status: TripStatus.CANCELED,
-        timestamp: new Date().toISOString()
-      },
-      statusCode: 200
-    };
-  });
-}
-
-private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
-  if (!vehicleId) return;
-  
-  const vehicle = await transactionalEntityManager.findOne(
-    Vehicle,
-    { where: { id: vehicleId } }
-  );
-
-  if (vehicle) {
-    console.log(`Restoring ${passengerCount} seats to vehicle ${vehicleId}`);
-    console.log(`Before: ${vehicle.seatingAvailability} seats available`);
-    
-    // Restore seats that were allocated for this trip
-    vehicle.seatingAvailability += passengerCount;
-    
-    // Ensure seating availability doesn't exceed max capacity
-    const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
-    if (vehicle.seatingAvailability > maxAvailable) {
-      vehicle.seatingAvailability = maxAvailable;
-    }
-    
-    console.log(`After: ${vehicle.seatingAvailability} seats available`);
-    
-    await transactionalEntityManager.save(Vehicle, vehicle);
-  } else {
-    console.warn(`Vehicle ${vehicleId} not found when trying to restore seats`);
   }
-}
 
   private async handleConflictTrips(trip: Trip, transactionalEntityManager) {
     // Remove this trip from all conflicting trips' linkedTrips
@@ -3345,7 +3349,8 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
         'linkedTrips',
         'linkedTrips.requester',
         'linkedTrips.location',
-        'linkedTrips.vehicle'
+        'linkedTrips.vehicle',
+        'odometerLog'
       ]
     });
 
@@ -3912,6 +3917,13 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
       };
     }
 
+    let actualDistance = null;
+    let actualDuration = null;
+    if (trip.status == TripStatus.COMPLETED) {
+      actualDistance = (trip.odometerLog?.endReading - trip.odometerLog?.startReading).toString();
+      actualDuration = this.calculateDurationMinutes(trip.odometerLog.endRecordedAt, trip.odometerLog.startRecordedAt).toString();
+    }
+
     return {
       hasRoute: true,
       coordinates: {
@@ -3932,11 +3944,18 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
       },
       metrics: {
         distance: trip.location.distance,
+        actualDistance: actualDistance,
         estimatedDuration: trip.location.estimatedDuration,
+        actualDuration: actualDuration,
         estimatedRestingMinutes: trip.location.estimatedRestingHours,
       },
       rawData: trip.location.locationData
     };
+  }
+
+  private calculateDurationMinutes(endTime: Date, startTime: Date): number {
+    const durationMs = endTime.getTime() - startTime.getTime();
+    return Math.round(durationMs / (1000 * 60)); // Convert ms to minutes
   }
 
   private async getVehicleDetails(trip: Trip) {
@@ -4496,7 +4515,7 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
     // Check if trip is approved or read
     if (trip.status !== TripStatus.APPROVED && trip.status !== TripStatus.FINISHED) {
       throw new BadRequestException(
-        this.responseService.error('Cannot record odometer for non-approved trip', 400)
+        this.responseService.error('Cannot record odometer for non-approved trip or ongoing trips', 400)
       );
     }
 
@@ -4609,6 +4628,7 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
       // Check if trip is fully read and update status
       if (odometerLog.startReading && odometerLog.endReading) {
         trip.status = TripStatus.COMPLETED;
+        trip.cost = this.calculateCost(trip.vehicle.vehicleType.costPerKm, odometerLog.startReading, odometerLog.endReading);
       }
 
       // Check if there are approved conflicting trips and update their end odometer to 0
@@ -4681,6 +4701,28 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
   }
 
   // Helper method to calculate passenger count from Trip entity
+  private calculateCost(costPerKm: number, startReading: number, endReading: number): number {
+    // Validate inputs
+    if (!costPerKm || costPerKm <= 0) {
+      console.warn('Invalid cost per km:', costPerKm);
+      return 0;
+    }
+    
+    if (!startReading || !endReading || endReading <= startReading) {
+      console.warn('Invalid odometer readings:', { startReading, endReading });
+      return 0;
+    }
+    
+    // Calculate distance traveled
+    const distance = endReading - startReading;
+    
+    // Calculate cost
+    const cost = distance * costPerKm;
+    
+    // Return with 2 decimal places
+    return parseFloat(cost.toFixed(2));
+  }
+
   private calculateTripPassengerCount(trip: Trip): number {
     let passengerCount = 0;
 
@@ -4771,6 +4813,7 @@ private async restoreVehicleSeats(vehicleId: number, passengerCount: number, tra
               // Check if conflict trip is fully read
               if (conflictOdometerLog.startReading !== null && conflictOdometerLog.endReading !== null) {
                 fullConflictTrip.status = TripStatus.COMPLETED;
+                fullConflictTrip.cost = 0;
               }
 
               // RESTORE VEHICLE SEATS for conflict trip when end reading is recorded

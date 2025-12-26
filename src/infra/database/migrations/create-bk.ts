@@ -22,7 +22,7 @@ export class CreateBkSysadminUser1764949868439 implements MigrationInterface {
           "passwordHash", "authenticationLevel", "isActive", "isApproved",
           "createdAt", "updatedAt"
         ) VALUES (
-          'buddikaksun', 'Buddika Kasun', 'buddikakasun80@gmail.com', '0715315915', 'sysadmin',
+          'buddikakasun', 'Buddika Kasun', 'buddikakasun80@gmail.com', '0715315915', 'sysadmin',
           $1, 10, true, 'approved',
           NOW(), NOW()
         )

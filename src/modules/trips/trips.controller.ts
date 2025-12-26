@@ -294,7 +294,7 @@ export class TripsController {
     if (!user || !user.userId) {
       throw new ForbiddenException('User not authenticated');
     }
-    
+
     return this.tripsService.getUserTrips(user, tripListRequest);
   }
 
@@ -395,7 +395,7 @@ export class TripsController {
   }
 
   @Post('mid-trip-approval/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Handle mid-trip approval scenario' })
   @ApiResponse({ status: 200, description: 'Mid-trip approval handled successfully' })
   async handleMidTripApproval(
@@ -418,7 +418,7 @@ export class TripsController {
 
 
 @Post('driver-assigned')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'Get driver assigned trips' })
 @ApiResponse({ status: 200, description: 'Driver trips retrieved successfully' })
 async getDriverAssignedTrips(
@@ -431,7 +431,7 @@ async getDriverAssignedTrips(
 
 
 @Post('start/:id')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'Start a trip' })
 @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
 @ApiResponse({ 
@@ -466,7 +466,7 @@ async startTrip(
 }
 
 @Post('end/:id')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'End a trip' })
 @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
 @ApiResponse({ 
@@ -496,9 +496,10 @@ async startTrip(
 @ApiResponse({ status: 404, description: 'Trip not found' })
 async endTrip(
   @Param('id', ParseIntPipe) tripId: number,
-  @GetUser() user: any
+  @GetUser() user: any,
+  @Body() body: {passengerCount: number},
 ) {
-  return await this.tripsService.endTrip(tripId, user.userId);
+  return await this.tripsService.endTrip(tripId, user.userId, body.passengerCount);
 }
 
 

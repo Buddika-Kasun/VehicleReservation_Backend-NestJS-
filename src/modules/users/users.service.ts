@@ -474,7 +474,10 @@ async isApprover(userId: number): Promise<boolean> {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.company', 'company')
       .leftJoinAndSelect('user.department', 'department')
-      .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      //.where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .where('user.role IN (:...roles)', { 
+        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE] 
+      })
       .andWhere('user.isApproved = :status', { status: Status.APPROVED })
       .andWhere('user.authenticationLevel = :authLevel', { authLevel: 0 }) // Add this line
       .orderBy('user.createdAt', 'DESC')

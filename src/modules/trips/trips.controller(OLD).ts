@@ -410,7 +410,7 @@ async endTrip(
   @Param('id', ParseIntPipe) tripId: number,
   @GetUser() user: any
 ) {
-  return await this.tripsService.endTrip(tripId, user.userId);
+  return await this.tripsService.endTrip(tripId, user.userId, 0);
 }
 
 

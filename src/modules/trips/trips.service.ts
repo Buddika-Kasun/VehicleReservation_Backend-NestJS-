@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, InternalServerErrorException, HttpException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ResponseService } from 'src/common/services/response.service';
 import { Approval, StatusApproval } from 'src/infra/database/entities/approval.entity';
@@ -2513,7 +2513,9 @@ export class TripsService {
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
       .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
-    if(user.role != 'sysadmin' && user.role != 'supervisor') {
+    if(user.role != 'sysadmin' 
+      //&& user.role != 'supervisor'
+    ) {
       queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
     }
 
@@ -3444,6 +3446,7 @@ export class TripsService {
         model: trip.vehicle.model,
         regNo: trip.vehicle.regNo,
         vehicleType: trip.vehicle.vehicleType?.vehicleType,
+        costPerKm: trip.vehicle.vehicleType?.costPerKm,
         seatingCapacity: trip.vehicle.seatingCapacity,
         seatingAvailability: trip.vehicle.seatingAvailability
       } : null,
@@ -4496,6 +4499,7 @@ export class TripsService {
     };
   }
 
+  /*
   async recordOdometerReading(
     tripId: number,
     userId: number,
@@ -4509,12 +4513,12 @@ export class TripsService {
     });
 
     if (!trip) {
-      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+      return new NotFoundException(this.responseService.error('Trip not found', 404));
     }
 
     // Check if trip is approved or read
     if (trip.status !== TripStatus.APPROVED && trip.status !== TripStatus.FINISHED) {
-      throw new BadRequestException(
+      return new BadRequestException(
         this.responseService.error('Cannot record odometer for non-approved trip or ongoing trips', 400)
       );
     }
@@ -4522,13 +4526,13 @@ export class TripsService {
     // Get user recording the reading
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException(this.responseService.error('User not found', 404));
+      return new NotFoundException(this.responseService.error('User not found', 404));
     }
 
     // Check user authorization (only SYSADMIN, SECURITY can record)
     const allowedRoles = [UserRole.SYSADMIN, UserRole.SECURITY];
     if (!allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(
+      return new ForbiddenException(
         this.responseService.error('You are not authorized to record odometer readings', 403)
       );
     }
@@ -4557,16 +4561,16 @@ export class TripsService {
     if (readingType === 'start') {
       // Check if start reading already exists
       if (odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('Start odometer reading already recorded', 400)
         );
       }
 
       // Validate start reading cannot be less than vehicle's last odometer reading
       if (reading < vehicleLastReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error(
-            `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading`,// (${vehicleLastReading})`,
             400
           )
         );
@@ -4589,21 +4593,21 @@ export class TripsService {
     } else if (readingType === 'end') {
       // Check if start reading exists
       if (!odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('Start odometer reading must be recorded first', 400)
         );
       }
 
       // Check if end reading already exists
       if (odometerLog.endReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('End odometer reading already recorded', 400)
         );
       }
 
       // Validate end reading is greater than start reading
       if (reading <= odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('End odometer reading must be greater than start reading', 400)
         );
       }
@@ -4612,9 +4616,9 @@ export class TripsService {
       // (This check might be redundant if start reading already passed this check,
       // but we keep it for safety)
       if (reading < vehicleLastReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error(
-            `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading`,// (${vehicleLastReading})`,
             400
           )
         );
@@ -4628,7 +4632,9 @@ export class TripsService {
       // Check if trip is fully read and update status
       if (odometerLog.startReading && odometerLog.endReading) {
         trip.status = TripStatus.COMPLETED;
+        console.log('=================================================================     run  1   =======================================')
         trip.cost = this.calculateCost(trip.vehicle.vehicleType.costPerKm, odometerLog.startReading, odometerLog.endReading);
+        console.log('=================================================================     run   2    =======================================')
       }
 
       // Check if there are approved conflicting trips and update their end odometer to 0
@@ -4659,7 +4665,7 @@ export class TripsService {
           
           // Ensure seating availability doesn't exceed max capacity
           if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-            vehicle.seatingAvailability = vehicle.seatingCapacity;
+            vehicle.seatingAvailability = vehicle.seatingCapacity - 1;
           }
           
           await transactionalEntityManager.save(vehicle);
@@ -4699,6 +4705,252 @@ export class TripsService {
       statusCode: 200,
     };
   }
+  */
+
+  async recordOdometerReading(
+  tripId: number,
+  userId: number,
+  reading: number,
+  readingType: 'start' | 'end'
+): Promise<any> {
+  // Find the trip with relations
+  const trip = await this.tripRepo.findOne({
+    where: { id: tripId },
+    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips']
+  });
+
+  if (!trip) {
+    return new NotFoundException(this.responseService.error('Trip not found', 404));
+  }
+
+  // Check if trip is approved or read
+  /*
+  if (trip.status !== TripStatus.APPROVED && trip.status !== TripStatus.FINISHED) {
+    return new BadRequestException(
+      this.responseService.error('Cannot record odometer for non-approved trip or ongoing trip', 400)
+    );
+  }
+  */
+
+  // Get user recording the reading
+  const user = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) {
+    return new NotFoundException(this.responseService.error('User not found', 404));
+  }
+
+  // Check user authorization (only SYSADMIN, SECURITY can record)
+  const allowedRoles = [UserRole.SYSADMIN, UserRole.SECURITY];
+  if (!allowedRoles.includes(user.role)) {
+    return new ForbiddenException(
+      this.responseService.error('You are not authorized to record odometer readings', 403)
+    );
+  }
+
+  // Get vehicle's last odometer reading
+  let vehicleLastReading = 0;
+  if (trip.vehicle?.odometerLastReading) {
+    vehicleLastReading = trip.vehicle.odometerLastReading;
+  }
+
+  const now = new Date();
+
+  // Create or get odometer log
+  let odometerLog = trip.odometerLog;
+  if (!odometerLog) {
+    odometerLog = this.odometerLogRepo.create({
+      vehicle: trip.vehicle,
+      trip,
+    });
+  }
+
+  // Calculate passenger count for this trip
+  const passengerCount = this.calculateTripPassengerCount(trip);
+
+  // Validate reading based on type
+  if (readingType === 'start') {
+    if (trip.status !== TripStatus.APPROVED) {
+      return new BadRequestException(
+        this.responseService.error('Cannot record odometer for non-approved trip', 400)
+      );
+    }
+
+    // Check if start reading already exists
+    if (odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('Start odometer reading already recorded', 400)
+      );
+    }
+
+    // Validate start reading cannot be less than vehicle's last odometer reading
+    if (reading < vehicleLastReading) {
+      return new BadRequestException(
+        this.responseService.error(
+          `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+          400
+        )
+      );
+    }
+
+    // Update start reading fields
+    odometerLog.startReading = reading;
+    odometerLog.startRecordedBy = user;
+    odometerLog.startRecordedAt = now;
+
+    // Update trip status to READ if start reading is recorded
+    trip.status = TripStatus.READ;
+    
+    // Check if there are approved conflicting trips and update their start odometer to 0
+    if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
+    }
+  } else if (readingType === 'end') {
+    // Check if trip is in READ status (must have start reading recorded)
+    if (trip.status !== TripStatus.FINISHED) {
+      return new BadRequestException(
+        this.responseService.error('Cannot record end odometer for incomplete trip', 400)
+      );
+    }
+
+    // Check if start reading exists
+    if (!odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('Start odometer reading must be recorded first', 400)
+      );
+    }
+
+    // Check if end reading already exists
+    if (odometerLog.endReading) {
+      return new BadRequestException(
+        this.responseService.error('End odometer reading already recorded', 400)
+      );
+    }
+
+    // Validate end reading is greater than start reading
+    if (reading <= odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('End odometer reading must be greater than start reading', 400)
+      );
+    }
+
+    // Validate end reading cannot be less than vehicle's last odometer reading
+    if (reading < vehicleLastReading) {
+      return new BadRequestException(
+        this.responseService.error(
+          `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+          400
+        )
+      );
+    }
+
+    // Update end reading fields
+    odometerLog.endReading = reading;
+    odometerLog.endRecordedBy = user;
+    odometerLog.endRecordedAt = now;
+    
+    // Update trip status to COMPLETED
+    trip.status = TripStatus.COMPLETED; 
+    trip.cost = (odometerLog.endReading - odometerLog.startReading) * trip.vehicle.vehicleType.costPerKm;
+    
+    // Calculate cost if vehicle type has cost per km
+    if (trip.vehicle?.vehicleType?.costPerKm && odometerLog.startReading && odometerLog.endReading) {
+      const distance = odometerLog.endReading - odometerLog.startReading;
+      trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+      console.log(`Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`);
+    }
+
+    // Check if there are approved conflicting trips and update their end odometer to 0
+    if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+    }
+  } else {
+    return new BadRequestException(
+      this.responseService.error('Invalid reading type. Must be "start" or "end"', 400)
+    );
+  }
+
+  try {
+    // Save all changes in a transaction
+    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      // Save odometer log first
+      await transactionalEntityManager.save(OdometerLog, odometerLog);
+      
+      // Update trip with reference to odometer log
+      trip.odometerLog = odometerLog;
+      await transactionalEntityManager.save(Trip, trip);
+      
+      // Update vehicle's last odometer reading
+      if (trip.vehicle) {
+        await transactionalEntityManager.update(
+          Vehicle, 
+          { id: trip.vehicle.id },
+          { odometerLastReading: reading, updatedAt: now }
+        );
+        
+        // RESTORE VEHICLE SEATS when end reading is recorded
+        if (readingType === 'end' && passengerCount > 0) {
+          const vehicle = await transactionalEntityManager.findOne(
+            Vehicle, 
+            { where: { id: trip.vehicle.id } }
+          );
+          
+          if (vehicle) {
+            // Restore seats that were allocated for this trip
+            // Make sure seatingAvailability doesn't exceed seatingCapacity
+            const newAvailability = Math.min(
+              vehicle.seatingCapacity,
+              vehicle.seatingAvailability + passengerCount
+            );
+            
+            vehicle.seatingAvailability = newAvailability;
+            await transactionalEntityManager.save(Vehicle, vehicle);
+          }
+        }
+      }
+
+      
+    });
+
+    return this.responseService.success(
+      `${readingType} odometer reading recorded successfully`,
+      {
+        tripId: trip.id,
+        readingType,
+        reading,
+        recordedBy: {
+          id: user.id,
+          name: user.displayname,
+          role: user.role,
+        },
+        recordedAt: now.toISOString(),
+        tripStatus: trip.status,
+        startReading: odometerLog.startReading,
+        endReading: odometerLog.endReading,
+        startRecordedAt: odometerLog.startRecordedAt?.toISOString(),
+        endRecordedAt: odometerLog.endRecordedAt?.toISOString(),
+        startRecordedBy: odometerLog.startRecordedBy?.displayname,
+        endRecordedBy: odometerLog.endRecordedBy?.displayname,
+        vehicleLastReading: vehicleLastReading,
+        cost: trip.cost,
+        distance: odometerLog.endReading && odometerLog.startReading 
+          ? odometerLog.endReading - odometerLog.startReading 
+          : null,
+      },
+      200
+    );
+  } catch (error) {
+    // Log the actual error for debugging
+    console.error('Error recording odometer reading:', error);
+    console.error('Transaction error:', error);
+    
+    if (error instanceof HttpException) {
+      return error;
+    }
+    
+    return new InternalServerErrorException(
+      this.responseService.error('Failed to record odometer reading', 500)
+    );
+  }
+}
 
   // Helper method to calculate passenger count from Trip entity
   private calculateCost(costPerKm: number, startReading: number, endReading: number): number {
@@ -4879,11 +5131,12 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
 
   const isSysAdmin = requestingUser.role === UserRole.SYSADMIN;
   const isDriver = requestingUser.role === UserRole.DRIVER;
+  const isSupervisor = requestingUser.role === UserRole.SUPERVISOR;
 
   // If user is not SYSADMIN and not DRIVER, they can't access this endpoint
-  if (!isSysAdmin && !isDriver) {
+  if (!isSysAdmin && !isDriver && !isSupervisor) {
     throw new ForbiddenException(
-      this.responseService.error('Only drivers or sysadmins can access assigned trips', 403)
+      this.responseService.error('Only drivers or Supervisor or sysadmins can access assigned trips', 403)
     );
   }
 
@@ -4901,7 +5154,7 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
     .leftJoinAndSelect('trip.odometerLog', 'odometerLog');
 
   // Apply driver filter only if user is a DRIVER (not SYSADMIN)
-  if (isDriver) {
+  if (isDriver || isSupervisor) {
     queryBuilder.where(new Brackets(qb => {
       qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId })
         .orWhere('vehicle.assignedDriverSecondary.id = :driverId', { driverId });
@@ -5310,7 +5563,19 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   };
 }
 
-async endTrip(tripId: number, userId: number): Promise<any> {
+async endTrip(tripId: number, userId: number, endPassengerCount: number): Promise<any> {
+  if (!endPassengerCount || endPassengerCount <= 0) {
+    throw new BadRequestException(
+      this.responseService.error('Passenger count must be greater than 0', 400)
+    );
+  }
+
+  if (endPassengerCount > 50) { // Adjust max limit as needed
+    throw new BadRequestException(
+      this.responseService.error('Passenger count is too high', 400)
+    );
+  }
+
   // Get trip with all necessary relations
   const trip = await this.tripRepo.findOne({
     where: { id: tripId },
@@ -5366,6 +5631,7 @@ async endTrip(tripId: number, userId: number): Promise<any> {
 
   // End the main trip
   trip.status = TripStatus.FINISHED;
+  trip.endPassengerCount = endPassengerCount;
   trip.updatedAt = now;
 
   // Also end all connected trips that are ongoing

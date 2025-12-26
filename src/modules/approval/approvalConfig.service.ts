@@ -70,6 +70,30 @@ export class ApprovalConfigService {
     );
   }
 
+  async findMenuApprovalForAuth(id: number) {
+    // Find the latest active approval configuration
+    const approvalConfig = await this.approvalConfigRepo.findOne({
+      where: { isActive: true },
+      relations: ['secondaryUser', 'safetyUser'],
+      order: { createdAt: 'DESC' }
+    });
+
+    // Get user with department head
+    const user = await this.userRepo.findOne({ 
+      where: { id },
+      relations: ['department', 'department.head']
+    });
+
+    // Extract IDs for the response
+    const responseData = {
+      secondaryUserId: approvalConfig?.secondaryUser?.id || null,
+      safetyUserId: approvalConfig?.safetyUser?.id || null,
+      hodId: user?.department?.head?.id || null
+    };
+
+    return responseData;
+  }
+
   async findAll() {
     const [approvalConfigs] = await this.approvalConfigRepo.findAndCount({
       relations: ['secondaryUser', 'safetyUser'],

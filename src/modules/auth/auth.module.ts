@@ -12,10 +12,12 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { AuthService } from './services/auth.service';
 import { WsAuthService } from './services/ws-auth.service';
 import { UsersModule } from '../users/users.module';
+import { ApprovalConfigModule } from '../approval/approvalConfig.module';
 
 @Module({
   imports: [
     UsersModule,
+    ApprovalConfigModule,
     PassportModule,
     /*JwtModule.register({
       secret: process.env.JWT_SECRET || 'supersecretjwtkey',

@@ -3,16 +3,18 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ResponseService } from 'src/common/services/response.service';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
-import { Status } from 'src/infra/database/entities/user.entity';
+import { Status, UserRole } from 'src/infra/database/entities/user.entity';
 import { UsersService } from 'src/modules/users/users.service';
 import { compare } from 'src/common/utils/hash.util';
 import { LoginDto } from '../dto/login.dto';
 import { LoginResponseDto, LogoutResponseDto, UserData } from '../dto/authResponse.dto';
+import { ApprovalConfigService } from 'src/modules/approval/approvalConfig.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService, 
+    private approvalConfigService: ApprovalConfigService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private readonly responseService: ResponseService,
@@ -78,17 +80,46 @@ export class AuthService {
     this.storeRefreshToken(user.id, refreshToken);
 
     const sanitizedUser: UserData = sanitizeUser(user);
+
+    const [canUserCreate, canTripApprove] = await Promise.all([
+      this.canUserCreate(user),
+      this.canTripApprove(user)
+    ]);
+
+    const userWithPermissions = {
+      ...sanitizedUser,
+      permissions: {
+        canUserCreate,
+        canTripApprove
+      }
+    };
     
     return this.responseService.success(
       'Login successful',
       {
         accessToken,
         refreshToken,
-        user: sanitizedUser
+        user: userWithPermissions
       }
     );
 
   }
+
+  private async canTripApprove(user: any): Promise<boolean> {
+  const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
+  return user.role === UserRole.SYSADMIN ||
+         approvalConfig?.secondaryUserId === user.id || 
+         approvalConfig?.safetyUserId === user.id || 
+         approvalConfig?.hodId === user.id;
+}
+
+private async canUserCreate(user: any): Promise<boolean> {
+  // Your existing logic, make it async if needed
+  const allowedRoles = [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN];
+  if (allowedRoles.includes(user.role)) return true;
+  if (user.role === UserRole.EMPLOYEE && user.authenticationLevel === 3) return true;
+  return false;
+}
 
   async refreshToken(refreshToken: string) {
     if (!refreshToken) {

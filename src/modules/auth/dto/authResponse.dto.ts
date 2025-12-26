@@ -2,6 +2,20 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { UserRole } from "src/infra/database/entities/user.entity";
 
+class UserPermissions {
+  @ApiProperty({ 
+    example: true,
+    description: 'Whether user can create other users'
+  })
+  canUserCreate: boolean;
+
+  @ApiProperty({ 
+    example: true,
+    description: 'Whether user can approve trips'
+  })
+  canTripApprove: boolean;
+}
+
 export class UserData {
   @ApiProperty({ 
     example: 6,
@@ -88,6 +102,12 @@ export class UserData {
     description: 'Department ID associated with the user'
   })
   departmentId: number;
+
+  @ApiProperty({ 
+    type: UserPermissions,
+    description: 'User permissions object'
+  })
+  permissions: UserPermissions;
 }
 
 export class LoginData {

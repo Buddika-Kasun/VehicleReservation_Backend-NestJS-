@@ -316,7 +316,7 @@ export class TripsController {
       throw new ForbiddenException('User not authenticated');
     }
     
-    return this.tripsService.getUserTrips(user, tripListRequest);
+    return this.tripsService.getSupervisorTrips(user, tripListRequest);
   }
 
   @Post('pending-approvals')

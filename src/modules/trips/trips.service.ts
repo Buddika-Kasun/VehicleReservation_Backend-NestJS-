@@ -2604,6 +2604,109 @@ export class TripsService {
     };
   }
 
+  async getSupervisorTrips(user: any, requestDto: TripListRequestDto) {
+
+    // Create base query builder
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.requester', 'requester')
+      .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+      .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+    /*
+    if(user.role != 'sysadmin' && user.role != 'supervisor'
+    ) {
+      queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    }
+    */
+
+    // Apply time filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    switch (requestDto.timeFilter) {
+      case 'today':
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
+        break;
+      case 'week':
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        break;
+      case 'month':
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      case 'all':
+      default:
+        // No date filter
+        break;
+    }
+
+    // Apply status filter if provided
+    if (requestDto.statusFilter) {
+      queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+    }
+
+    // Calculate pagination
+    const skip = (requestDto.page - 1) * requestDto.limit;
+    
+    // Get total count
+    const total = await queryBuilder.getCount();
+    
+    // Get paginated results
+    const trips = await queryBuilder
+      .orderBy('trip.startDate', 'DESC')
+      .addOrderBy('trip.startTime', 'DESC')
+      .skip(skip)
+      .take(requestDto.limit)
+      .getMany();
+
+    // Transform trips to TripCardDto format
+    const tripCards = await Promise.all(
+      trips.map(async (trip) => {
+        const tripType = await this.determineTripType(trip, user.userId);
+        
+        return {
+          id: trip.id,
+          vehicleModel: trip.vehicle?.model || 'Unknown',
+          vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+          status: trip.status,
+          date: this.formatDateForDB(trip.startDate.toString()),
+          time: trip.startTime.substring(0, 5), // Format to HH:MM
+          tripType,
+          driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+          startLocation: trip.location?.startAddress,
+          endLocation: trip.location?.endAddress,
+        };
+      })
+    );
+
+    const hasMore = skip + trips.length < total;
+
+    return {
+      success: true,
+      data: {
+        trips: tripCards,
+        total,
+        page: requestDto.page,
+        limit: requestDto.limit,
+        hasMore,
+      },
+      statusCode: 200,
+    };
+  }
+
   private async determineTripType(trip: Trip, userId: number): Promise<string> {
     // R - Created and going
     if (trip.requester.id === userId) {

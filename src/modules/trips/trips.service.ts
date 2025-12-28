@@ -1063,12 +1063,11 @@ export class TripsService {
         // 2. Delete approval record if exists
         if (trip.approval) {
           await transactionalEntityManager.remove(Approval, trip.approval);
-
-          trip.approval = null;
         }
       }
       
       trip.status = TripStatus.DRAFT;
+      trip.approval = null;
         
       // Update trip with vehicle
       trip.vehicle = vehicle;      

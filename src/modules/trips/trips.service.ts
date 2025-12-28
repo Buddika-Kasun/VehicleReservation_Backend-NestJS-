@@ -2558,15 +2558,15 @@ export class TripsService {
     switch (requestDto.timeFilter) {
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
-        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
           today: this.formatDateForDB(now.toISOString()) 
         });
         break;
       case 'week':
-        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
         break;
       case 'month':
-        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
         break;
       case 'all':
       default:

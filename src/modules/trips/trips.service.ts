@@ -969,138 +969,109 @@ export class TripsService {
     vehicleId: number,
     userId: number,
   ): Promise<any> {
-    // Get the trip with all necessary relations
-    const trip = await this.tripRepo.findOne({
-      where: { id: tripId },
-      relations: [
-        'location',
-        'conflictingTrips',
-        'vehicle',
-        'requester',
-        'selectedGroupUsers',
-        'selectedIndividual',
-        'approval'
-      ]
-    });
-
-    if (!trip) {
-      throw new NotFoundException(this.responseService.error('Trip not found', 404));
-    }
-
-    // Check if trip already has a vehicle assigned
-    /*
-    if (trip.vehicle) {
-      throw new BadRequestException(
-        this.responseService.error('Trip already has a vehicle assigned', 400)
-      );
-    }
-    */
-
-    // Get the vehicle with relations
-    const vehicle = await this.vehicleRepo.findOne({
-      where: { id: vehicleId, isActive: true },
-      relations: ['assignedDriverPrimary', 'assignedDriverSecondary', 'vehicleType']
-    });
-
-    if (!vehicle) {
-      throw new NotFoundException(this.responseService.error('Vehicle not found or inactive', 404));
-    }
-
-    // Check vehicle seating capacity
-    /*
-    if (vehicle.seatingAvailability < trip.passengerCount) {
-      throw new BadRequestException(
-        this.responseService.error(
-          `Vehicle does not have enough seating capacity. Available: ${vehicle.seatingAvailability}, Required: ${trip.passengerCount}`,
-          400
-        )
-      );
-    }
-    */
-
-    // Update vehicle seating availability
-    //const previousAvailability = vehicle.seatingAvailability;
-    //const seatingAvailability = vehicle.seatingAvailability - trip.passengerCount;
-    
-    /*
-    if (seatingAvailability < 0) {
-      throw new BadRequestException(
-        this.responseService.error('Not enough seats available after assignment', 400)
-      );
-    }
-    */
-
-    // If trip was DRAFT, change status to PENDING (requires approval)
-    /*
-    if (trip.status === TripStatus.DRAFT) {
-      trip.status = TripStatus.PENDING;
-      
-      // Create approval record if not exists
-      if (!trip.approval) {
-        await this.createApprovalRecord(trip.id, trip.requester, {
-          scheduleData: {
-            startDate: trip.startDate.toString(),
-            startTime: trip.startTime,
-            repetition: trip.repetition
-          }
-        } as CreateTripDto, trip.location, trip.mileage);
-      }
-    }
-    */
-
-    // Save changes in a transaction
-    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => { 
-      
-      if (trip.status != TripStatus.DRAFT) {
-        // 1. Handle vehicle seating availability if trip has a vehicle
-        /*
-        if (trip.vehicle) {
-          // Pass the transactional entity manager to restoreVehicleSeats
-          await this.restoreVehicleSeats(trip.vehicle.id, trip.passengerCount, transactionalEntityManager);
-        }
-        */
-        
-        // 2. Delete approval record if exists
-        if (trip.approval) {
-          await transactionalEntityManager.remove(Approval, trip.approval);
-        }
-      }
-      
-      trip.status = TripStatus.DRAFT;
-      trip.approval = null;
-        
-      // Update trip with vehicle
-      trip.vehicle = vehicle;      
-      
-      // Save trip with vehicle assignment
-      await transactionalEntityManager.save(trip); 
-    });
-
-    // Send notifications
     try {
-      // TODO: Publish event for notifications
-      // this.eventEmitter.emit('vehicle.assigned', {
-      //   tripId: trip.id,
-      //   vehicleId: vehicle.id,
-      //   assignedBy: userId,
-      //   passengerCount: trip.passengerCount,
-      //   vehicleModel: vehicle.model,
-      //   vehicleRegNo: vehicle.regNo
-      // });
-    } catch (e) {
-      console.error('Failed to send notification:', e);
-    }
+      // Get the trip with all necessary relations
+      const trip = await this.tripRepo.findOne({
+        where: { id: tripId },
+        relations: [
+          'location',
+          'conflictingTrips',
+          'vehicle',
+          'requester',
+          'selectedGroupUsers',
+          'selectedIndividual',
+          'approval'
+        ]
+      });
 
-    return {
-      success: true,
-      message: 'Vehicle assigned to trip successfully',
-      data: {
-        trip: trip.id,
-        vehicle: vehicle.model
-      },
-      timestamp: new Date().toISOString(),
-      statusCode: 200
-    };
+      if (!trip) {
+        throw new NotFoundException(this.responseService.error('Trip not found', 404));
+      }
+
+      // Get the vehicle with relations
+      const vehicle = await this.vehicleRepo.findOne({
+        where: { id: vehicleId, isActive: true },
+        relations: ['assignedDriverPrimary', 'assignedDriverSecondary', 'vehicleType']
+      });
+
+      if (!vehicle) {
+        throw new NotFoundException(this.responseService.error('Vehicle not found or inactive', 404));
+      }
+
+      // Store original trip ID for reference
+      const originalTripId = trip.id;
+      
+      // Save changes in a transaction
+      const result = await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+        
+        // **FIX: First, handle the approval separately before modifying the trip**
+        if (trip.status !== TripStatus.DRAFT && trip.approval) {
+          // Delete approval record if exists
+          await transactionalEntityManager.remove(Approval, trip.approval);
+          // Clear the reference from trip entity
+          trip.approval = null;
+        }
+        
+        // Update trip status to DRAFT
+        trip.status = TripStatus.DRAFT;
+        
+        // **FIX: Assign vehicle AFTER clearing approval**
+        trip.vehicle = vehicle;
+        
+        // **FIX: Save trip without cascade issues**
+        const savedTrip = await transactionalEntityManager.save(trip);
+        
+        // **FIX: Verify the saved trip ID matches original**
+        if (savedTrip.id !== originalTripId) {
+          throw new Error('Trip ID mismatch after save');
+        }
+        
+        return savedTrip;
+      });
+
+      // Send notifications
+      try {
+        // TODO: Publish event for notifications
+        // this.eventEmitter.emit('vehicle.assigned', {
+        //   tripId: result.id,
+        //   vehicleId: vehicle.id,
+        //   assignedBy: userId,
+        //   passengerCount: result.passengerCount,
+        //   vehicleModel: vehicle.model,
+        //   vehicleRegNo: vehicle.regNo
+        // });
+      } catch (e) {
+        console.error('Failed to send notification:', e);
+      }
+
+      // **FIX: Fetch the trip again to ensure fresh data**
+      const updatedTrip = await this.tripRepo.findOne({
+        where: { id: originalTripId },
+        relations: ['vehicle', 'approval']
+      });
+
+      return {
+        success: true,
+        message: 'Vehicle assigned to trip successfully',
+        data: {
+          trip: {
+            id: updatedTrip.id,
+            status: updatedTrip.status,
+            hasApproval: !!updatedTrip.approval,
+            vehicle: updatedTrip.vehicle ? {
+              id: updatedTrip.vehicle.id,
+              model: updatedTrip.vehicle.model
+            } : null
+          }
+        },
+        timestamp: new Date().toISOString(),
+        statusCode: 200
+      };
+      
+    } catch (error) {
+      console.error('Error assigning vehicle to trip:', error);
+      throw error;
+    }
   }
 
   async confirmReviewTrip(tripId: number, userId: number){

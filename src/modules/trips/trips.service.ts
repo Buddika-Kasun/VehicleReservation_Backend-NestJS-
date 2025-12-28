@@ -1062,8 +1062,13 @@ export class TripsService {
         
         // 2. Delete approval record if exists
         if (trip.approval) {
-          await transactionalEntityManager.remove(Approval, trip.approval);
+          const approvalId = trip.approval.id;
+
           trip.approval = null;
+
+          await transactionalEntityManager.save(Trip, trip);
+
+          await transactionalEntityManager.delete(Approval, { id: approvalId });
         }
       }
       

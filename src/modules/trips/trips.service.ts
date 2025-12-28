@@ -4079,7 +4079,7 @@ export class TripsService {
       metrics: {
         distance: trip.location.distance,
         actualDistance: actualDistance,
-        estimatedDuration: trip.location.estimatedDuration,
+        estimatedDuration: Math.round(trip.location.estimatedDuration),
         actualDuration: actualDuration,
         estimatedRestingMinutes: trip.location.estimatedRestingHours,
       },

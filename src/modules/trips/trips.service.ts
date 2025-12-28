@@ -2598,6 +2598,49 @@ export class TripsService {
       trips.map(async (trip) => {
         const tripType = await this.determineTripType(trip, user.userId);
         
+
+        let instanceCount = 0;
+      let instanceIds: number[] | null = null;
+
+      // If this is a master scheduled trip (not an instance itself), fetch its instances
+      if (trip.isScheduled && !trip.isInstance) {
+        // Fetch all instances for this master trip
+        const instances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.id,
+            isInstance: true
+          },
+          select: ['id'] // Only need IDs
+        });
+        
+        instanceCount = instances.length;
+        instanceIds = instances.map(instance => instance.id);
+      } 
+      // If this is an instance trip, we might want to find its master and other instances
+      else if (trip.isInstance && trip.masterTripId) {
+        // Get the master trip and all its instances
+        const masterTripId = trip.masterTripId;
+        
+        // Get all instances including this one
+        const allInstances = await this.tripRepo.find({
+          where: {
+            masterTripId: masterTripId,
+            isInstance: true
+          },
+          select: ['id']
+        });
+        
+        instanceCount = allInstances.length;
+        instanceIds = allInstances.map(instance => instance.id);
+        
+        // Also get the master trip ID for reference
+        const masterTrip = await this.tripRepo.findOne({
+          where: { id: masterTripId },
+          select: ['id', 'isScheduled']
+        });
+      }
+
+      
         return {
           id: trip.id,
           vehicleModel: trip.vehicle?.model || 'Unknown',
@@ -2609,6 +2652,22 @@ export class TripsService {
           driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
           startLocation: trip.location?.startAddress,
           endLocation: trip.location?.endAddress,
+
+          // Scheduled trip fields from entity
+        isScheduled: trip.isScheduled ?? false,
+        isInstance: trip.isInstance ?? false,
+        masterTripId: trip.masterTripId,
+        instanceDate: trip.instanceDate,
+        
+        // Calculated instance data
+        instanceCount: instanceCount,
+        instanceIds: instanceIds,
+        
+        // Other schedule fields
+        repetition: trip.repetition,
+        validTillDate: trip.validTillDate,
+        includeWeekends: trip.includeWeekends ?? false,
+        repeatAfterDays: trip.repeatAfterDays
         };
       })
     );

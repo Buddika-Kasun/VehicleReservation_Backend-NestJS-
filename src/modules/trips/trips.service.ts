@@ -2640,7 +2640,7 @@ export class TripsService {
         });
       }
 
-      
+
         return {
           id: trip.id,
           vehicleModel: trip.vehicle?.model || 'Unknown',
@@ -4138,7 +4138,7 @@ export class TripsService {
       metrics: {
         distance: trip.location.distance,
         actualDistance: actualDistance,
-        estimatedDuration: Math.round(trip.location.estimatedDuration),
+        estimatedDuration: (Math.round(trip.location.estimatedDuration)).toString(),
         actualDuration: actualDuration,
         estimatedRestingMinutes: trip.location.estimatedRestingHours,
       },

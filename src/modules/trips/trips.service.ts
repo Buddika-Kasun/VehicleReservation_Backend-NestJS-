@@ -1221,6 +1221,7 @@ export class TripsService {
       }
     }
 
+    /*
     // Update vehicle seating
     if (vehicle) {
       // Only update if the trip wasn't already counted in vehicle seating
@@ -1232,6 +1233,7 @@ export class TripsService {
       }
       await this.vehicleRepo.save(vehicle);
     }
+    */
 
     // Create approval 
     let approvalMessage = '';

@@ -331,10 +331,12 @@ export class TripsService {
     const conflictingTrips: Trip[] = [];
 
     for (const [vehicleId, trip] of tripsAtSameTime) {
+      /*
       // Skip if vehicle doesn't have enough capacity
       if (trip.vehicle.seatingAvailability < passengerCount) {
         continue;
       }
+      */
 
       // Check if new trip locations are near existing trip's route
       const locationsNearby = this.areTripLocationsNearby(
@@ -487,10 +489,12 @@ export class TripsService {
 
     const availableVehicles = allVehicles.filter(vehicle => {
  
+      /*
       // Rule 1: seating capacity
       if (vehicle.seatingAvailability < passengerCount) {
         return false;
       }
+      */
 
       const tripAtSameTime = tripsAtSameTime.get(vehicle.id);
 
@@ -714,12 +718,14 @@ export class TripsService {
         throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
       }
 
+      /*
       // Check vehicle capacity
       if (vehicle.seatingAvailability < passengerCount) {
         throw new BadRequestException(
           this.responseService.error('Vehicle does not have enough seating capacity', 400)
         );
       }
+      */
     }
 
     // Check for conflicting trip if conflictTripId is provided
@@ -892,6 +898,7 @@ export class TripsService {
       }
     }
 
+    /*
     // Update vehicle seating
     if (vehicle) {
       vehicle.seatingAvailability -= passengerCount;
@@ -902,6 +909,7 @@ export class TripsService {
       }
       await this.vehicleRepo.save(vehicle);
     }
+    */
 
     // Create approval if needed
     let approvalMessage = '';
@@ -999,6 +1007,7 @@ export class TripsService {
     }
 
     // Check vehicle seating capacity
+    /*
     if (vehicle.seatingAvailability < trip.passengerCount) {
       throw new BadRequestException(
         this.responseService.error(
@@ -1007,16 +1016,19 @@ export class TripsService {
         )
       );
     }
+    */
 
     // Update vehicle seating availability
-    const previousAvailability = vehicle.seatingAvailability;
-    const seatingAvailability = vehicle.seatingAvailability - trip.passengerCount;
+    //const previousAvailability = vehicle.seatingAvailability;
+    //const seatingAvailability = vehicle.seatingAvailability - trip.passengerCount;
     
+    /*
     if (seatingAvailability < 0) {
       throw new BadRequestException(
         this.responseService.error('Not enough seats available after assignment', 400)
       );
     }
+    */
 
     // If trip was DRAFT, change status to PENDING (requires approval)
     /*
@@ -1041,10 +1053,12 @@ export class TripsService {
       
       if (trip.status != TripStatus.DRAFT) {
         // 1. Handle vehicle seating availability if trip has a vehicle
+        /*
         if (trip.vehicle) {
           // Pass the transactional entity manager to restoreVehicleSeats
           await this.restoreVehicleSeats(trip.vehicle.id, trip.passengerCount, transactionalEntityManager);
         }
+        */
         
         // 2. Delete approval record if exists
         if (trip.approval) {
@@ -1144,12 +1158,14 @@ export class TripsService {
         throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
       }
 
+      /*
       // Check vehicle capacity
       if (vehicle.seatingAvailability < passengerCount) {
         throw new BadRequestException(
           this.responseService.error('Vehicle does not have enough seating capacity', 400)
         );
       }
+      */
     }
 
     // Check for conflicting trips based on vehicle
@@ -2313,11 +2329,13 @@ export class TripsService {
 
     // Start transaction to ensure data consistency
     return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      /*
       // 1. Handle vehicle seating availability if trip has a vehicle
       if (trip.vehicle) {
         // Pass the transactional entity manager to restoreVehicleSeats
         await this.restoreVehicleSeats(vehicleId, passengerCount, transactionalEntityManager);
       }
+      */
 
       // 2. Handle conflict trips
       await this.handleConflictTrips(trip, transactionalEntityManager);
@@ -2357,6 +2375,7 @@ export class TripsService {
     });
   }
 
+  /*
   private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
     if (!vehicleId) return;
     
@@ -2385,6 +2404,7 @@ export class TripsService {
       console.warn(`Vehicle ${vehicleId} not found when trying to restore seats`);
     }
   }
+  */
 
   private async handleConflictTrips(trip: Trip, transactionalEntityManager) {
     // Remove this trip from all conflicting trips' linkedTrips
@@ -2430,6 +2450,7 @@ export class TripsService {
           
           await transactionalEntityManager.save(fullConflictTrip);
 
+          /*
           // Restore vehicle seats for the conflict trip if it's still active
           if (fullConflictTrip.vehicle && 
               [TripStatus.PENDING, TripStatus.APPROVED].includes(fullConflictTrip.status)) {
@@ -2449,6 +2470,7 @@ export class TripsService {
               await transactionalEntityManager.save(conflictVehicle);
             }
           }
+          */
         }
       }
 
@@ -3835,10 +3857,12 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
+    /*
     // Restore vehicle seats if vehicle was assigned
     if (trip.vehicle) {
       await this.restoreVehicleSeatsForRejection(trip);
     }
+    */
         // TODO publish event
 
     return {
@@ -3856,6 +3880,7 @@ export class TripsService {
     };
   }
 
+  /*
   private async restoreVehicleSeatsForRejection(trip: Trip) {
     // Restore seats that were allocated for this rejected trip
     const vehicle = await this.vehicleRepo.findOne({ 
@@ -3876,6 +3901,7 @@ export class TripsService {
 
     }
   }
+  */
 
   private async getPassengerDetails(trip: Trip) {
     const passengers = [];
@@ -4989,6 +5015,7 @@ export class TripsService {
           { odometerLastReading: reading, updatedAt: now }
         );
         
+        /*
         // RESTORE VEHICLE SEATS when end reading is recorded
         if (readingType === 'end' && passengerCount > 0) {
           const vehicle = await transactionalEntityManager.findOne(
@@ -5008,6 +5035,7 @@ export class TripsService {
             await transactionalEntityManager.save(Vehicle, vehicle);
           }
         }
+        */
       }
 
       
@@ -5171,6 +5199,7 @@ export class TripsService {
                 fullConflictTrip.cost = 0;
               }
 
+              /*
               // RESTORE VEHICLE SEATS for conflict trip when end reading is recorded
               if (fullConflictTrip.vehicle && conflictPassengerCount > 0) {
                 const conflictVehicle = await this.vehicleRepo.findOne({
@@ -5188,7 +5217,8 @@ export class TripsService {
                   
                   await this.vehicleRepo.save(conflictVehicle);
                 }
-              }        
+              } 
+              */       
             }
           }
 

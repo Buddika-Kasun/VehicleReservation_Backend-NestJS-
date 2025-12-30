@@ -5494,7 +5494,6 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
       });
     }
   } else {
-    console.log('==================RUN============')
     // Default: exclude DRAFT and CANCELED trips for drivers
     queryBuilder.andWhere('trip.status NOT IN (:...excludedStatuses)', {
       excludedStatuses: [TripStatus.DRAFT, TripStatus.CANCELED, TripStatus.REJECTED]

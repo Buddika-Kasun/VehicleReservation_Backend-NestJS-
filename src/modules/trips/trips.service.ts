@@ -5720,7 +5720,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   });
 
   if (!trip) {
-    throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    return new NotFoundException(this.responseService.error('Trip not found', 404));
   }
 
   // Get user making the request
@@ -5730,7 +5730,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   });
   
   if (!user) {
-    throw new NotFoundException(this.responseService.error('User not found', 404));
+    return new NotFoundException(this.responseService.error('User not found', 404));
   }
 
   const isSysAdmin = user.role === UserRole.SYSADMIN;
@@ -5741,14 +5741,14 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   const isAssignedDriver = isPrimaryDriver || isSecondaryDriver;
 
   if (!isSysAdmin && !isAssignedDriver) {
-    throw new ForbiddenException(
+    return new ForbiddenException(
       this.responseService.error('You are not authorized to start this trip', 403)
     );
   }
 
   // Check current trip status
   if (trip.status !== TripStatus.READ) {
-    throw new BadRequestException(
+    return new BadRequestException(
       this.responseService.error(
         `Cannot start trip with status: ${trip.status}. Trip must be READ.`,
         400
@@ -5758,7 +5758,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
 
   // Check if odometer start reading is done
   if (!trip.odometerLog?.startReading) {
-    throw new BadRequestException(
+    return new BadRequestException(
       this.responseService.error(
         'Cannot start trip without odometer start reading. Please complete meter reading first.',
         400
@@ -5766,7 +5766,26 @@ async startTrip(tripId: number, userId: number): Promise<any> {
     );
   }
 
+  // NEW: Check if current time is within 15 minutes window of scheduled start time
   const now = new Date();
+  const tripDateTime = this.getTripDateTime(trip.startDate, trip.startTime);
+  
+  // Calculate time difference in minutes
+  const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
+  
+  // If more than 15 minutes early or late
+  if (timeDiffMinutes > 15) {
+    const isEarly = now < tripDateTime;
+    const minutesAway = Math.abs(timeDiffMinutes);
+    
+    return new BadRequestException(
+      this.responseService.error(
+        `Cannot start trip. You are ${minutesAway.toFixed(0)} minutes ${isEarly ? 'before' : 'after'} the scheduled start time. ` +
+        'Trip can only be started within 15 minutes of the scheduled time.',
+        400
+      )
+    );
+  }
 
   // Start the main trip
   trip.status = TripStatus.ONGOING;
@@ -5817,6 +5836,15 @@ async startTrip(tripId: number, userId: number): Promise<any> {
     timestamp: now.toISOString(),
     statusCode: 200,
   };
+}
+
+// Helper method to combine date and time into a single Date object
+private getTripDateTime(date: Date, timeString: string): Date {
+  const dateObj = new Date(date);
+  const [hours, minutes, seconds = 0] = timeString.split(':').map(Number);
+  
+  dateObj.setHours(hours, minutes, seconds, 0);
+  return dateObj;
 }
 
 async endTrip(tripId: number, userId: number, endPassengerCount: number): Promise<any> {

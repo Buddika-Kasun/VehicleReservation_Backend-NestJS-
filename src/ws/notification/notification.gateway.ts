@@ -12,7 +12,11 @@ import { EVENTS } from 'src/common/constants/events.constants';
 
 @WebSocketGateway({
   namespace: 'notifications',
-  cors: { origin: '*' },
+  cors: {
+    origin: '*', // Or specify your Flutter app origins
+    credentials: true,
+  },
+  transports: ['websocket', 'polling'], // Important for mobile
 })
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer() server: Server;

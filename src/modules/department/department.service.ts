@@ -103,8 +103,8 @@ export class DepartmentService {
     );
   }
 
-  async findAll(page = 1, limit = 10, search?: string, companyId?: number, costCenterId?: number) {
-    const skip = (page - 1) * limit;
+  async findAll(page = 1, limit?: number, search?: string, companyId?: number, costCenterId?: number) {
+    const skip = (page - 1) * (limit || 0);
     const query = this.departmentRepository
       .createQueryBuilder('department')
       .leftJoinAndSelect('department.company', 'company')
@@ -123,11 +123,18 @@ export class DepartmentService {
       query.andWhere('department.costCenterId = :costCenterId', { costCenterId });
     }
 
-    const [departments, total] = await query
-      .skip(skip)
-      .take(limit)
-      .orderBy('department.createdAt', 'DESC')
-      .getManyAndCount();
+    // If limit is provided, use pagination
+    if (limit) {
+      query
+        .skip(skip)
+        .take(limit)
+        .orderBy('department.createdAt', 'DESC');
+    } else {
+      // If no limit, just order the results
+      query.orderBy('department.createdAt', 'DESC');
+    }
+
+    const [departments, total] = await query.getManyAndCount();
 
     return this.responseService.success(
       'Departments retrieved successfully',
@@ -135,9 +142,9 @@ export class DepartmentService {
         departments,
         pagination: {
           page,
-          limit,
+          limit: limit || total, // If no limit, show total as limit
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: limit ? Math.ceil(total / limit) : 1,
         },
       }
     );

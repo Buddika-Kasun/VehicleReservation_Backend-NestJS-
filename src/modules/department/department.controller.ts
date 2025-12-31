@@ -28,7 +28,6 @@ export class DepartmentController {
   }
 
   @Get('get-all')
-  //@Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @Public()
   @ApiOperation({ summary: 'Get all departments' })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -38,14 +37,14 @@ export class DepartmentController {
   @ApiQuery({ name: 'costCenterId', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Departments retrieved successfully', type: DepartmentListResponseDto })
   async findAll(
-    @Query('page') page: string,
-    @Query('limit') limit: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('companyId') companyId?: string,
     @Query('costCenterId') costCenterId?: string,
   ) {
-    const pageNumber = parseInt(page, 10) || 1;
-    const limitNumber = parseInt(limit, 10) || 20;
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : undefined; // Keep as undefined if not provided
     const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
     const costCenterIdNumber = costCenterId ? parseInt(costCenterId, 10) : undefined;
     return await this.departmentService.findAll(pageNumber, limitNumber, search, companyIdNumber, costCenterIdNumber);

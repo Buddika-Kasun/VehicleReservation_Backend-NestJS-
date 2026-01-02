@@ -91,6 +91,15 @@ export class AvailableVehicleDto {
     //distance?: number;
     //detailedLocationData?: any; // Optional detailed location data
   };
+  driverConflictData?: {
+    driverId: number;
+    driverName: string;
+    conflictTripId: number;
+    conflictVehicleId: number;
+    conflictStartTime: string;
+    conflictStartDate: string;
+    message: string;
+  };
 }
 
 export class AvailableVehiclesResponseDto {

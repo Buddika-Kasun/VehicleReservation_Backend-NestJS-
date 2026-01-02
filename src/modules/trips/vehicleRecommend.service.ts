@@ -7,6 +7,7 @@ import { ReviewAvailableVehiclesRequest } from "./dto/create-trip.dto";
 import { AvailableVehicleDto } from "./dto/trip-response.dto";
 import { ResponseService } from "src/common/services/response.service";
 import { TripLocation } from "src/infra/database/entities/trip-location.entity";
+import { User } from "src/infra/database/entities/user.entity";
 
 @Injectable()
 export class VehicleRecommendService {
@@ -19,6 +20,8 @@ export class VehicleRecommendService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(Vehicle)
     private readonly vehicleRepo: Repository<Vehicle>,
+    @InjectRepository(User)
+    private readonly driverRepo: Repository<User>,
     private readonly responseService: ResponseService,
   ) {}
 
@@ -103,6 +106,7 @@ export class VehicleRecommendService {
     let isAvailable = true;
     let isInConflict = false;
     let conflictingTripData = null;
+    let driverConflictData = null;
     let reason = "Available vehicle";
     
     // Step 2: Check for ongoing trips that would make vehicle unavailable
@@ -114,6 +118,28 @@ export class VehicleRecommendService {
     if (ongoingTrips.length > 0) {
       // Vehicle is currently on a trip during requested time
       return null;
+    }
+
+    // Step 3: Check primary driver availability
+    if (vehicle.assignedDriverPrimary) {
+      const driverConflict = await this.checkDriverAvailability(
+        vehicle.assignedDriverPrimary.id,
+        requestedWindow,
+        vehicle.id
+      );
+      
+      if (driverConflict) {
+        driverConflictData = {
+          driverId: vehicle.assignedDriverPrimary.id,
+          driverName: `${vehicle.assignedDriverPrimary.displayname}`,
+          conflictTripId: driverConflict.trip.id,
+          conflictVehicleId: driverConflict.vehicle.id,
+          conflictStartTime: driverConflict.trip.startTime,
+          conflictStartDate: driverConflict.trip.startDate,
+          message: `Driver has #${driverConflict.trip.id} ${driverConflict.trip.status.toUpperCase()} trip with vehicle ${driverConflict.vehicle?.regNo || 'another vehicle'}`
+        };
+        // Note: Driver conflict doesn't make vehicle unavailable, just adds a note
+      }
     }
 
     // Step 3: Calculate available seats based on overlapping trips
@@ -167,11 +193,80 @@ export class VehicleRecommendService {
       estimatedArrivalTime,
       isInConflict,
       conflictingTripData,
+      driverConflictData,
       // Internal properties for scoring
       _score: 0,
       _capacityDiff: availableSeats - requestedTrip.passengerCount,
       _availableSeats: availableSeats
     } as any;
+  }
+
+  /**
+ * Check if driver has another trip during the requested time window
+ */
+  /**
+ * Check if driver has another trip during the requested time window
+ * by checking trips of vehicles assigned to the driver
+ */
+  private async checkDriverAvailability(
+    driverId: number,
+    requestedWindow: { start: Date; end: Date },
+    currentVehicleId?: number
+  ): Promise<{trip: Trip; vehicle: Vehicle} | null> {
+    // First, find all vehicles assigned to this driver (as primary or secondary)
+    const driverVehicles = await this.vehicleRepo
+      .createQueryBuilder("vehicle")
+      .where("vehicle.isActive = true")
+      .andWhere(
+        new Brackets(qb => {
+          qb.where("vehicle.assignedDriverPrimaryId = :driverId", { driverId });
+        })
+      )
+      .getMany();
+
+    // Get vehicle IDs for query
+    // Filter out current vehicle ID from the list
+    const vehicleIds = driverVehicles
+      .filter(v => v.id !== currentVehicleId)  // Remove current vehicle
+      .map(v => v.id);  // Get only the IDs
+
+    if (vehicleIds.length === 0) {
+      return null;
+    }
+
+    // Find trips for these vehicles that overlap with requested time window
+    const conflictingTrip = await this.tripRepo
+      .createQueryBuilder("trip")
+      .innerJoinAndSelect("trip.vehicle", "vehicle")
+      .innerJoinAndSelect("trip.location", "location")
+      .where("trip.vehicleId IN (:...vehicleIds)", { vehicleIds })
+      .andWhere(
+        `(
+          (trip.status IN (:...statuses))
+          AND
+          (
+            (trip.startDate || 'T' || trip.startTime)::timestamp < :windowEnd
+            AND
+            (trip.startDate || 'T' || trip.startTime)::timestamp + 
+            (location.estimatedDuration * INTERVAL '1 minute') > :windowStart
+          )
+        )`,
+        {
+          statuses: [TripStatus.PENDING, TripStatus.APPROVED, TripStatus.READ, TripStatus.ONGOING],
+          windowStart: requestedWindow.start,
+          windowEnd: requestedWindow.end
+        }
+      )
+      .getOne();
+
+    if (conflictingTrip) {
+      return {
+        trip: conflictingTrip,
+        vehicle: conflictingTrip.vehicle
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -287,6 +382,11 @@ export class VehicleRecommendService {
       let score = 0;
       const vehicleData = vehicle as any;
 
+      // Deduct points if driver has conflict
+      if (vehicle.driverConflictData) {
+        score -= 150;
+      }
+
       // Priority 1: Route conflicts (optimization opportunity)
       if (vehicle.isInConflict) {
         score += 1000;
@@ -375,6 +475,10 @@ export class VehicleRecommendService {
     vehicle: AvailableVehicleDto, 
     passengerCount: number
   ): string {
+    if (vehicle.driverConflictData) {
+      return "Recommended: Vehicle available but driver has scheduling conflict";
+    }
+    
     if (vehicle.isInConflict) {
       return "Recommended: Optimal schedule utilization (already in area)";
     }
@@ -415,6 +519,7 @@ export class VehicleRecommendService {
     const qb = this.vehicleRepo
       .createQueryBuilder("vehicle")
       .leftJoinAndSelect("vehicle.vehicleType", "vehicleType")
+      .leftJoinAndSelect("vehicle.assignedDriverPrimary", "assignedDriverPrimary")
       .where("vehicle.isActive = true");
 
     if (search) {

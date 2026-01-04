@@ -1676,6 +1676,9 @@ export class TripsService {
         isInstance: true,
         masterTripId: masterTrip.id,
         instanceDate: instanceDate,
+        tripType: masterTrip.tripType,
+        fixedRate: masterTrip.fixedRate,
+        reason: masterTrip.reason,
       });
       
       const savedInstance = await this.tripRepo.save(tripInstance);

@@ -36,6 +36,13 @@ export enum PassengerType {
   GROUP = 'group',
 }
 
+// Add new TripType enum
+export enum TripType {
+  NORMAL = 'normal',
+  FIXED_RATE = 'fixed_rate',
+  SAFETY_APPROVAL = 'safety_approval',
+}
+
 @Entity()
 export class Trip {
   @PrimaryGeneratedColumn()
@@ -169,6 +176,15 @@ export class Trip {
   @Column({ type: 'date', nullable: true })
   instanceDate?: Date;
   //
+
+  @Column({ type: 'enum', enum: TripType, default: TripType.NORMAL })
+  tripType: TripType;
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  fixedRate?: number;
+
+  @Column('text', { nullable: true })
+  reason?: string;
 
   @CreateDateColumn()
   createdAt: Date;

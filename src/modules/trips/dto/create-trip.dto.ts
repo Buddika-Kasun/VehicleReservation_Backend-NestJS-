@@ -1,6 +1,6 @@
 import { IsEnum, IsNumber, IsString, IsOptional, IsBoolean, IsDateString, IsArray, ValidateNested, IsObject, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PassengerType, RepetitionType, TripStatus } from 'src/infra/database/entities/trip.entity';
+import { PassengerType, RepetitionType, TripStatus, TripType } from 'src/infra/database/entities/trip.entity';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SelectedGroupUserDto {
@@ -141,6 +141,19 @@ export class PassengerDataDto {
   };
 }
 
+export class TripTypeDataDto {
+  @IsEnum(TripType)
+  tripType: TripType;
+
+  @IsString()
+  @IsOptional()
+  fixedRate?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
 export class CreateTripDto {
   @ValidateNested()
   @Type(() => LocationDataDto)
@@ -153,6 +166,10 @@ export class CreateTripDto {
   @ValidateNested()
   @Type(() => PassengerDataDto)
   passengerData: PassengerDataDto;
+
+  @ValidateNested()
+  @Type(() => TripTypeDataDto)
+  tripTypeData: TripTypeDataDto;
 
   @IsNumber()
   @IsOptional()
@@ -187,6 +204,11 @@ export class AvailableVehiclesRequestDto {
   @ValidateNested()
   @Type(() => PassengerDataDto)
   passengerData: PassengerDataDto;
+
+  @ValidateNested()
+  @Type(() => TripTypeDataDto)
+  @IsOptional()
+  tripTypeData?: TripTypeDataDto; // Optional for vehicle availability check
 }
 
 export class ReviewAvailableVehiclesRequest {

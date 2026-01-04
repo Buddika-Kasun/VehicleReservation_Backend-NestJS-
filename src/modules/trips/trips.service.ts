@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ResponseService } from 'src/common/services/response.service';
 import { Approval, StatusApproval } from 'src/infra/database/entities/approval.entity';
 import { OdometerLog } from 'src/infra/database/entities/odometer-log.entity';
-import { Trip, TripStatus, RepetitionType, PassengerType } from 'src/infra/database/entities/trip.entity';
+import { Trip, TripStatus, RepetitionType, PassengerType, TripType } from 'src/infra/database/entities/trip.entity';
 import { TripLocation } from 'src/infra/database/entities/trip-location.entity';
 import { Status, User, UserRole } from 'src/infra/database/entities/user.entity';
 import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
@@ -1253,6 +1253,9 @@ export class TripsService {
           startTime: currentTrip.startTime,
           repetition: currentTrip.repetition
         },
+        tripTypeData: {
+          tripType: currentTrip.tripType,
+        },
         specialRemarks: currentTrip.specialRemarks
       } as CreateTripDto;
       
@@ -1388,6 +1391,33 @@ export class TripsService {
     }); 
     if (!requester) {
       throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Validate trip type data
+    if (createTripDto.tripTypeData.tripType === TripType.FIXED_RATE && !createTripDto.tripTypeData.fixedRate) {
+      throw new BadRequestException(
+        this.responseService.error('Fixed rate amount is required for fixed rate trips', 400)
+      );
+    }
+
+    if (!createTripDto.tripTypeData.reason?.trim()) {
+      throw new BadRequestException(
+        this.responseService.error('Reason is required for the trip', 400)
+      );
+    }
+
+    // Parse fixed rate if provided
+    let parsedFixedRate: number | undefined;
+    if (createTripDto.tripTypeData.tripType === TripType.FIXED_RATE && createTripDto.tripTypeData.fixedRate) {
+      // Remove commas and parse the fixed rate
+      const cleanFixedRate = createTripDto.tripTypeData.fixedRate.replace(/,/g, '');
+      parsedFixedRate = parseFloat(cleanFixedRate);
+      
+      if (isNaN(parsedFixedRate) || parsedFixedRate <= 0) {
+        throw new BadRequestException(
+          this.responseService.error('Invalid fixed rate amount', 400)
+        );
+      }
     }
 
     // Check if it's a scheduled trip
@@ -1534,6 +1564,10 @@ export class TripsService {
       isInstance: false,
       masterTripId: null,
       instanceDate: null,
+      tripType: createTripDto.tripTypeData.tripType,
+      fixedRate: parsedFixedRate,
+      cost: parsedFixedRate,
+      reason: createTripDto.tripTypeData.reason,
     });
 
     const savedTrip = await this.tripRepo.save(trip);
@@ -2121,16 +2155,20 @@ export class TripsService {
     // Calculate trip distance
     //const tripDistance = await this.calculateTripDistance(tripLocation);
 
+    // NEW: Check if trip type is safety approval
+    const isSafetyApprovalTrip = createTripDto.tripTypeData?.tripType === TripType.SAFETY_APPROVAL
+    
     // Check if secondary approval is required (based on distance)
     const requireApprover2 = approvalConfig?.distanceLimit 
       ? tripDistance > approvalConfig.distanceLimit 
       : false;
     
     // Check if safety approval is required (based on restricted hours)
-    const requireSafetyApprover = await this.isDuringRestrictedHours(
+    const requireSafetyApprover = isSafetyApprovalTrip || 
+    (await this.isDuringRestrictedHours(
       createTripDto.scheduleData.startTime,
       approvalConfig
-    );
+    ));
 
     // Get approver2 from config if required
     let approver2: User | undefined;
@@ -3666,6 +3704,10 @@ export class TripsService {
       mileage: trip.mileage,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
+
+      tripType: trip.tripType, // 'normal', 'fixed_rate', or 'safety_approval'
+      fixedRate: trip.fixedRate, // number or null
+      reason: trip.reason, 
       
       // Schedule details
       schedule: {
@@ -5102,6 +5144,7 @@ export class TripsService {
     
     // Update trip status to COMPLETED
     trip.status = TripStatus.COMPLETED; 
+    /*
     trip.cost = (odometerLog.endReading - odometerLog.startReading) * trip.vehicle.vehicleType.costPerKm;
     
     // Calculate cost if vehicle type has cost per km
@@ -5109,6 +5152,17 @@ export class TripsService {
       const distance = odometerLog.endReading - odometerLog.startReading;
       trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
       console.log(`Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`);
+    }
+    */
+
+    // UPDATED: Only calculate cost if NOT a fixed rate trip
+    if (!(trip.tripType === TripType.FIXED_RATE)) {
+      // Calculate cost based on distance and vehicle type cost per km
+      if (trip.vehicle?.vehicleType?.costPerKm && odometerLog.startReading && odometerLog.endReading) {
+        const distance = odometerLog.endReading - odometerLog.startReading;
+        trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+        console.log(`Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`);
+      }
     }
 
     // Check if there are approved conflicting trips and update their end odometer to 0

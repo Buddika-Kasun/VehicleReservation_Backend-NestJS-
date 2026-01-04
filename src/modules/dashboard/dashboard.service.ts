@@ -7,6 +7,7 @@ import { DashboardResponseDto, AdminStatsDto, ManagerStatsDto, EmployeeStatsDto 
 import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
 import { AdminDashboardStatsDto } from './dto/admin-dashboard-stats.dto';
 import { startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay } from 'date-fns';
+import { Department } from 'src/infra/database/entities/department.entity';
 
 @Injectable()
 export class DashboardService {
@@ -19,6 +20,8 @@ export class DashboardService {
     private readonly tripRepository: Repository<Trip>,
     @InjectRepository(CostCenter)
     private readonly costCenterRepository: Repository<CostCenter>,
+    @InjectRepository(Department)
+    private readonly departmentRepository: Repository<Department>
   ) {}
 
   /**
@@ -359,11 +362,10 @@ export class DashboardService {
    * Get total number of departments (sysadmin only)
    */
   private async getDepartmentsCount(): Promise<number> {
-    const result = await this.userRepository
-      .createQueryBuilder('user')
-      .leftJoin('user.department', 'department')
-      .select('COUNT(DISTINCT department.id)', 'count')
-      .where('department.id IS NOT NULL')
+    const result = await this.departmentRepository
+      .createQueryBuilder('department')
+      .select('COUNT(department.id)', 'count')
+      .where('department.isActive = :isActive', { isActive: true })
       .getRawOne();
 
     return parseInt(result.count) || 0;

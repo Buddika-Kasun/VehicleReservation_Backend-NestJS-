@@ -17,7 +17,7 @@ export class DashboardService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Trip)
     private readonly tripRepository: Repository<Trip>,
-     @InjectRepository(CostCenter)
+    @InjectRepository(CostCenter)
     private readonly costCenterRepository: Repository<CostCenter>,
   ) {}
 
@@ -46,7 +46,7 @@ export class DashboardService {
   /**
    * Get comprehensive dashboard statistics for admin view
    */
-  async getAdminDashboardStats(): Promise<AdminDashboardStatsDto> {
+  async getAdminDashboardStats(userId: number): Promise<AdminDashboardStatsDto> {
     // Get current date and calculate date ranges
     const now = new Date();
     const currentMonthStart = startOfMonth(now);
@@ -55,6 +55,29 @@ export class DashboardService {
     const previousMonthEnd = endOfMonth(subMonths(now, 1));
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
+
+    // First, get the user with their department details
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.id = :userId', { userId })
+      .getOne();
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const isSysAdmin = user.role === UserRole.SYSADMIN;
+    const isAdmin = user.role === UserRole.ADMIN;
+    
+    let departmentId: number | undefined;
+    let departmentName: string | undefined;
+
+    // If user is admin (not sysadmin), get their department
+    if (isAdmin && user.department) {
+      departmentId = user.department.id;
+      departmentName = user.department.name;
+    }
 
     // Execute all queries in parallel for better performance
     const [
@@ -66,30 +89,38 @@ export class DashboardService {
       budgetAmount,
       currentMonthCost,
       previousMonthCost,
+      departmentsCount,
+      activeDepartments,
     ] = await Promise.all([
-      // 1. Total completed rides (all trips status=completed)
-      this.getTotalCompletedRides(),
+      // 1. Total completed rides
+      this.getTotalCompletedRides(departmentId),
       
-      // 2. Pending rides for supervisor (all trips status=draft)
-      this.getPendingSupervisorRides(),
+      // 2. Pending rides for supervisor
+      this.getPendingSupervisorRides(departmentId),
       
-      // 3. Total approved users (all approved user count)
-      this.getTotalApprovedUsers(),
+      // 3. Total approved users
+      this.getTotalApprovedUsers(departmentId),
       
-      // 4. Pending user creations (all pending user count)
-      this.getPendingUserCreations(),
+      // 4. Pending user creations
+      this.getPendingUserCreations(departmentId),
       
-      // 5. Today's rides (today approved trips)
-      this.getTodaysRides(todayStart, todayEnd),
+      // 5. Today's rides
+      this.getTodaysRides(todayStart, todayEnd, departmentId),
       
-      // 6. Total budget amount (all cost centers budget)
-      this.getTotalBudgetAmount(),
+      // 6. Budget amount
+      this.getBudgetAmount(departmentId),
       
-      // 7. Current month actual cost (current month all completed trip cost)
-      this.getCurrentMonthCost(currentMonthStart, currentMonthEnd),
+      // 7. Current month actual cost
+      this.getCurrentMonthCost(currentMonthStart, currentMonthEnd, departmentId),
       
-      // 8. Previous month actual cost (previous month all completed trip cost)
-      this.getPreviousMonthCost(previousMonthStart, previousMonthEnd),
+      // 8. Previous month actual cost
+      this.getPreviousMonthCost(previousMonthStart, previousMonthEnd, departmentId),
+      
+      // 9. Departments count (only for sysadmin)
+      isSysAdmin ? this.getDepartmentsCount() : Promise.resolve(0),
+      
+      // 10. Active departments (only for sysadmin)
+      isSysAdmin ? this.getActiveDepartments() : Promise.resolve(0),
     ]);
 
     // Calculate derived values
@@ -104,7 +135,7 @@ export class DashboardService {
       ? (monthOverMonthChange / previousMonthCost) * 100 
       : (currentMonthCost > 0 ? 100 : 0);
 
-    return {
+    const response: AdminDashboardStatsDto = {
       totalRides,
       pendingSupervisorRides,
       totalUsers,
@@ -119,131 +150,235 @@ export class DashboardService {
       monthOverMonthChange,
       monthOverMonthPercent,
     };
+
+    // Add role-specific fields
+    if (isSysAdmin) {
+      // For sysadmin, show "All Departments" in title
+      response.dashboardTitle = 'All Departments';
+      response.departmentsCount = departmentsCount;
+      response.activeDepartments = activeDepartments;
+    } else if (isAdmin && departmentName) {
+      // For admin, show their department name in title
+      response.dashboardTitle = departmentName;
+      response.departmentId = departmentId;
+      response.departmentName = departmentName;
+    }
+
+    return response;
   }
 
   /**
-   * Get total completed rides (status = COMPLETED)
+   * Get total completed rides (status = COMPLETED) with department filter
    */
-  private async getTotalCompletedRides(): Promise<number> {
-    const result = await this.tripRepository
+  private async getTotalCompletedRides(departmentId?: number): Promise<number> {
+    const query = this.tripRepository
       .createQueryBuilder('trip')
-      .where('trip.status = :status', { status: TripStatus.COMPLETED })
-      .getCount();
+      .leftJoin('trip.requester', 'requester')
+      .leftJoin('requester.department', 'department')
+      .where('trip.status = :status', { status: TripStatus.COMPLETED });
 
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
+
+    const result = await query.getCount();
     return result;
   }
 
   /**
-   * Get pending rides for supervisor (status = DRAFT)
+   * Get pending rides for supervisor (status = DRAFT) with department filter
    */
-  private async getPendingSupervisorRides(): Promise<number> {
-    const result = await this.tripRepository
+  private async getPendingSupervisorRides(departmentId?: number): Promise<number> {
+    const query = this.tripRepository
       .createQueryBuilder('trip')
-      .where('trip.status = :status', { status: TripStatus.DRAFT })
-      .getCount();
+      .leftJoin('trip.requester', 'requester')
+      .leftJoin('requester.department', 'department')
+      .where('trip.status = :status', { status: TripStatus.DRAFT });
 
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
+
+    const result = await query.getCount();
     return result;
   }
 
   /**
-   * Get total approved users (isApproved = APPROVED)
+   * Get total approved users (isApproved = APPROVED) with department filter
    */
-  private async getTotalApprovedUsers(): Promise<number> {
-    const result = await this.userRepository
+  private async getTotalApprovedUsers(departmentId?: number): Promise<number> {
+    const query = this.userRepository
       .createQueryBuilder('user')
-      .where('user.isApproved = :status', { status: Status.APPROVED })
-      .getCount();
+      .leftJoin('user.department', 'department')
+      .where('user.isApproved = :status', { status: Status.APPROVED });
 
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    } else {
+      // For sysadmin, exclude system admin and admin users from count
+      query.andWhere('user.role NOT IN (:...excludedRoles)', {
+        excludedRoles: [UserRole.SYSADMIN]
+      });
+    }
+
+    const result = await query.getCount();
     return result;
   }
 
   /**
-   * Get pending user creations (isApproved = PENDING)
+   * Get pending user creations (isApproved = PENDING) with department filter
    */
-  private async getPendingUserCreations(): Promise<number> {
-    const result = await this.userRepository
+  private async getPendingUserCreations(departmentId?: number): Promise<number> {
+    const query = this.userRepository
       .createQueryBuilder('user')
-      .where('user.isApproved = :status', { status: Status.PENDING })
-      .getCount();
+      .leftJoin('user.department', 'department')
+      .where('user.isApproved = :status', { status: Status.PENDING });
 
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
+
+    const result = await query.getCount();
     return result;
   }
 
   /**
-   * Get today's approved trips
+   * Get today's approved trips with department filter
    */
-  private async getTodaysRides(todayStart: Date, todayEnd: Date): Promise<number> {
-    const result = await this.tripRepository
+  private async getTodaysRides(
+    todayStart: Date,
+    todayEnd: Date,
+    departmentId?: number,
+  ): Promise<number> {
+    const query = this.tripRepository
       .createQueryBuilder('trip')
+      .leftJoin('trip.requester', 'requester')
+      .leftJoin('requester.department', 'department')
       .where('trip.status NOT IN (:...excludedStatuses)', {
         excludedStatuses: [TripStatus.DRAFT, TripStatus.REJECTED, TripStatus.CANCELED]
       })
       .andWhere('trip.startDate BETWEEN :todayStart AND :todayEnd', {
         todayStart,
         todayEnd,
-      })
-      .getCount();
+      });
 
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
+
+    const result = await query.getCount();
     return result;
   }
 
   /**
-   * Get total budget amount from all active cost centers
+   * Get budget amount with department filter
    */
-  private async getTotalBudgetAmount(): Promise<number> {
-    const result = await this.costCenterRepository
-      .createQueryBuilder('costCenter')
-      .select('SUM(costCenter.budget)', 'totalBudget')
-      .where('costCenter.isActive = :isActive', { isActive: true })
-      .getRawOne();
+  private async getBudgetAmount(departmentId?: number): Promise<number> {
+    if (departmentId) {
+      // For admin: get budget from cost center linked to their department
+      const result = await this.costCenterRepository
+        .createQueryBuilder('costCenter')
+        .leftJoin('costCenter.departments', 'department')
+        .select('costCenter.budget', 'budget')
+        .where('department.id = :departmentId', { departmentId })
+        .andWhere('costCenter.isActive = :isActive', { isActive: true })
+        .getRawOne();
 
-    return parseFloat(result.totalBudget) || 0;
+      return parseFloat(result?.budget) || 0;
+    } else {
+      // For sysadmin: get total budget from all active cost centers
+      const result = await this.costCenterRepository
+        .createQueryBuilder('costCenter')
+        .select('SUM(costCenter.budget)', 'totalBudget')
+        .where('costCenter.isActive = :isActive', { isActive: true })
+        .getRawOne();
+
+      return parseFloat(result.totalBudget) || 0;
+    }
   }
 
   /**
-   * Get current month actual cost from completed trips
+   * Get current month actual cost from completed trips with department filter
    */
   private async getCurrentMonthCost(
     monthStart: Date,
     monthEnd: Date,
+    departmentId?: number,
   ): Promise<number> {
-    // First try to get cost from completed trips in current month
-    const tripCostResult = await this.tripRepository
+    const query = this.tripRepository
       .createQueryBuilder('trip')
+      .leftJoin('trip.requester', 'requester')
+      .leftJoin('requester.department', 'department')
       .select('SUM(trip.cost)', 'totalCost')
       .where('trip.status = :status', { status: TripStatus.COMPLETED })
       .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
         monthStart,
         monthEnd,
-      })
-      .getRawOne();
+      });
 
-    let tripCost = parseFloat(tripCostResult.totalCost) || 0;
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
 
-    return tripCost;
+    const result = await query.getRawOne();
+    return parseFloat(result.totalCost) || 0;
   }
 
   /**
-   * Get previous month actual cost from completed trips
+   * Get previous month actual cost from completed trips with department filter
    */
   private async getPreviousMonthCost(
     monthStart: Date,
     monthEnd: Date,
+    departmentId?: number,
   ): Promise<number> {
-    // Try to get cost from completed trips in previous month
-    const tripCostResult = await this.tripRepository
+    const query = this.tripRepository
       .createQueryBuilder('trip')
+      .leftJoin('trip.requester', 'requester')
+      .leftJoin('requester.department', 'department')
       .select('SUM(trip.cost)', 'totalCost')
       .where('trip.status = :status', { status: TripStatus.COMPLETED })
       .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
         monthStart,
         monthEnd,
-      })
+      });
+
+    if (departmentId) {
+      query.andWhere('department.id = :departmentId', { departmentId });
+    }
+
+    const result = await query.getRawOne();
+    return parseFloat(result.totalCost) || 0;
+  }
+
+  /**
+   * Get total number of departments (sysadmin only)
+   */
+  private async getDepartmentsCount(): Promise<number> {
+    const result = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoin('user.department', 'department')
+      .select('COUNT(DISTINCT department.id)', 'count')
+      .where('department.id IS NOT NULL')
       .getRawOne();
 
-    let tripCost = parseFloat(tripCostResult.totalCost) || 0;
+    return parseInt(result.count) || 0;
+  }
 
-    return tripCost;
+  /**
+   * Get number of active departments (sysadmin only)
+   */
+  private async getActiveDepartments(): Promise<number> {
+    // Assuming a department is active if it has at least one active user
+    const result = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoin('user.department', 'department')
+      .select('COUNT(DISTINCT department.id)', 'count')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('department.id IS NOT NULL')
+      .getRawOne();
+
+    return parseInt(result.count) || 0;
   }
 
   /**

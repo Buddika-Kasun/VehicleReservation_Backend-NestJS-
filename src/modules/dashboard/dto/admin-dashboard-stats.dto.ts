@@ -1,6 +1,7 @@
 // src/dashboard/dto/dashboard-stats.dto.ts
 
 import { ApiProperty } from '@nestjs/swagger';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class AdminDashboardStatsDto {
   @ApiProperty({ description: 'Total completed rides' })
@@ -41,4 +42,24 @@ export class AdminDashboardStatsDto {
 
   @ApiProperty({ description: 'Month over month percentage change' })
   monthOverMonthPercent: number;
+
+  @IsOptional()
+  @IsString()
+  dashboardTitle?: string;
+
+  @IsOptional()
+  @IsNumber()
+  departmentId?: number;
+
+  @IsOptional()
+  @IsString()
+  departmentName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  departmentsCount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  activeDepartments?: number;
 }

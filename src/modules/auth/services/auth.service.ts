@@ -115,7 +115,7 @@ export class AuthService {
 
 private async canUserCreate(user: any): Promise<boolean> {
   // Your existing logic, make it async if needed
-  const allowedRoles = [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN];
+  const allowedRoles = [UserRole.HR, UserRole.SYSADMIN];
   if (allowedRoles.includes(user.role)) return true;
   if (user.role === UserRole.EMPLOYEE && user.authenticationLevel === 3) return true;
   return false;

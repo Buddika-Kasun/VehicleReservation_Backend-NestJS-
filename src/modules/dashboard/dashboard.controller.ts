@@ -42,8 +42,8 @@ export class DashboardController {
     status: 403, 
     description: 'Forbidden - insufficient permissions' 
   })
-  async getDashboardStats(): Promise<AdminDashboardStatsDto> {
-    return await this.dashboardService.getAdminDashboardStats();
+  async getDashboardStats(@GetUser() user: any): Promise<AdminDashboardStatsDto> {
+    return await this.dashboardService.getAdminDashboardStats(user.userId as number);
   }
 
 }

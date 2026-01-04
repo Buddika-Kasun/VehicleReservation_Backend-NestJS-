@@ -154,8 +154,12 @@ export class DashboardService {
     // Add role-specific fields
     if (isSysAdmin) {
       // For sysadmin, show "All Departments" in title
-      response.dashboardTitle = 'All Departments';
       response.departmentsCount = departmentsCount;
+      if (departmentsCount > 1) {
+        response.dashboardTitle = `All ${departmentsCount} Departments`;
+      } else {
+        response.dashboardTitle = 'All Departments';
+      }
       response.activeDepartments = activeDepartments;
     } else if (isAdmin && departmentName) {
       // For admin, show their department name in title

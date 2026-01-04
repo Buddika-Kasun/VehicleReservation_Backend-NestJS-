@@ -3,7 +3,8 @@ export default () => ({
     websocket: {
       port: parseInt(process.env.WS_PORT || '8080', 10),
       path: process.env.WS_PATH || '/socket.io',
-      corsOrigin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      //corsOrigin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      corsOrigin: '*',
       pingTimeout: parseInt(process.env.WS_PING_TIMEOUT || '5000', 10),
       pingInterval: parseInt(process.env.WS_PING_INTERVAL || '25000', 10),
     },

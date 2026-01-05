@@ -6241,7 +6241,7 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
         .leftJoinAndSelect('approval.approver1', 'approver1')
         .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
         .where('trip.status IN (:...statuses)', {
-          statuses: [TripStatus.COMPLETED, TripStatus.FINISHED]
+          statuses: [TripStatus.FINISHED]
         })
         .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
           startDate: startDateStr,
@@ -6436,243 +6436,53 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
     }).filter(trip => !trip.error); // Filter out errored trips
   }
 
-  /**
-   * Generate PDF report
-   */
   private async generatePdfReport(
-    trips: Trip[], 
-    startDate: Date, 
-    endDate: Date
-  ): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log(`📄 Starting PDF generation for ${trips.length} trips`);
-        
-        // Dynamically require PDFKit to handle module not found gracefully
-        let PDFDocument;
-        try {
-          PDFDocument = require('pdfkit');
-        } catch (error) {
-          throw new Error('PDFKit module not found. Please install: npm install pdfkit');
-        }
-
-        const doc = new PDFDocument({ 
-          margin: 30,
-          size: 'A3',
-          layout: 'landscape'
-        });
-
-        const chunks: Uint8Array[] = [];
-        
-        doc.on('data', (chunk: Uint8Array) => {
-          chunks.push(chunk);
-        });
-        
-        doc.on('end', () => {
-          try {
-            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-            const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
-            console.log(`✅ PDF generated: ${buffer.length} bytes`);
-            resolve(buffer);
-          } catch (error) {
-            reject(new Error(`Failed to create PDF buffer: ${error.message}`));
-          }
-        });
-        
-        doc.on('error', (error) => {
-          reject(new Error(`PDF generation failed: ${error.message}`));
-        });
-
-        // Helper function to format time
-        const formatTimeForDisplay = (date: Date | string | undefined): string => {
-          if (!date) return 'N/A';
-          try {
-            const d = new Date(date);
-            return isNaN(d.getTime()) ? 'N/A' : 
-              `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-          } catch {
-            return 'N/A';
-          }
-        };
-
-        // Add title
-        doc.fontSize(16).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
-        doc.moveDown(0.5);
-        
-        // Add date range
-        doc.fontSize(9).font('Helvetica').text(
-          `Period: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`,
-          { align: 'center' }
-        );
-        
-        doc.fontSize(9).text(
-          `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-          { align: 'center' }
-        );
-        
-        doc.moveDown(1);
-        
-        // Calculate summary for PDF
-        const summary = this.calculateReportSummary(trips);
-        
-        doc.fontSize(10).font('Helvetica-Bold').text('SUMMARY', { underline: true });
-        doc.fontSize(9).font('Helvetica').text(`Total Trips: ${summary.totalTrips}`);
-        doc.text(`Total Cost: LKR ${summary.totalCost.toFixed(2)}`);
-        doc.text(`Total Distance: ${summary.totalDistance.toFixed(2)} km`);
-        doc.text(`Average Duration: ${summary.averageDuration.toFixed(2)} hours`);
-        doc.text(`Total Passengers: ${summary.totalPassengers}`);
-        
-        doc.moveDown(1);
-        
-        if (trips.length === 0) {
-          doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
-          doc.end();
-          return;
-        }
-
-        // Table headers
-        const headers = [
-          'Scheduled Date',
-          'Trip ID',
-          'Trip Type',
-          'Reason',
-          'Requested by',
-          'No of Passengers',
-          'Actual No of Passengers',
-          'Department',
-          'Cost Center',
-          'Start meter',
-          'End meter',
-          'Distance (km)',
-          'Started Time',
-          'Ended Time',
-          'Duration (Hrs)',
-          'Primary Approval',
-          'Safety Approval',
-          'Vehicle',
-          'Driver',
-          'Cost (LKR)'
-        ];
-        
-        // Column widths - adjusted for A3 landscape
-        const colWidths = [40, 30, 35, 50, 45, 25, 30, 45, 40, 30, 30, 30, 35, 35, 25, 40, 40, 35, 35, 35];
-        
-        let currentY = doc.y;
-        let pageNumber = 1;
-
-        const drawHeader = (y: number) => {
-          let x = 30;
-          doc.fontSize(7).font('Helvetica-Bold');
-          headers.forEach((header, i) => {
-            doc.text(header, x, y, {
-              width: colWidths[i],
-              align: 'center',
-              lineBreak: false
-            });
-            x += colWidths[i];
-          });
-          
-          // Draw header underline
-          const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-          doc.moveTo(30, y + 20)
-            .lineTo(30 + totalWidth, y + 20)
-            .stroke();
-          
-          return y + 25;
-        };
-
-        // Draw headers on first page
-        currentY = drawHeader(currentY);
-        
-        // Add table rows with smaller font
-        doc.fontSize(6).font('Helvetica');
-        
-        trips.forEach((trip, index) => {
-          // Check if we need a new page (with margin for footer)
-          if (currentY > 750) {
-            doc.addPage();
-            pageNumber++;
-            
-            // Add page header
-            doc.fontSize(9).text(`Trip Report - Page ${pageNumber}`, 30, 30);
-            doc.moveDown(3);
-            
-            currentY = doc.y;
-            currentY = drawHeader(currentY);
-          }
-          
-          // Format trip data safely
-          const rowData = this.formatTripForPdfRow(trip);
-          
-          // Draw row
-          let x = 30;
-          
-          rowData.forEach((data, i) => {
-            doc.text(data, x, currentY, {
-              width: colWidths[i],
-              align: 'center',
-              lineBreak: false
-            });
-            x += colWidths[i];
-          });
-          
-          // Draw row separator
-          const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-          doc.moveTo(30, currentY + 15)
-            .lineTo(30 + totalWidth, currentY + 15)
-            .stroke();
-          
-          currentY += 20;
-        });
-        
-        // Add total at the end
-        if (currentY > 750) {
-          doc.addPage();
-          currentY = 40;
-        }
-        
-        doc.moveDown(2);
-        doc.fontSize(9).font('Helvetica-Bold')
-          .text(`Total Cost: LKR ${summary.totalCost.toFixed(2)}`, { align: 'right' });
-        
-        // Add page numbers
-        const totalPages = pageNumber;
-        for (let i = 1; i <= totalPages; i++) {
-          doc.switchToPage(i - 1);
-          doc.fontSize(8).font('Helvetica')
-            .text(`Page ${i} of ${totalPages}`, 30, doc.page.height - 40, { align: 'center' });
-        }
-        
-        doc.end();
-      } catch (error) {
-        reject(new Error(`PDF generation setup failed: ${error.message}`));
-      }
-    });
-  }
-
-  /**
-   * Format a single trip for PDF row
-   */
-  private formatTripForPdfRow(trip: Trip): string[] {
+  trips: Trip[], 
+  startDate: Date, 
+  endDate: Date
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
     try {
-      // Format date
-      const tripDate = new Date(trip.startDate);
-      const scheduledDate = isNaN(tripDate.getTime())
-        ? 'Invalid Date'
-        : `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear()}`;
+      console.log(`📄 Starting PDF generation for ${trips.length} trips`);
       
-      // Calculate distance safely
-      let distance = '0.0';
-      if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
-        const start = Number(trip.odometerLog.startReading);
-        const end = Number(trip.odometerLog.endReading);
-        if (!isNaN(start) && !isNaN(end)) {
-          distance = (end - start).toFixed(1);
-        }
+      // Dynamically require PDFKit to handle module not found gracefully
+      let PDFDocument;
+      try {
+        PDFDocument = require('pdfkit');
+      } catch (error) {
+        throw new Error('PDFKit module not found. Please install: npm install pdfkit');
       }
+
+      // Use A4 landscape for better compatibility
+      const doc = new PDFDocument({ 
+        margin: 20, // Reduced margins for more space
+        size: 'A4',
+        layout: 'landscape'
+      });
+
+      const chunks: Uint8Array[] = [];
       
-      // Format times
-      const formatTime = (date: Date | string | undefined): string => {
+      doc.on('data', (chunk: Uint8Array) => {
+        chunks.push(chunk);
+      });
+      
+      doc.on('end', () => {
+        try {
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
+          console.log(`✅ PDF generated: ${buffer.length} bytes`);
+          resolve(buffer);
+        } catch (error) {
+          reject(new Error(`Failed to create PDF buffer: ${error.message}`));
+        }
+      });
+      
+      doc.on('error', (error) => {
+        reject(new Error(`PDF generation failed: ${error.message}`));
+      });
+
+      // Helper function to format time
+      const formatTimeForDisplay = (date: Date | string | undefined): string => {
         if (!date) return 'N/A';
         try {
           const d = new Date(date);
@@ -6682,61 +6492,375 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
           return 'N/A';
         }
       };
+
+      // Set default font
+      doc.font('Helvetica');
       
-      const tripStartedTime = formatTime(trip.odometerLog?.startRecordedAt);
-      const tripEndedTime = formatTime(trip.odometerLog?.endRecordedAt);
+      // Add title
+      doc.fontSize(14).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
+      doc.moveDown(0.3);
       
-      // Calculate duration
-      let duration = '0.00';
-      if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
-        try {
-          const start = new Date(trip.odometerLog.startRecordedAt);
-          const end = new Date(trip.odometerLog.endRecordedAt);
-          if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-            const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-            duration = dur.toFixed(2);
-          }
-        } catch {
-          duration = '0.00';
+      // Add date range
+      doc.fontSize(8).text(
+        `Period: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`,
+        { align: 'center' }
+      );
+      
+      doc.fontSize(8).text(
+        `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        { align: 'center' }
+      );
+      
+      doc.moveDown(0.5);
+      
+      // Calculate summary for PDF
+      const summary = this.calculateReportSummary(trips);
+      
+      // Create summary box
+      doc.fontSize(9).font('Helvetica-Bold').text('SUMMARY', { underline: true });
+      doc.fontSize(8).font('Helvetica');
+      
+      // Summary in columns for better layout
+      const startX = 20;
+      let currentY = doc.y + 5;
+      
+      // First column
+      doc.text(`Total Trips:`, startX, currentY);
+      doc.text(`${summary.totalTrips}`, startX + 60, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Cost:`, startX, currentY);
+      doc.text(`LKR ${summary.totalCost.toFixed(2)}`, startX + 60, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Distance:`, startX, currentY);
+      doc.text(`${summary.totalDistance.toFixed(2)} km`, startX + 60, currentY);
+      
+      // Second column
+      currentY = doc.y - 35; // Reset to first row
+      doc.text(`Avg Duration:`, startX + 180, currentY);
+      doc.text(`${summary.averageDuration.toFixed(2)} hrs`, startX + 240, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Passengers:`, startX + 180, currentY);
+      doc.text(`${summary.totalPassengers}`, startX + 240, currentY);
+      
+      currentY += 15;
+      doc.text(`Avg Cost/Trip:`, startX + 180, currentY);
+      doc.text(`LKR ${summary.averageCost.toFixed(2)}`, startX + 240, currentY);
+      
+      // Set Y position after summary
+      doc.y = currentY + 25;
+      
+      if (trips.length === 0) {
+        doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
+        doc.end();
+        return;
+      }
+
+      // FIXED: Optimized headers with shorter names
+      const headers = [
+        'Date',
+        'Trip ID',
+        'Type',
+        'Reason',
+        'Requester',
+        'Passengers',
+        'Actual Pass',
+        'Department',
+        'Cost Center',
+        'Start Meter',
+        'End Meter',
+        'Distance (km)',
+        'Start Time',
+        'End Time',
+        'Duration',
+        'Prim. Approver',
+        'Safety Approver',
+        'Vehicle',
+        'Driver',
+        'Cost'
+      ];
+      
+      // FIXED: Adjusted column widths for A4 landscape (total width ~790)
+      const colWidths = [
+        30,  // Date
+        25,  // Trip ID
+        25,  // Type
+        50,  // Reason
+        45,  // Requester
+        25,  // Passengers
+        25,  // Actual Pass
+        40,  // Department
+        35,  // Cost Center
+        30,  // Start Meter
+        30,  // End Meter
+        30,  // Distance
+        35,  // Start Time
+        35,  // End Time
+        25,  // Duration
+        40,  // Prim. Approver
+        40,  // Safety Approver
+        35,  // Vehicle
+        35,  // Driver
+        35   // Cost
+      ];
+      
+      // Verify total width fits page
+      const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+      const pageWidth = doc.page.width - 40; // Account for margins
+      
+      if (totalWidth > pageWidth) {
+        console.warn(`⚠️ Table width (${totalWidth}) exceeds page width (${pageWidth})`);
+        // You could add scaling logic here if needed
+      }
+      
+      let currentYPos = doc.y;
+      let pageNumber = 1;
+      
+      // Function to draw table headers
+      const drawHeader = (y: number) => {
+        let x = 20; // Start from left margin
+        
+        doc.fontSize(6).font('Helvetica-Bold');
+        headers.forEach((header, i) => {
+          // Draw header with center alignment and word wrapping
+          doc.text(header, x, y, {
+            width: colWidths[i],
+            align: 'center',
+            lineBreak: false,
+            ellipsis: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw header underline
+        doc.moveTo(20, y + 12)
+          .lineTo(20 + totalWidth, y + 12)
+          .lineWidth(0.5)
+          .stroke();
+        
+        return y + 15; // Return new Y position
+      };
+
+      // Draw headers on first page
+      currentYPos = drawHeader(currentYPos);
+      
+      // Set font for data rows
+      doc.fontSize(6).font('Helvetica');
+      
+      // Track total cost for footer
+      let calculatedTotalCost = 0;
+      
+      // Add table rows
+      trips.forEach((trip, index) => {
+        // Check if we need a new page (leave space for footer)
+        if (currentYPos > doc.page.height - 60) {
+          doc.addPage();
+          pageNumber++;
+          
+          // Add page header
+          doc.fontSize(8).font('Helvetica-Bold')
+            .text(`Trip Report - Page ${pageNumber}`, 20, 20);
+          
+          doc.y = 40; // Reset Y position
+          currentYPos = doc.y;
+          currentYPos = drawHeader(currentYPos);
+        }
+        
+        // Format trip data safely
+        const rowData = this.formatTripForPdfRow(trip);
+        
+        // Track cost for total
+        const costStr = rowData[19]; // Cost is last column
+        const costValue = parseFloat(costStr.replace(/[^\d.-]/g, '')) || 0;
+        calculatedTotalCost += costValue;
+        
+        // Draw row
+        let x = 20;
+        
+        rowData.forEach((data, i) => {
+          // Different alignment for numeric columns
+          const align = (i >= 5 && i <= 11) || i === 14 || i === 19 ? 'right' : 
+                       i === 0 || i === 1 || i === 2 ? 'center' : 'left';
+          
+          doc.text(data, x, currentYPos, {
+            width: colWidths[i],
+            align: align,
+            lineBreak: false,
+            ellipsis: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw light row separator
+        doc.moveTo(20, currentYPos + 10)
+          .lineTo(20 + totalWidth, currentYPos + 10)
+          .lineWidth(0.1)
+          .strokeColor('#CCCCCC')
+          .stroke();
+        
+        currentYPos += 12; // Reduced row height for more rows per page
+      });
+      
+      // Add footer with total
+      // First check if we need a new page for the footer
+      if (currentYPos > doc.page.height - 40) {
+        doc.addPage();
+        currentYPos = 20;
+      }
+      
+      // Move to footer position
+      doc.y = currentYPos + 10;
+      
+      // Draw footer separator line
+      doc.moveTo(20, doc.y)
+        .lineTo(20 + totalWidth, doc.y)
+        .lineWidth(0.5)
+        .strokeColor('#000000')
+        .stroke();
+      
+      doc.moveDown(0.5);
+      
+      // FIXED: Calculate correct X position for total cost (aligned with Cost column)
+      // Sum widths of all columns except the last one
+      const columnsBeforeCost = colWidths.slice(0, colWidths.length - 1);
+      const totalWidthBeforeCost = columnsBeforeCost.reduce((a, b) => a + b, 0);
+      const costColumnX = 20 + totalWidthBeforeCost;
+      const costColumnWidth = colWidths[colWidths.length - 1];
+      
+      // Draw total cost aligned with the Cost column
+      doc.fontSize(8).font('Helvetica-Bold');
+      
+      // Draw "Total:" label in the second last column (Driver column)
+      const driverColumnX = 20 + totalWidthBeforeCost - colWidths[colWidths.length - 2];
+      doc.text('Total:', driverColumnX, doc.y, {
+        width: colWidths[colWidths.length - 2],
+        align: 'right'
+      });
+      
+      // Draw the total cost value in the Cost column
+      doc.text(`LKR ${calculatedTotalCost.toFixed(2)}`, costColumnX, doc.y, {
+        width: costColumnWidth,
+        align: 'right'
+      });
+      
+      // Add page numbers on all pages
+      const totalPages = pageNumber;
+      for (let i = 0; i < totalPages; i++) {
+        doc.switchToPage(i);
+        
+        // Add page number at bottom
+        doc.fontSize(7).font('Helvetica')
+          .text(`Page ${i + 1} of ${totalPages}`, 
+                20, 
+                doc.page.height - 20, 
+                { 
+                  width: doc.page.width - 40,
+                  align: 'center' 
+                });
+        
+        // Add report title on all pages (except maybe first)
+        if (i > 0) {
+          doc.fontSize(8).font('Helvetica-Bold')
+            .text(`Trip Report - Page ${i + 1}`, 20, 20);
         }
       }
       
-      // Format cost safely
-      let costStr = '0.00';
-      if (trip.cost !== undefined && trip.cost !== null) {
-        const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
-        costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
-      }
-      
-      // Prepare row data with truncation for display
-      return [
-        scheduledDate,
-        `#${trip.id}`,
-        (trip.tripType || 'Normal').substring(0, 10),
-        (trip.reason || '').substring(0, 20) + (trip.reason && trip.reason.length > 20 ? '...' : ''),
-        (trip.requester?.displayname || 'N/A').substring(0, 15) + (trip.requester?.displayname && trip.requester.displayname.length > 15 ? '...' : ''),
-        (trip.passengerCount || 0).toString(),
-        (trip.endPassengerCount || trip.passengerCount || 0).toString(),
-        (trip.requester?.department?.name || 'N/A').substring(0, 15) + (trip.requester?.department?.name && trip.requester.department.name.length > 15 ? '...' : ''),
-        (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 12) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 12 ? '...' : ''),
-        (trip.odometerLog?.startReading || 0).toString(),
-        (trip.odometerLog?.endReading || 0).toString(),
-        distance,
-        tripStartedTime,
-        tripEndedTime,
-        duration,
-        (trip.approval?.approver1?.displayname || 'N/A').substring(0, 12) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 12 ? '...' : ''),
-        (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 12) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 12 ? '...' : ''),
-        (trip.vehicle?.regNo || 'N/A').substring(0, 10) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 10 ? '...' : ''),
-        (trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A').substring(0, 12) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 12 ? '...' : ''),
-        costStr
-      ];
+      doc.end();
     } catch (error) {
-      console.error(`Error formatting trip ${trip.id} for PDF:`, error);
-      // Return placeholder data
-      return Array(20).fill('Error');
+      reject(new Error(`PDF generation setup failed: ${error.message}`));
     }
+  });
+}
+
+/**
+ * Format a single trip for PDF row (optimized for A4)
+ */
+private formatTripForPdfRow(trip: Trip): string[] {
+  try {
+    // Format date as DD/MM/YY (shorter)
+    const tripDate = new Date(trip.startDate);
+    const scheduledDate = isNaN(tripDate.getTime())
+      ? 'N/A'
+      : `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear().toString().slice(-2)}`;
+    
+    // Calculate distance safely
+    let distance = '0.0';
+    if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
+      const start = Number(trip.odometerLog.startReading);
+      const end = Number(trip.odometerLog.endReading);
+      if (!isNaN(start) && !isNaN(end)) {
+        distance = (end - start).toFixed(1);
+      }
+    }
+    
+    // Format times (24-hour format for consistency)
+    const formatTime = (date: Date | string | undefined): string => {
+      if (!date) return 'N/A';
+      try {
+        const d = new Date(date);
+        return isNaN(d.getTime()) ? 'N/A' : 
+          `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      } catch {
+        return 'N/A';
+      }
+    };
+    
+    const tripStartedTime = formatTime(trip.odometerLog?.startRecordedAt);
+    const tripEndedTime = formatTime(trip.odometerLog?.endRecordedAt);
+    
+    // Calculate duration
+    let duration = '0.00';
+    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+      try {
+        const start = new Date(trip.odometerLog.startRecordedAt);
+        const end = new Date(trip.odometerLog.endRecordedAt);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          duration = dur.toFixed(2);
+        }
+      } catch {
+        duration = '0.00';
+      }
+    }
+    
+    // Format cost safely (remove currency symbol for alignment)
+    let costStr = '0.00';
+    if (trip.cost !== undefined && trip.cost !== null) {
+      const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+      costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
+    }
+    
+    // FIXED: Optimized text lengths for better fit
+    return [
+      scheduledDate, // 0: Date
+      `#${trip.id}`, // 1: Trip ID
+      (trip.tripType || 'N').substring(0, 3), // 2: Type (short)
+      (trip.reason || '').substring(0, 15) + (trip.reason && trip.reason.length > 15 ? '..' : ''), // 3: Reason
+      (trip.requester?.displayname || 'N/A').substring(0, 12) + (trip.requester?.displayname && trip.requester.displayname.length > 12 ? '..' : ''), // 4: Requester
+      (trip.passengerCount || 0).toString(), // 5: Passengers
+      (trip.endPassengerCount || trip.passengerCount || 0).toString(), // 6: Actual Pass
+      (trip.requester?.department?.name || 'N/A').substring(0, 10) + (trip.requester?.department?.name && trip.requester.department.name.length > 10 ? '..' : ''), // 7: Department
+      (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 8) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 8 ? '..' : ''), // 8: Cost Center
+      (trip.odometerLog?.startReading || 0).toString(), // 9: Start Meter
+      (trip.odometerLog?.endReading || 0).toString(), // 10: End Meter
+      distance, // 11: Distance
+      tripStartedTime, // 12: Start Time
+      tripEndedTime, // 13: End Time
+      duration, // 14: Duration
+      (trip.approval?.approver1?.displayname || 'N/A').substring(0, 10) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 10 ? '..' : ''), // 15: Prim. Approver
+      (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 10) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 10 ? '..' : ''), // 16: Safety Approver
+      (trip.vehicle?.regNo || 'N/A').substring(0, 8) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 8 ? '..' : ''), // 17: Vehicle
+      (trip.primaryDriver.displayname || 'N/A').substring(0, 10) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 10 ? '..' : ''), // 18: Driver
+      costStr // 19: Cost (no currency symbol for right alignment)
+    ];
+  } catch (error) {
+    console.error(`Error formatting trip ${trip.id} for PDF:`, error);
+    // Return placeholder data
+    return Array(20).fill('ERR');
   }
+}
 
   /**
    * Generate Excel report
@@ -7002,7 +7126,7 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
         trip.approval?.approver1?.displayname || '',
         trip.approval?.safetyApprover?.displayname || '',
         trip.vehicle?.regNo || '',
-        trip.vehicle?.assignedDriverPrimary?.displayname || '',
+        trip.primaryDriver?.displayname || '',
         cost
       ];
     } catch (error) {

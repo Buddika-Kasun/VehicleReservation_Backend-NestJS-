@@ -1075,7 +1075,9 @@ export class TripsService {
       trip.status = TripStatus.DRAFT;
         
       // Update trip with vehicle
-      trip.vehicle = vehicle;      
+      trip.vehicle = vehicle;
+      trip.primaryDriver = vehicle.assignedDriverPrimary;
+      trip.secondaryDriver = vehicle.assignedDriverSecondary;     
       
       // Save trip with vehicle assignment
       await transactionalEntityManager.save(Trip, trip); 
@@ -1126,7 +1128,9 @@ export class TripsService {
         'schedule',
         'requester',
         'selectedIndividual',
-        'selectedGroupUsers'
+        'selectedGroupUsers',
+        'primaryDriver',
+        'secondaryDriver',
       ] 
     }); 
     
@@ -1186,8 +1190,8 @@ export class TripsService {
         currentTrip.id // Exclude current trip from conflict check
       );
 
-      currentTrip.primaryDriver = vehicle.assignedDriverPrimary;
-      currentTrip.secondaryDriver = vehicle.assignedDriverSecondary;
+      //currentTrip.primaryDriver = vehicle.assignedDriverPrimary;
+      //currentTrip.secondaryDriver = vehicle.assignedDriverSecondary;
     }
 
     // Determine status and if approval is needed
@@ -3647,7 +3651,9 @@ export class TripsService {
         'linkedTrips.requester',
         'linkedTrips.location',
         'linkedTrips.vehicle',
-        'odometerLog'
+        'odometerLog',
+        'primaryDriver',
+        'secondaryDriver',
       ]
     });
 

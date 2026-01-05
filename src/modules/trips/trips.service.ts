@@ -1185,6 +1185,9 @@ export class TripsService {
         currentTrip.location,
         currentTrip.id // Exclude current trip from conflict check
       );
+
+      currentTrip.primaryDriver = vehicle.assignedDriverPrimary;
+      currentTrip.secondaryDriver = vehicle.assignedDriverSecondary;
     }
 
     // Determine status and if approval is needed
@@ -1679,6 +1682,8 @@ export class TripsService {
         tripType: masterTrip.tripType,
         fixedRate: masterTrip.fixedRate,
         reason: masterTrip.reason,
+        primaryDriver: masterTrip.primaryDriver,
+        secondaryDriver: masterTrip.secondaryDriver,
       });
       
       const savedInstance = await this.tripRepo.save(tripInstance);
@@ -4185,6 +4190,7 @@ export class TripsService {
     };
   }
 
+  /*
   private async getDriverDetails(trip: Trip) {
     if (!trip.vehicle) {
       return {
@@ -4206,6 +4212,31 @@ export class TripsService {
         name: trip.vehicle.assignedDriverSecondary.displayname,
         phone: trip.vehicle.assignedDriverSecondary.phone,
         role: trip.vehicle.assignedDriverSecondary.role
+      } : null
+    };
+  }
+  */
+  private async getDriverDetails(trip: Trip) {
+    if (!trip.vehicle) {
+      return {
+        hasDrivers: false,
+        message: 'No vehicle assigned'
+      };
+    }
+
+    return {
+      hasDrivers: true,
+      primary: trip.primaryDriver ? {
+        id: trip.primaryDriver.id,
+        name: trip.primaryDriver.displayname,
+        phone: trip.primaryDriver.phone,
+        role: trip.primaryDriver.role
+      } : null,
+      secondary: trip.secondaryDriver ? {
+        id: trip.secondaryDriver.id,
+        name: trip.secondaryDriver.displayname,
+        phone: trip.secondaryDriver.phone,
+        role: trip.secondaryDriver.role
       } : null
     };
   }

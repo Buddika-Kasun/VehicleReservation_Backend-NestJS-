@@ -186,6 +186,12 @@ export class Trip {
   @Column('text', { nullable: true })
   reason?: string;
 
+  @ManyToOne(() => User, { nullable: true })
+  primaryDriver: User;
+
+  @ManyToOne(() => User, { nullable: true })
+  secondaryDriver?: User;
+
   @CreateDateColumn()
   createdAt: Date;
 

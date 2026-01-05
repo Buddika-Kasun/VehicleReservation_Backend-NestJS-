@@ -16,6 +16,8 @@ import { ApprovalConfig } from 'src/infra/database/entities/approval-configurati
 import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
 import { scheduled } from 'rxjs';
 import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
+import * as ExcelJS from 'exceljs';
+import * as PDFDocument from 'pdfkit';
 
 @Injectable()
 export class TripsService {
@@ -6055,6 +6057,636 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
     timestamp: now.toISOString(),
     statusCode: 200,
   };
+}
+
+  // Add to TripsService class
+
+async generateTripReport(
+  startDate: Date,
+  endDate: Date,
+  format: 'pdf' | 'excel'
+): Promise<Buffer> {
+  // Get trips data for the date range
+  const trips = await this.getTripsForReport(startDate, endDate);
+  
+  if (trips.length === 0) {
+    throw new NotFoundException('No trips found for the selected date range');
+  }
+  
+  if (format === 'pdf') {
+    return await this.generatePdfReport(trips, startDate, endDate);
+  } else {
+    return await this.generateExcelReport(trips, startDate, endDate);
+  }
+}
+
+async getReportPreview(
+  startDate: Date,
+  endDate: Date,
+  userId: number
+): Promise<any> {
+  // Get trips data for the date range
+  const trips = await this.getTripsForReport(startDate, endDate);
+  
+  if (trips.length === 0) {
+    throw new NotFoundException('No trips found for the selected date range');
+  }
+  
+  // Calculate summary
+  const summary = this.calculateReportSummary(trips);
+  
+  // Get preview rows (limit to 5 for preview)
+  const previewRows = this.formatTripsForPreview(trips.slice(0, 5));
+  
+  return {
+    success: true,
+    data: {
+      summary,
+      dateRange: {
+        fromDate: startDate.toISOString().split('T')[0],
+        toDate: endDate.toISOString().split('T')[0],
+        days: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      },
+      previewRows,
+      totalTrips: trips.length
+    },
+    timestamp: new Date().toISOString(),
+    statusCode: 200
+  };
+}
+
+private async getTripsForReport(startDate: Date, endDate: Date): Promise<Trip[]> {
+  const startDateStr = this.formatDateForDB(startDate.toISOString().split('T')[0]);
+  const endDateStr = this.formatDateForDB(endDate.toISOString().split('T')[0]);
+  
+  return await this.tripRepo
+    .createQueryBuilder('trip')
+    .leftJoinAndSelect('trip.requester', 'requester')
+    .leftJoinAndSelect('requester.department', 'department')
+    .leftJoinAndSelect('trip.vehicle', 'vehicle')
+    .leftJoinAndSelect('vehicle.assignedDriverPrimary', 'driver')
+    .leftJoinAndSelect('trip.location', 'location')
+    .leftJoinAndSelect('trip.odometerLog', 'odometerLog')
+    .leftJoinAndSelect('trip.approval', 'approval')
+    .leftJoinAndSelect('approval.approver1', 'approver1')
+    .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
+    .where('trip.status IN (:...statuses)', {
+      statuses: [TripStatus.COMPLETED, TripStatus.FINISHED]
+    })
+    .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
+      startDate: startDateStr,
+      endDate: endDateStr
+    })
+    .orderBy('trip.startDate', 'ASC')
+    .addOrderBy('trip.startTime', 'ASC')
+    .getMany();
+}
+
+private calculateReportSummary(trips: Trip[]): any {
+  let totalCost = 0;
+  let totalDistance = 0;
+  let totalPassengers = 0;
+  let totalDuration = 0;
+  
+  trips.forEach(trip => {
+    totalCost += trip.cost || 0;
+    
+    if (trip.odometerLog?.startReading && trip.odometerLog?.endReading) {
+      totalDistance += (trip.odometerLog.endReading - trip.odometerLog.startReading);
+    }
+    
+    totalPassengers += (trip.endPassengerCount || trip.passengerCount);
+    
+    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+      const duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
+      totalDuration += duration;
+    }
+  });
+  
+  return {
+    totalTrips: trips.length,
+    totalCost: parseFloat(totalCost.toFixed(2)),
+    totalDistance: parseFloat(totalDistance.toFixed(2)),
+    averageDuration: trips.length > 0 ? parseFloat((totalDuration / trips.length).toFixed(2)) : 0,
+    totalPassengers: totalPassengers
+  };
+}
+
+private formatTripsForPreview(trips: Trip[]): any[] {
+  return trips.map(trip => {
+    // Format date as MM/DD/YYYY
+    const tripDate = new Date(trip.startDate);
+    const scheduledDate = `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+    
+    // Calculate distance
+    const distance = trip.odometerLog?.startReading && trip.odometerLog?.endReading
+      ? trip.odometerLog.endReading - trip.odometerLog.startReading
+      : 0;
+    
+    // Format times
+    const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+    const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+    
+    // Calculate duration in hours
+    let duration = 0;
+    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+      duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
+      duration = parseFloat(duration.toFixed(2));
+    }
+    
+    return {
+      scheduledDate,
+      tripId: `#${trip.id.toString().padStart(2, '0')}`,
+      tripType: trip.tripType || 'Normal',
+      reason: trip.reason || '',
+      requestedBy: trip.requester?.displayname || '',
+      noOfPassengers: trip.passengerCount,
+      actualNoOfPassengers: trip.endPassengerCount || trip.passengerCount,
+      department: trip.requester?.department?.name || '',
+      costCenter: trip.requester?.department?.costCenter?.name || '',
+      startMeterReading: trip.odometerLog?.startReading || 0,
+      endMeterReading: trip.odometerLog?.endReading || 0,
+      distanceTravelled: distance,
+      tripStartedTime,
+      tripEndedTime,
+      duration,
+      primaryApprovalBy: trip.approval?.approver1?.displayname || '',
+      safetyApprovalBy: trip.approval?.safetyApprover?.displayname || '',
+      vehicle: trip.vehicle?.regNo || '',
+      driver: trip.vehicle?.assignedDriverPrimary?.displayname || '',
+      cost: trip.cost || 0
+    };
+  });
+}
+
+private formatTimeForDisplay(date: Date | undefined): string {
+  if (!date) return '';
+  
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  const displayMinutes = minutes.toString().padStart(2, '0');
+  
+  return `${displayHours}:${displayMinutes} ${ampm}`;
+}
+
+private async generatePdfReport(
+  trips: Trip[], 
+  startDate: Date, 
+  endDate: Date
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      // Create PDF document with proper margins and smaller font to fit more data
+      const doc = new PDFDocument({ 
+        margin: 30,
+        size: 'A3',
+        layout: 'landscape'
+      });
+
+      const chunks: Buffer[] = [];
+      
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve(buffer);
+      });
+      doc.on('error', (error) => {
+        reject(error);
+      });
+
+      // Helper function to format time
+      const formatTimeForDisplay = (date: Date | string | undefined): string => {
+        if (!date) return '';
+        try {
+          const d = new Date(date);
+          return isNaN(d.getTime()) ? '' : 
+            `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } catch {
+          return '';
+        }
+      };
+
+      // Add title
+      doc.fontSize(16).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
+      doc.moveDown(0.5);
+      
+      // Add date range
+      doc.fontSize(9).font('Helvetica').text(
+        `Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+        { align: 'center' }
+      );
+      
+      doc.fontSize(9).text(
+        `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        { align: 'center' }
+      );
+      
+      doc.moveDown(1);
+      
+      // SAFELY calculate total cost - ensure it's always a number
+      const totalCost = trips.reduce((sum, trip) => {
+        const cost = trip.cost;
+        // Handle null/undefined/NaN
+        if (cost === null || cost === undefined || isNaN(cost)) {
+          return sum;
+        }
+        // Convert to number if it's a string
+        const numCost = typeof cost === 'string' ? parseFloat(cost) : Number(cost);
+        return sum + (isNaN(numCost) ? 0 : numCost);
+      }, 0);
+      
+      // Now totalCost should definitely be a number
+      const formattedTotalCost = typeof totalCost === 'number' ? totalCost.toFixed(2) : '0.00';
+      
+      doc.fontSize(10).font('Helvetica-Bold').text('SUMMARY', { underline: true });
+      doc.fontSize(9).font('Helvetica').text(`Total Trips: ${trips.length}`);
+      doc.text(`Total Cost: LKR ${formattedTotalCost}`);
+      
+      doc.moveDown(1);
+      
+      if (trips.length === 0) {
+        doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
+        doc.end();
+        return;
+      }
+
+      // All columns as requested
+      const headers = [
+        'Scheduled Date',
+        'Trip ID',
+        'Trip Type',
+        'Reason',
+        'Requested by',
+        'No of Passengers',
+        'Actual No of Passengers',
+        'Department',
+        'Cost Center',
+        'Start meter',
+        'End meter',
+        'Distance (km)',
+        'Started Time',
+        'Ended Time',
+        'Duration (Hrs)',
+        'Primary Approval',
+        'Safety Approval',
+        'Vehicle',
+        'Driver',
+        'Cost (LKR)'
+      ];
+      
+      // Column widths - adjusted for A3 landscape
+      const colWidths = [40, 30, 35, 50, 45, 25, 30, 45, 40, 30, 30, 30, 35, 35, 25, 40, 40, 35, 35, 35];
+      
+      let currentY = doc.y;
+      let pageNumber = 1;
+
+      const drawHeader = (y: number) => {
+        let x = 30;
+        doc.fontSize(7).font('Helvetica-Bold');
+        headers.forEach((header, i) => {
+          doc.text(header, x, y, {
+            width: colWidths[i],
+            align: 'center',
+            lineBreak: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw header underline
+        const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+        doc.moveTo(30, y + 20).lineTo(30 + totalWidth, y + 20).stroke();
+        
+        return y + 25;
+      };
+
+      // Draw headers on first page
+      currentY = drawHeader(currentY);
+      
+      // Add table rows with smaller font
+      doc.fontSize(6).font('Helvetica');
+      
+      trips.forEach((trip, index) => {
+        // Check if we need a new page
+        if (currentY > 750) {
+          doc.addPage();
+          pageNumber++;
+          
+          // Add page header
+          doc.fontSize(9).text(`Trip Report - Page ${pageNumber}`, 30, 30);
+          doc.moveDown(3);
+          
+          currentY = doc.y;
+          currentY = drawHeader(currentY);
+        }
+        
+        // Calculate values
+        const tripDate = new Date(trip.startDate);
+        const scheduledDate = `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear()}`;
+        
+        // Safely calculate distance
+        let distance = '0';
+        if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
+          const start = Number(trip.odometerLog.startReading);
+          const end = Number(trip.odometerLog.endReading);
+          if (!isNaN(start) && !isNaN(end)) {
+            distance = (end - start).toFixed(1);
+          }
+        }
+        
+        const tripStartedTime = formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+        const tripEndedTime = formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+        
+        let duration = '0';
+        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+          try {
+            const start = new Date(trip.odometerLog.startRecordedAt);
+            const end = new Date(trip.odometerLog.endRecordedAt);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              duration = dur.toFixed(2);
+            }
+          } catch {
+            duration = '0';
+          }
+        }
+        
+        // Safely format cost
+        let costStr = '0.00';
+        if (trip.cost !== undefined && trip.cost !== null) {
+          const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+          costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
+        }
+        
+        // Prepare row data
+        const rowData = [
+          scheduledDate,
+          `#${trip.id}`,
+          trip.tripType || 'Normal',
+          (trip.reason || '').substring(0, 20) + (trip.reason && trip.reason.length > 20 ? '...' : ''),
+          (trip.requester?.displayname || 'N/A').substring(0, 15) + (trip.requester?.displayname && trip.requester.displayname.length > 15 ? '...' : ''),
+          (trip.passengerCount || 0).toString(),
+          (trip.endPassengerCount || trip.passengerCount || 0).toString(),
+          (trip.requester?.department?.name || 'N/A').substring(0, 15) + (trip.requester?.department?.name && trip.requester.department.name.length > 15 ? '...' : ''),
+          (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 12) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 12 ? '...' : ''),
+          (trip.odometerLog?.startReading || 0).toString(),
+          (trip.odometerLog?.endReading || 0).toString(),
+          distance,
+          tripStartedTime,
+          tripEndedTime,
+          duration,
+          (trip.approval?.approver1?.displayname || 'N/A').substring(0, 12) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 12 ? '...' : ''),
+          (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 12) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 12 ? '...' : ''),
+          (trip.vehicle?.regNo || 'N/A').substring(0, 10) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 10 ? '...' : ''),
+          (trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A').substring(0, 12) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 12 ? '...' : ''),
+          costStr
+        ];
+        
+        // Draw row
+        let x = 30;
+        let maxRowHeight = 0;
+        
+        // First pass: calculate max height for this row
+        rowData.forEach((data, i) => {
+          const height = doc.heightOfString(data, {
+            width: colWidths[i],
+            align: 'center'
+          });
+          maxRowHeight = Math.max(maxRowHeight, height);
+        });
+        
+        // Second pass: draw text
+        rowData.forEach((data, i) => {
+          doc.text(data, x, currentY, {
+            width: colWidths[i],
+            align: 'center',
+            lineBreak: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw row separator
+        const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+        doc.moveTo(30, currentY + maxRowHeight + 2)
+          .lineTo(30 + totalWidth, currentY + maxRowHeight + 2)
+          .stroke();
+        
+        currentY += maxRowHeight + 5;
+      });
+      
+      // Add total at the end
+      if (currentY > 750) {
+        doc.addPage();
+        currentY = 40;
+      }
+      
+      doc.moveDown(2);
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text(`Total Cost: LKR ${formattedTotalCost}`, { align: 'right' });
+      
+      // Add page numbers
+      const totalPages = pageNumber;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.switchToPage(i - 1);
+        doc.fontSize(8).font('Helvetica')
+          .text(`Page ${i} of ${totalPages}`, 30, doc.page.height - 40, { align: 'center' });
+      }
+      
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+private async generateExcelReport(trips: Trip[], startDate: Date, endDate: Date): Promise<Buffer> {
+  // For Excel generation, you'll need to install exceljs
+  // npm install exceljs
+  
+  const ExcelJS = require('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Trip Report');
+  
+  // Add title
+  worksheet.mergeCells('A1:T1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = 'Trip Report';
+  titleCell.font = { size: 16, bold: true };
+  titleCell.alignment = { horizontal: 'center' };
+  
+  // Add date range
+  worksheet.mergeCells('A2:T2');
+  const dateRangeCell = worksheet.getCell('A2');
+  dateRangeCell.value = `Date Range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`;
+  dateRangeCell.font = { size: 11 };
+  dateRangeCell.alignment = { horizontal: 'center' };
+  
+  // Add generated date
+  worksheet.mergeCells('A3:T3');
+  const generatedCell = worksheet.getCell('A3');
+  generatedCell.value = `Generated on: ${new Date().toLocaleString()}`;
+  generatedCell.font = { size: 10 };
+  generatedCell.alignment = { horizontal: 'center' };
+  
+  // Define headers
+  const headers = [
+    'Scheduled Date',
+    'Trip ID',
+    'Trip Type',
+    'Reason',
+    'Requested by',
+    'No of Passengers',
+    'Actual No of Passengers',
+    'Department',
+    'Cost Center',
+    'Start meter reading',
+    'End meter reading',
+    'Distance Travelled (km)',
+    'Trip Started Time',
+    'Trip Ended Time',
+    'Duration (Hours)',
+    'Primary Approval By',
+    'Safety Approval By',
+    'Vehicle',
+    'Driver',
+    'Cost (LKR)'
+  ];
+  
+  // Add headers to row 5
+  const headerRow = worksheet.getRow(5);
+  headers.forEach((header, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = header;
+    cell.font = { bold: true };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+    cell.border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' }
+    };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+  
+  // Add data rows
+  let rowIndex = 6;
+  
+  trips.forEach(trip => {
+    const tripDate = new Date(trip.startDate);
+    const scheduledDate = `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+    
+    const distance = trip.odometerLog?.startReading && trip.odometerLog?.endReading
+      ? trip.odometerLog.endReading - trip.odometerLog.startReading
+      : 0;
+    
+    const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+    const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+    
+    let duration = 0;
+    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+      duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
+      duration = parseFloat(duration.toFixed(2));
+    }
+    
+    const rowData = [
+      scheduledDate,
+      `#${trip.id.toString().padStart(2, '0')}`,
+      trip.tripType || 'Normal',
+      trip.reason || '',
+      trip.requester?.displayname || '',
+      trip.passengerCount,
+      trip.endPassengerCount || trip.passengerCount,
+      trip.requester?.department?.name || '',
+      trip.requester?.department?.costCenter?.name || '',
+      trip.odometerLog?.startReading || 0,
+      trip.odometerLog?.endReading || 0,
+      distance,
+      tripStartedTime,
+      tripEndedTime,
+      duration,
+      trip.approval?.approver1?.displayname || '',
+      trip.approval?.safetyApprover?.displayname || '',
+      trip.vehicle?.regNo || '',
+      trip.vehicle?.assignedDriverPrimary?.displayname || '',
+      trip.cost || 0
+    ];
+    
+    const row = worksheet.getRow(rowIndex);
+    rowData.forEach((data, cellIndex) => {
+      const cell = row.getCell(cellIndex + 1);
+      cell.value = data;
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+      
+      // Format numbers
+      if (cellIndex >= 5 && cellIndex <= 11) { // Passenger counts, meter readings, distance
+        cell.numFmt = '0';
+      } else if (cellIndex === 14) { // Duration
+        cell.numFmt = '0.00';
+      } else if (cellIndex === 19) { // Cost
+        cell.numFmt = '#,##0.00';
+      }
+    });
+    
+    rowIndex++;
+  });
+  
+  // Add total cost row
+  const totalRow = worksheet.getRow(rowIndex + 1);
+  
+  // Merge cells for "Total Cost" label
+  worksheet.mergeCells(`A${rowIndex + 1}:S${rowIndex + 1}`);
+  
+  const totalLabelCell = totalRow.getCell(1);
+  totalLabelCell.value = 'Total Cost';
+  totalLabelCell.font = { bold: true };
+  totalLabelCell.alignment = { horizontal: 'right' };
+  
+  const totalCost = trips.reduce((sum, trip) => sum + (trip.cost || 0), 0);
+  const totalCostCell = totalRow.getCell(20); // Column T
+  totalCostCell.value = totalCost;
+  totalCostCell.font = { bold: true };
+  totalCostCell.numFmt = '#,##0.00';
+  totalCostCell.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFFFE0E0' }
+  };
+  
+  // Apply borders to total row
+  for (let i = 1; i <= 20; i++) {
+    const cell = totalRow.getCell(i);
+    cell.border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' }
+    };
+  }
+  
+  // Auto-fit columns
+  worksheet.columns.forEach(column => {
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: true }, cell => {
+      const columnLength = cell.value ? cell.value.toString().length : 0;
+      if (columnLength > maxLength) {
+        maxLength = columnLength;
+      }
+    });
+    column.width = Math.min(maxLength + 2, 30);
+  });
+  
+  // Write to buffer
+  return await workbook.xlsx.writeBuffer();
 }
 
 

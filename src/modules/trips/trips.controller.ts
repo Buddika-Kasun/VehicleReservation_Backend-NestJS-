@@ -13,7 +13,9 @@ import {
   Request,
   UseGuards,
   ForbiddenException,
-  BadRequestException
+  BadRequestException,
+  Res,
+  InternalServerErrorException
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
@@ -530,6 +532,101 @@ async approveScheduledTrip(
 @ApiResponse({ status: 200, description: 'Trip with instances retrieved successfully' })
 async getTripWithInstances(@Param('id', ParseIntPipe) id: number) {
   return await this.tripsService.getTripWithInstances(id);
+}
+
+  // Add to TripsController class
+
+
+@Post('report/download')
+@Roles(UserRole.SYSADMIN, UserRole.HR)
+@ApiOperation({ summary: 'Download trip report in PDF/Excel format' })
+@ApiBody({
+  schema: {
+    type: 'object',
+    properties: {
+      fromDate: { type: 'string', format: 'date', example: '2024-01-01' },
+      toDate: { type: 'string', format: 'date', example: '2024-01-31' },
+      format: { type: 'string', enum: ['pdf', 'excel'], example: 'pdf' }
+    },
+    required: ['fromDate', 'toDate', 'format']
+  }
+})
+@ApiResponse({ 
+  status: 200, 
+  description: 'Report downloaded successfully',
+  content: {
+    'application/pdf': {
+      schema: { type: 'string', format: 'binary' }
+    },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+      schema: { type: 'string', format: 'binary' }
+    }
+  }
+})
+@ApiResponse({ status: 400, description: 'Invalid date range' })
+async downloadTripReport(
+  @Body() reportRequest: { fromDate: string; toDate: string; format: 'pdf' | 'excel' },
+  @Res() res: any,
+) {
+  const { fromDate, toDate, format } = reportRequest;
+  
+  console.log(`Report request received: fromDate=${fromDate}, toDate=${toDate}, format=${format}`);
+  
+  // Parse and normalize dates (remove time components)
+  const startDate = new Date(fromDate);
+  const endDate = new Date(toDate);
+  
+  // Reset time to start and end of day for proper date range
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(23, 59, 59, 999);
+  
+  // Validate dates
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new BadRequestException('Invalid date format. Use YYYY-MM-DD format.');
+  }
+  
+  if (startDate > endDate) {
+    throw new BadRequestException('Start date must be before end date');
+  }
+  
+  console.log(`Parsed dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}`);
+  
+  try {
+    // Get report data - this should return Buffer or Uint8Array
+    const reportData = await this.tripsService.generateTripReport(
+      startDate,
+      endDate,
+      format,
+    );
+    
+    if (!reportData || reportData.length === 0) {
+      throw new BadRequestException('No data found for the selected date range');
+    }
+    
+    // Set appropriate headers based on format
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const filename = `trip-report-${timestamp}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+    
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', reportData.length);
+    } else {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', reportData.length);
+    }
+    
+    // Send the binary data - Make sure you're sending Buffer
+    res.send(Buffer.from(reportData));
+    
+  } catch (error) {
+    console.error('Error generating report:', error);
+    if (error instanceof BadRequestException) {
+      throw error;
+    }
+    throw new InternalServerErrorException('Failed to generate report');
+  }
 }
 
 }

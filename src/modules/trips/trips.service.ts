@@ -6241,7 +6241,7 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
         .leftJoinAndSelect('approval.approver1', 'approver1')
         .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
         .where('trip.status IN (:...statuses)', {
-          statuses: [TripStatus.FINISHED]
+          statuses: [TripStatus.COMPLETED]
         })
         .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
           startDate: startDateStr,

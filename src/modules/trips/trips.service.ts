@@ -17,6 +17,7 @@ import { NotificationType, NotificationPriority } from 'src/infra/database/entit
 import { scheduled } from 'rxjs';
 import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 import * as ExcelJS from 'exceljs';
+import { Buffer } from 'buffer';
 import * as PDFDocument from 'pdfkit';
 
 @Injectable()
@@ -6245,13 +6246,23 @@ private async generatePdfReport(
         layout: 'landscape'
       });
 
-      const chunks: Buffer[] = [];
+      const chunks: Uint8Array[] = [];
       
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        resolve(buffer);
+      doc.on('data', (chunk: Uint8Array) => {
+        chunks.push(chunk);
       });
+      
+      doc.on('end', () => {
+        try {
+          // Combine all Uint8Array chunks into a single Buffer
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
+          resolve(buffer);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      
       doc.on('error', (error) => {
         reject(error);
       });
@@ -6285,20 +6296,17 @@ private async generatePdfReport(
       
       doc.moveDown(1);
       
-      // SAFELY calculate total cost - ensure it's always a number
+      // Safely calculate total cost
       const totalCost = trips.reduce((sum, trip) => {
         const cost = trip.cost;
-        // Handle null/undefined/NaN
-        if (cost === null || cost === undefined || isNaN(cost)) {
+        if (cost === null || cost === undefined || isNaN(Number(cost))) {
           return sum;
         }
-        // Convert to number if it's a string
         const numCost = typeof cost === 'string' ? parseFloat(cost) : Number(cost);
         return sum + (isNaN(numCost) ? 0 : numCost);
       }, 0);
       
-      // Now totalCost should definitely be a number
-      const formattedTotalCost = typeof totalCost === 'number' ? totalCost.toFixed(2) : '0.00';
+      const formattedTotalCost = totalCost.toFixed(2);
       
       doc.fontSize(10).font('Helvetica-Bold').text('SUMMARY', { underline: true });
       doc.fontSize(9).font('Helvetica').text(`Total Trips: ${trips.length}`);
@@ -6349,14 +6357,16 @@ private async generatePdfReport(
           doc.text(header, x, y, {
             width: colWidths[i],
             align: 'center',
-            lineBreak: true
+            lineBreak: false
           });
           x += colWidths[i];
         });
         
         // Draw header underline
         const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-        doc.moveTo(30, y + 20).lineTo(30 + totalWidth, y + 20).stroke();
+        doc.moveTo(30, y + 20)
+          .lineTo(30 + totalWidth, y + 20)
+          .stroke();
         
         return y + 25;
       };
@@ -6445,34 +6455,23 @@ private async generatePdfReport(
         
         // Draw row
         let x = 30;
-        let maxRowHeight = 0;
         
-        // First pass: calculate max height for this row
-        rowData.forEach((data, i) => {
-          const height = doc.heightOfString(data, {
-            width: colWidths[i],
-            align: 'center'
-          });
-          maxRowHeight = Math.max(maxRowHeight, height);
-        });
-        
-        // Second pass: draw text
         rowData.forEach((data, i) => {
           doc.text(data, x, currentY, {
             width: colWidths[i],
             align: 'center',
-            lineBreak: true
+            lineBreak: false
           });
           x += colWidths[i];
         });
         
         // Draw row separator
         const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-        doc.moveTo(30, currentY + maxRowHeight + 2)
-          .lineTo(30 + totalWidth, currentY + maxRowHeight + 2)
+        doc.moveTo(30, currentY + 15)
+          .lineTo(30 + totalWidth, currentY + 15)
           .stroke();
         
-        currentY += maxRowHeight + 5;
+        currentY += 20;
       });
       
       // Add total at the end

@@ -570,29 +570,27 @@ async downloadTripReport(
 ) {
   const { fromDate, toDate, format } = reportRequest;
   
-  console.log(`Report request received: fromDate=${fromDate}, toDate=${toDate}, format=${format}`);
-  
-  // Parse and normalize dates (remove time components)
-  const startDate = new Date(fromDate);
-  const endDate = new Date(toDate);
-  
-  // Reset time to start and end of day for proper date range
-  startDate.setHours(0, 0, 0, 0);
-  endDate.setHours(23, 59, 59, 999);
-  
-  // Validate dates
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    throw new BadRequestException('Invalid date format. Use YYYY-MM-DD format.');
-  }
-  
-  if (startDate > endDate) {
-    throw new BadRequestException('Start date must be before end date');
-  }
-  
-  console.log(`Parsed dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}`);
+  console.log(`📋 Report request received: fromDate=${fromDate}, toDate=${toDate}, format=${format}`);
   
   try {
-    // Get report data - this should return Buffer or Uint8Array
+    // Parse dates - expecting YYYY-MM-DD format
+    const startDate = new Date(fromDate + 'T00:00:00'); // Add time component for local time
+    const endDate = new Date(toDate + 'T23:59:59'); // Add time component for end of day
+    
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error(`❌ Invalid date format: fromDate=${fromDate}, toDate=${toDate}`);
+      throw new BadRequestException('Invalid date format. Use YYYY-MM-DD format.');
+    }
+    
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+    
+    console.log(`📋 Parsed dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}`);
+    
+    // Get report data
+    console.log(`🔄 Generating ${format.toUpperCase()} report...`);
     const reportData = await this.tripsService.generateTripReport(
       startDate,
       endDate,
@@ -602,6 +600,8 @@ async downloadTripReport(
     if (!reportData || reportData.length === 0) {
       throw new BadRequestException('No data found for the selected date range');
     }
+    
+    console.log(`✅ Report generated successfully. Size: ${reportData.length} bytes`);
     
     // Set appropriate headers based on format
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -617,16 +617,25 @@ async downloadTripReport(
       res.setHeader('Content-Length', reportData.length);
     }
     
-    // Send the binary data - Make sure you're sending Buffer
-    res.send(Buffer.from(reportData));
+    // Send the binary data
+    res.send(reportData);
     
   } catch (error) {
-    console.error('Error generating report:', error);
+    console.error('❌ Error generating report:', error);
+    console.error('📋 Error stack:', error.stack);
+    
     if (error instanceof BadRequestException) {
       throw error;
     }
-    throw new InternalServerErrorException('Failed to generate report');
+    
+    // Check for specific errors
+    if (error.message && error.message.includes('Cannot find module')) {
+      console.error('⚠️ Missing module. Please install: npm install pdfkit exceljs');
+      throw new InternalServerErrorException('Report generation module not found. Please install required packages.');
+    }
+    
+    throw new InternalServerErrorException(`Failed to generate report: ${error.message}`);
   }
-}
 
+}
 }

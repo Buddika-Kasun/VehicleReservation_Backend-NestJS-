@@ -6061,266 +6061,748 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
 }
 
   // Add to TripsService class
-
-async generateTripReport(
-  startDate: Date,
-  endDate: Date,
-  format: 'pdf' | 'excel'
-): Promise<Buffer> {
-  // Get trips data for the date range
-  const trips = await this.getTripsForReport(startDate, endDate);
-  
-  if (trips.length === 0) {
-    throw new NotFoundException('No trips found for the selected date range');
-  }
-  
-  if (format === 'pdf') {
-    return await this.generatePdfReport(trips, startDate, endDate);
-  } else {
-    return await this.generateExcelReport(trips, startDate, endDate);
-  }
-}
-
-async getReportPreview(
-  startDate: Date,
-  endDate: Date,
-  userId: number
-): Promise<any> {
-  // Get trips data for the date range
-  const trips = await this.getTripsForReport(startDate, endDate);
-  
-  if (trips.length === 0) {
-    throw new NotFoundException('No trips found for the selected date range');
-  }
-  
-  // Calculate summary
-  const summary = this.calculateReportSummary(trips);
-  
-  // Get preview rows (limit to 5 for preview)
-  const previewRows = this.formatTripsForPreview(trips.slice(0, 5));
-  
-  return {
-    success: true,
-    data: {
-      summary,
-      dateRange: {
-        fromDate: startDate.toISOString().split('T')[0],
-        toDate: endDate.toISOString().split('T')[0],
-        days: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
-      },
-      previewRows,
-      totalTrips: trips.length
-    },
-    timestamp: new Date().toISOString(),
-    statusCode: 200
-  };
-}
-
-private async getTripsForReport(startDate: Date, endDate: Date): Promise<Trip[]> {
-  const startDateStr = this.formatDateForDB(startDate.toISOString().split('T')[0]);
-  const endDateStr = this.formatDateForDB(endDate.toISOString().split('T')[0]);
-  
-  return await this.tripRepo
-    .createQueryBuilder('trip')
-    .leftJoinAndSelect('trip.requester', 'requester')
-    .leftJoinAndSelect('requester.department', 'department')
-    .leftJoinAndSelect('trip.vehicle', 'vehicle')
-    .leftJoinAndSelect('vehicle.assignedDriverPrimary', 'driver')
-    .leftJoinAndSelect('trip.location', 'location')
-    .leftJoinAndSelect('trip.odometerLog', 'odometerLog')
-    .leftJoinAndSelect('trip.approval', 'approval')
-    .leftJoinAndSelect('approval.approver1', 'approver1')
-    .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
-    .where('trip.status IN (:...statuses)', {
-      statuses: [TripStatus.COMPLETED, TripStatus.FINISHED]
-    })
-    .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
-      startDate: startDateStr,
-      endDate: endDateStr
-    })
-    .orderBy('trip.startDate', 'ASC')
-    .addOrderBy('trip.startTime', 'ASC')
-    .getMany();
-}
-
-private calculateReportSummary(trips: Trip[]): any {
-  let totalCost = 0;
-  let totalDistance = 0;
-  let totalPassengers = 0;
-  let totalDuration = 0;
-  
-  trips.forEach(trip => {
-    totalCost += trip.cost || 0;
+  /**
+   * Generate trip report in PDF or Excel format
+   */
+  async generateTripReport(
+    startDate: Date,
+    endDate: Date,
+    format: 'pdf' | 'excel'
+  ): Promise<Buffer> {
+    console.log(`🔄 Starting report generation: ${startDate.toISOString()} to ${endDate.toISOString()}, format: ${format}`);
     
-    if (trip.odometerLog?.startReading && trip.odometerLog?.endReading) {
-      totalDistance += (trip.odometerLog.endReading - trip.odometerLog.startReading);
-    }
-    
-    totalPassengers += (trip.endPassengerCount || trip.passengerCount);
-    
-    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
-      const duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
-      totalDuration += duration;
-    }
-  });
-  
-  return {
-    totalTrips: trips.length,
-    totalCost: parseFloat(totalCost.toFixed(2)),
-    totalDistance: parseFloat(totalDistance.toFixed(2)),
-    averageDuration: trips.length > 0 ? parseFloat((totalDuration / trips.length).toFixed(2)) : 0,
-    totalPassengers: totalPassengers
-  };
-}
-
-private formatTripsForPreview(trips: Trip[]): any[] {
-  return trips.map(trip => {
-    // Format date as MM/DD/YYYY
-    const tripDate = new Date(trip.startDate);
-    const scheduledDate = `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
-    
-    // Calculate distance
-    const distance = trip.odometerLog?.startReading && trip.odometerLog?.endReading
-      ? trip.odometerLog.endReading - trip.odometerLog.startReading
-      : 0;
-    
-    // Format times
-    const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
-    const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
-    
-    // Calculate duration in hours
-    let duration = 0;
-    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
-      duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
-      duration = parseFloat(duration.toFixed(2));
-    }
-    
-    return {
-      scheduledDate,
-      tripId: `#${trip.id.toString().padStart(2, '0')}`,
-      tripType: trip.tripType || 'Normal',
-      reason: trip.reason || '',
-      requestedBy: trip.requester?.displayname || '',
-      noOfPassengers: trip.passengerCount,
-      actualNoOfPassengers: trip.endPassengerCount || trip.passengerCount,
-      department: trip.requester?.department?.name || '',
-      costCenter: trip.requester?.department?.costCenter?.name || '',
-      startMeterReading: trip.odometerLog?.startReading || 0,
-      endMeterReading: trip.odometerLog?.endReading || 0,
-      distanceTravelled: distance,
-      tripStartedTime,
-      tripEndedTime,
-      duration,
-      primaryApprovalBy: trip.approval?.approver1?.displayname || '',
-      safetyApprovalBy: trip.approval?.safetyApprover?.displayname || '',
-      vehicle: trip.vehicle?.regNo || '',
-      driver: trip.vehicle?.assignedDriverPrimary?.displayname || '',
-      cost: trip.cost || 0
-    };
-  });
-}
-
-private formatTimeForDisplay(date: Date | undefined): string {
-  if (!date) return '';
-  
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 || 12;
-  const displayMinutes = minutes.toString().padStart(2, '0');
-  
-  return `${displayHours}:${displayMinutes} ${ampm}`;
-}
-
-private async generatePdfReport(
-  trips: Trip[], 
-  startDate: Date, 
-  endDate: Date
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
     try {
-      // Create PDF document with proper margins and smaller font to fit more data
-      const doc = new PDFDocument({ 
-        margin: 30,
-        size: 'A3',
-        layout: 'landscape'
-      });
+      // Validate input parameters
+      this.validateReportParameters(startDate, endDate, format);
 
-      const chunks: Uint8Array[] = [];
+      // Get trips data for the date range
+      const trips = await this.getTripsForReport(startDate, endDate);
       
-      doc.on('data', (chunk: Uint8Array) => {
-        chunks.push(chunk);
-      });
-      
-      doc.on('end', () => {
-        try {
-          // Combine all Uint8Array chunks into a single Buffer
-          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-          const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
-          resolve(buffer);
-        } catch (error) {
-          reject(error);
-        }
-      });
-      
-      doc.on('error', (error) => {
-        reject(error);
-      });
-
-      // Helper function to format time
-      const formatTimeForDisplay = (date: Date | string | undefined): string => {
-        if (!date) return '';
-        try {
-          const d = new Date(date);
-          return isNaN(d.getTime()) ? '' : 
-            `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-        } catch {
-          return '';
-        }
-      };
-
-      // Add title
-      doc.fontSize(16).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
-      doc.moveDown(0.5);
-      
-      // Add date range
-      doc.fontSize(9).font('Helvetica').text(
-        `Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
-        { align: 'center' }
-      );
-      
-      doc.fontSize(9).text(
-        `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-        { align: 'center' }
-      );
-      
-      doc.moveDown(1);
-      
-      // Safely calculate total cost
-      const totalCost = trips.reduce((sum, trip) => {
-        const cost = trip.cost;
-        if (cost === null || cost === undefined || isNaN(Number(cost))) {
-          return sum;
-        }
-        const numCost = typeof cost === 'string' ? parseFloat(cost) : Number(cost);
-        return sum + (isNaN(numCost) ? 0 : numCost);
-      }, 0);
-      
-      const formattedTotalCost = totalCost.toFixed(2);
-      
-      doc.fontSize(10).font('Helvetica-Bold').text('SUMMARY', { underline: true });
-      doc.fontSize(9).font('Helvetica').text(`Total Trips: ${trips.length}`);
-      doc.text(`Total Cost: LKR ${formattedTotalCost}`);
-      
-      doc.moveDown(1);
-      
-      if (trips.length === 0) {
-        doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
-        doc.end();
-        return;
+      if (!trips || trips.length === 0) {
+        console.log(`⚠️ No trips found for date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+        throw new NotFoundException('No trips found for the selected date range');
       }
 
-      // All columns as requested
+      console.log(`✅ Found ${trips.length} trips for report`);
+
+      // Generate report based on format
+      if (format === 'pdf') {
+        return await this.generatePdfReport(trips, startDate, endDate);
+      } else {
+        return await this.generateExcelReport(trips, startDate, endDate);
+      }
+    } catch (error) {
+      console.error(`❌ Error in generateTripReport:`, error);
+      
+      // Re-throw known exceptions
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException ||
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      
+      // Wrap unknown errors with context
+      throw new InternalServerErrorException(
+        `Failed to generate trip report: ${error.message || 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Get report preview with summary and sample data
+   */
+  async getReportPreview(
+    startDate: Date,
+    endDate: Date,
+    userId: number
+  ): Promise<any> {
+    try {
+      // Validate dates
+      this.validateDateRange(startDate, endDate);
+
+      // Get trips data for the date range
+      const trips = await this.getTripsForReport(startDate, endDate);
+      
+      if (!trips || trips.length === 0) {
+        throw new NotFoundException('No trips found for the selected date range');
+      }
+      
+      // Calculate summary
+      const summary = this.calculateReportSummary(trips);
+      
+      // Get preview rows (limit to 5 for preview)
+      const previewRows = this.formatTripsForPreview(trips.slice(0, 5));
+      
+      return {
+        success: true,
+        data: {
+          summary,
+          dateRange: {
+            fromDate: startDate.toISOString().split('T')[0],
+            toDate: endDate.toISOString().split('T')[0],
+            days: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+          },
+          previewRows,
+          totalTrips: trips.length
+        },
+        timestamp: new Date().toISOString(),
+        statusCode: 200
+      };
+    } catch (error) {
+      console.error('Error in getReportPreview:', error);
+      
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      throw new InternalServerErrorException(
+        `Failed to generate report preview: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Private helper methods
+   */
+
+  /**
+   * Validate report generation parameters
+   */
+  private validateReportParameters(startDate: Date, endDate: Date, format: string): void {
+    // Check if dates are valid
+    if (!startDate || !endDate) {
+      throw new BadRequestException('Start date and end date are required');
+    }
+    
+    if (isNaN(startDate.getTime())) {
+      throw new BadRequestException('Invalid start date');
+    }
+    
+    if (isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid end date');
+    }
+    
+    // Validate date range
+    this.validateDateRange(startDate, endDate);
+    
+    // Validate format
+    if (format !== 'pdf' && format !== 'excel') {
+      throw new BadRequestException('Format must be either "pdf" or "excel"');
+    }
+  }
+
+  /**
+   * Validate date range constraints
+   */
+  private validateDateRange(startDate: Date, endDate: Date): void {
+    // Check if start date is before end date
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date must be before or equal to end date');
+    }
+    
+    // Check date range limit (max 1 year)
+    const maxDays = 365;
+    const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysDifference > maxDays) {
+      throw new BadRequestException(`Date range cannot exceed ${maxDays} days`);
+    }
+    
+    // Check if dates are in the future (optional, adjust as needed)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (startDate > today) {
+      throw new BadRequestException('Start date cannot be in the future');
+    }
+  }
+
+  /**
+   * Get trips for report with all necessary relations
+   */
+  private async getTripsForReport(startDate: Date, endDate: Date): Promise<Trip[]> {
+    try {
+      const startDateStr = this.formatDateForDB(startDate.toISOString().split('T')[0]);
+      const endDateStr = this.formatDateForDB(endDate.toISOString().split('T')[0]);
+      
+      console.log(`🔍 Querying trips from ${startDateStr} to ${endDateStr}`);
+      
+      const trips = await this.tripRepo
+        .createQueryBuilder('trip')
+        .leftJoinAndSelect('trip.requester', 'requester')
+        .leftJoinAndSelect('requester.department', 'department')
+        .leftJoinAndSelect('department.costCenter', 'costCenter')
+        .leftJoinAndSelect('trip.vehicle', 'vehicle')
+        .leftJoinAndSelect('vehicle.assignedDriverPrimary', 'driver')
+        .leftJoinAndSelect('trip.location', 'location')
+        .leftJoinAndSelect('trip.odometerLog', 'odometerLog')
+        .leftJoinAndSelect('trip.approval', 'approval')
+        .leftJoinAndSelect('approval.approver1', 'approver1')
+        .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
+        .where('trip.status IN (:...statuses)', {
+          statuses: [TripStatus.COMPLETED, TripStatus.FINISHED]
+        })
+        .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
+          startDate: startDateStr,
+          endDate: endDateStr
+        })
+        .orderBy('trip.startDate', 'ASC')
+        .addOrderBy('trip.startTime', 'ASC')
+        .getMany();
+      
+      console.log(`✅ Retrieved ${trips?.length || 0} trips from database`);
+      return trips || [];
+    } catch (error) {
+      console.error('Database query error in getTripsForReport:', error);
+      throw new InternalServerErrorException('Failed to retrieve trip data from database');
+    }
+  }
+
+  /**
+   * Calculate report summary statistics
+   */
+  private calculateReportSummary(trips: Trip[]): any {
+    try {
+      let totalCost = 0;
+      let totalDistance = 0;
+      let totalPassengers = 0;
+      let totalDuration = 0;
+      let tripsWithCost = 0;
+      let tripsWithDistance = 0;
+      let tripsWithDuration = 0;
+      
+      trips.forEach(trip => {
+        // Handle cost (safely parse)
+        if (trip.cost !== null && trip.cost !== undefined) {
+          const cost = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+          if (!isNaN(cost)) {
+            totalCost += cost;
+            tripsWithCost++;
+          }
+        }
+        
+        // Handle distance from odometer log
+        if (trip.odometerLog?.startReading !== undefined && 
+            trip.odometerLog?.endReading !== undefined) {
+          const start = Number(trip.odometerLog.startReading);
+          const end = Number(trip.odometerLog.endReading);
+          if (!isNaN(start) && !isNaN(end)) {
+            totalDistance += (end - start);
+            tripsWithDistance++;
+          }
+        }
+        
+        // Handle passengers
+        const passengers = trip.endPassengerCount || trip.passengerCount;
+        if (passengers !== null && passengers !== undefined) {
+          totalPassengers += Number(passengers);
+        }
+        
+        // Handle duration
+        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+          try {
+            const start = new Date(trip.odometerLog.startRecordedAt);
+            const end = new Date(trip.odometerLog.endRecordedAt);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              totalDuration += duration;
+              tripsWithDuration++;
+            }
+          } catch (e) {
+            console.warn(`Could not parse duration for trip ${trip.id}:`, e);
+          }
+        }
+      });
+      
+      // Calculate averages safely
+      const avgDuration = tripsWithDuration > 0 ? totalDuration / tripsWithDuration : 0;
+      const avgCost = tripsWithCost > 0 ? totalCost / tripsWithCost : 0;
+      const avgDistance = tripsWithDistance > 0 ? totalDistance / tripsWithDistance : 0;
+      
+      return {
+        totalTrips: trips.length,
+        totalCost: parseFloat(totalCost.toFixed(2)),
+        totalDistance: parseFloat(totalDistance.toFixed(2)),
+        averageDuration: parseFloat(avgDuration.toFixed(2)),
+        averageCost: parseFloat(avgCost.toFixed(2)),
+        averageDistance: parseFloat(avgDistance.toFixed(2)),
+        totalPassengers: totalPassengers,
+        tripsWithCompleteData: {
+          cost: tripsWithCost,
+          distance: tripsWithDistance,
+          duration: tripsWithDuration
+        }
+      };
+    } catch (error) {
+      console.error('Error in calculateReportSummary:', error);
+      // Return basic summary even if calculation fails
+      return {
+        totalTrips: trips.length,
+        totalCost: 0,
+        totalDistance: 0,
+        averageDuration: 0,
+        averageCost: 0,
+        averageDistance: 0,
+        totalPassengers: 0,
+        error: 'Some statistics could not be calculated'
+      };
+    }
+  }
+
+  /**
+   * Format trips for preview display
+   */
+  private formatTripsForPreview(trips: Trip[]): any[] {
+    return trips.map(trip => {
+      try {
+        // Format date as MM/DD/YYYY
+        const tripDate = new Date(trip.startDate);
+        const scheduledDate = isNaN(tripDate.getTime()) 
+          ? 'Invalid Date'
+          : `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+        
+        // Calculate distance safely
+        let distance = 0;
+        if (trip.odometerLog?.startReading !== undefined && 
+            trip.odometerLog?.endReading !== undefined) {
+          const start = Number(trip.odometerLog.startReading);
+          const end = Number(trip.odometerLog.endReading);
+          if (!isNaN(start) && !isNaN(end)) {
+            distance = end - start;
+          }
+        }
+        
+        // Format times
+        const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+        const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+        
+        // Calculate duration safely
+        let duration = 0;
+        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+          try {
+            const start = new Date(trip.odometerLog.startRecordedAt);
+            const end = new Date(trip.odometerLog.endRecordedAt);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              duration = parseFloat(duration.toFixed(2));
+            }
+          } catch (e) {
+            duration = 0;
+          }
+        }
+        
+        // Safely parse cost
+        let cost = 0;
+        if (trip.cost !== undefined && trip.cost !== null) {
+          const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+          cost = isNaN(costNum) ? 0 : parseFloat(costNum.toFixed(2));
+        }
+        
+        return {
+          scheduledDate,
+          tripId: `#${trip.id.toString().padStart(2, '0')}`,
+          tripType: trip.tripType || 'Normal',
+          reason: (trip.reason || '').substring(0, 50) + (trip.reason && trip.reason.length > 50 ? '...' : ''),
+          requestedBy: trip.requester?.displayname || 'N/A',
+          noOfPassengers: trip.passengerCount || 0,
+          actualNoOfPassengers: trip.endPassengerCount || trip.passengerCount || 0,
+          department: trip.requester?.department?.name || 'N/A',
+          costCenter: trip.requester?.department?.costCenter?.name || 'N/A',
+          startMeterReading: trip.odometerLog?.startReading || 0,
+          endMeterReading: trip.odometerLog?.endReading || 0,
+          distanceTravelled: distance,
+          tripStartedTime,
+          tripEndedTime,
+          duration,
+          primaryApprovalBy: trip.approval?.approver1?.displayname || 'N/A',
+          safetyApprovalBy: trip.approval?.safetyApprover?.displayname || 'N/A',
+          vehicle: trip.vehicle?.regNo || 'N/A',
+          driver: trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A',
+          cost: cost
+        };
+      } catch (error) {
+        console.error(`Error formatting trip ${trip.id} for preview:`, error);
+        // Return minimal data for this trip
+        return {
+          scheduledDate: 'Error',
+          tripId: `#${trip.id}`,
+          tripType: 'Error',
+          reason: 'Could not format trip data',
+          requestedBy: 'N/A',
+          error: true
+        };
+      }
+    }).filter(trip => !trip.error); // Filter out errored trips
+  }
+
+  /**
+   * Generate PDF report
+   */
+  private async generatePdfReport(
+    trips: Trip[], 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log(`📄 Starting PDF generation for ${trips.length} trips`);
+        
+        // Dynamically require PDFKit to handle module not found gracefully
+        let PDFDocument;
+        try {
+          PDFDocument = require('pdfkit');
+        } catch (error) {
+          throw new Error('PDFKit module not found. Please install: npm install pdfkit');
+        }
+
+        const doc = new PDFDocument({ 
+          margin: 30,
+          size: 'A3',
+          layout: 'landscape'
+        });
+
+        const chunks: Uint8Array[] = [];
+        
+        doc.on('data', (chunk: Uint8Array) => {
+          chunks.push(chunk);
+        });
+        
+        doc.on('end', () => {
+          try {
+            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
+            console.log(`✅ PDF generated: ${buffer.length} bytes`);
+            resolve(buffer);
+          } catch (error) {
+            reject(new Error(`Failed to create PDF buffer: ${error.message}`));
+          }
+        });
+        
+        doc.on('error', (error) => {
+          reject(new Error(`PDF generation failed: ${error.message}`));
+        });
+
+        // Helper function to format time
+        const formatTimeForDisplay = (date: Date | string | undefined): string => {
+          if (!date) return 'N/A';
+          try {
+            const d = new Date(date);
+            return isNaN(d.getTime()) ? 'N/A' : 
+              `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          } catch {
+            return 'N/A';
+          }
+        };
+
+        // Add title
+        doc.fontSize(16).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
+        doc.moveDown(0.5);
+        
+        // Add date range
+        doc.fontSize(9).font('Helvetica').text(
+          `Period: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`,
+          { align: 'center' }
+        );
+        
+        doc.fontSize(9).text(
+          `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+          { align: 'center' }
+        );
+        
+        doc.moveDown(1);
+        
+        // Calculate summary for PDF
+        const summary = this.calculateReportSummary(trips);
+        
+        doc.fontSize(10).font('Helvetica-Bold').text('SUMMARY', { underline: true });
+        doc.fontSize(9).font('Helvetica').text(`Total Trips: ${summary.totalTrips}`);
+        doc.text(`Total Cost: LKR ${summary.totalCost.toFixed(2)}`);
+        doc.text(`Total Distance: ${summary.totalDistance.toFixed(2)} km`);
+        doc.text(`Average Duration: ${summary.averageDuration.toFixed(2)} hours`);
+        doc.text(`Total Passengers: ${summary.totalPassengers}`);
+        
+        doc.moveDown(1);
+        
+        if (trips.length === 0) {
+          doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
+          doc.end();
+          return;
+        }
+
+        // Table headers
+        const headers = [
+          'Scheduled Date',
+          'Trip ID',
+          'Trip Type',
+          'Reason',
+          'Requested by',
+          'No of Passengers',
+          'Actual No of Passengers',
+          'Department',
+          'Cost Center',
+          'Start meter',
+          'End meter',
+          'Distance (km)',
+          'Started Time',
+          'Ended Time',
+          'Duration (Hrs)',
+          'Primary Approval',
+          'Safety Approval',
+          'Vehicle',
+          'Driver',
+          'Cost (LKR)'
+        ];
+        
+        // Column widths - adjusted for A3 landscape
+        const colWidths = [40, 30, 35, 50, 45, 25, 30, 45, 40, 30, 30, 30, 35, 35, 25, 40, 40, 35, 35, 35];
+        
+        let currentY = doc.y;
+        let pageNumber = 1;
+
+        const drawHeader = (y: number) => {
+          let x = 30;
+          doc.fontSize(7).font('Helvetica-Bold');
+          headers.forEach((header, i) => {
+            doc.text(header, x, y, {
+              width: colWidths[i],
+              align: 'center',
+              lineBreak: false
+            });
+            x += colWidths[i];
+          });
+          
+          // Draw header underline
+          const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+          doc.moveTo(30, y + 20)
+            .lineTo(30 + totalWidth, y + 20)
+            .stroke();
+          
+          return y + 25;
+        };
+
+        // Draw headers on first page
+        currentY = drawHeader(currentY);
+        
+        // Add table rows with smaller font
+        doc.fontSize(6).font('Helvetica');
+        
+        trips.forEach((trip, index) => {
+          // Check if we need a new page (with margin for footer)
+          if (currentY > 750) {
+            doc.addPage();
+            pageNumber++;
+            
+            // Add page header
+            doc.fontSize(9).text(`Trip Report - Page ${pageNumber}`, 30, 30);
+            doc.moveDown(3);
+            
+            currentY = doc.y;
+            currentY = drawHeader(currentY);
+          }
+          
+          // Format trip data safely
+          const rowData = this.formatTripForPdfRow(trip);
+          
+          // Draw row
+          let x = 30;
+          
+          rowData.forEach((data, i) => {
+            doc.text(data, x, currentY, {
+              width: colWidths[i],
+              align: 'center',
+              lineBreak: false
+            });
+            x += colWidths[i];
+          });
+          
+          // Draw row separator
+          const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+          doc.moveTo(30, currentY + 15)
+            .lineTo(30 + totalWidth, currentY + 15)
+            .stroke();
+          
+          currentY += 20;
+        });
+        
+        // Add total at the end
+        if (currentY > 750) {
+          doc.addPage();
+          currentY = 40;
+        }
+        
+        doc.moveDown(2);
+        doc.fontSize(9).font('Helvetica-Bold')
+          .text(`Total Cost: LKR ${summary.totalCost.toFixed(2)}`, { align: 'right' });
+        
+        // Add page numbers
+        const totalPages = pageNumber;
+        for (let i = 1; i <= totalPages; i++) {
+          doc.switchToPage(i - 1);
+          doc.fontSize(8).font('Helvetica')
+            .text(`Page ${i} of ${totalPages}`, 30, doc.page.height - 40, { align: 'center' });
+        }
+        
+        doc.end();
+      } catch (error) {
+        reject(new Error(`PDF generation setup failed: ${error.message}`));
+      }
+    });
+  }
+
+  /**
+   * Format a single trip for PDF row
+   */
+  private formatTripForPdfRow(trip: Trip): string[] {
+    try {
+      // Format date
+      const tripDate = new Date(trip.startDate);
+      const scheduledDate = isNaN(tripDate.getTime())
+        ? 'Invalid Date'
+        : `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear()}`;
+      
+      // Calculate distance safely
+      let distance = '0.0';
+      if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
+        const start = Number(trip.odometerLog.startReading);
+        const end = Number(trip.odometerLog.endReading);
+        if (!isNaN(start) && !isNaN(end)) {
+          distance = (end - start).toFixed(1);
+        }
+      }
+      
+      // Format times
+      const formatTime = (date: Date | string | undefined): string => {
+        if (!date) return 'N/A';
+        try {
+          const d = new Date(date);
+          return isNaN(d.getTime()) ? 'N/A' : 
+            `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } catch {
+          return 'N/A';
+        }
+      };
+      
+      const tripStartedTime = formatTime(trip.odometerLog?.startRecordedAt);
+      const tripEndedTime = formatTime(trip.odometerLog?.endRecordedAt);
+      
+      // Calculate duration
+      let duration = '0.00';
+      if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+        try {
+          const start = new Date(trip.odometerLog.startRecordedAt);
+          const end = new Date(trip.odometerLog.endRecordedAt);
+          if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            duration = dur.toFixed(2);
+          }
+        } catch {
+          duration = '0.00';
+        }
+      }
+      
+      // Format cost safely
+      let costStr = '0.00';
+      if (trip.cost !== undefined && trip.cost !== null) {
+        const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+        costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
+      }
+      
+      // Prepare row data with truncation for display
+      return [
+        scheduledDate,
+        `#${trip.id}`,
+        (trip.tripType || 'Normal').substring(0, 10),
+        (trip.reason || '').substring(0, 20) + (trip.reason && trip.reason.length > 20 ? '...' : ''),
+        (trip.requester?.displayname || 'N/A').substring(0, 15) + (trip.requester?.displayname && trip.requester.displayname.length > 15 ? '...' : ''),
+        (trip.passengerCount || 0).toString(),
+        (trip.endPassengerCount || trip.passengerCount || 0).toString(),
+        (trip.requester?.department?.name || 'N/A').substring(0, 15) + (trip.requester?.department?.name && trip.requester.department.name.length > 15 ? '...' : ''),
+        (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 12) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 12 ? '...' : ''),
+        (trip.odometerLog?.startReading || 0).toString(),
+        (trip.odometerLog?.endReading || 0).toString(),
+        distance,
+        tripStartedTime,
+        tripEndedTime,
+        duration,
+        (trip.approval?.approver1?.displayname || 'N/A').substring(0, 12) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 12 ? '...' : ''),
+        (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 12) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 12 ? '...' : ''),
+        (trip.vehicle?.regNo || 'N/A').substring(0, 10) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 10 ? '...' : ''),
+        (trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A').substring(0, 12) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 12 ? '...' : ''),
+        costStr
+      ];
+    } catch (error) {
+      console.error(`Error formatting trip ${trip.id} for PDF:`, error);
+      // Return placeholder data
+      return Array(20).fill('Error');
+    }
+  }
+
+  /**
+   * Generate Excel report
+   */
+  private async generateExcelReport(trips: Trip[], startDate: Date, endDate: Date): Promise<Buffer> {
+    try {
+      console.log(`📊 Starting Excel generation for ${trips.length} trips`);
+      
+      // Dynamically require ExcelJS
+      let ExcelJS;
+      try {
+        ExcelJS = require('exceljs');
+      } catch (error) {
+        throw new Error('ExcelJS module not found. Please install: npm install exceljs');
+      }
+      
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Trip Report');
+      
+      // Add title
+      worksheet.mergeCells('A1:T1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'Trip Report';
+      titleCell.font = { size: 16, bold: true };
+      titleCell.alignment = { horizontal: 'center' };
+      
+      // Add date range
+      worksheet.mergeCells('A2:T2');
+      const dateRangeCell = worksheet.getCell('A2');
+      dateRangeCell.value = `Date Range: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`;
+      dateRangeCell.font = { size: 11 };
+      dateRangeCell.alignment = { horizontal: 'center' };
+      
+      // Add generated date
+      worksheet.mergeCells('A3:T3');
+      const generatedCell = worksheet.getCell('A3');
+      generatedCell.value = `Generated on: ${new Date().toLocaleString()}`;
+      generatedCell.font = { size: 10 };
+      generatedCell.alignment = { horizontal: 'center' };
+      
+      // Add summary section
+      const summary = this.calculateReportSummary(trips);
+      worksheet.mergeCells('A4:T4');
+      const summaryTitleCell = worksheet.getCell('A4');
+      summaryTitleCell.value = 'SUMMARY';
+      summaryTitleCell.font = { bold: true, size: 12 };
+      
+      // Add summary data
+      worksheet.getCell('A5').value = 'Total Trips:';
+      worksheet.getCell('B5').value = summary.totalTrips;
+      
+      worksheet.getCell('A6').value = 'Total Cost:';
+      worksheet.getCell('B6').value = summary.totalCost;
+      worksheet.getCell('B6').numFmt = '#,##0.00';
+      
+      worksheet.getCell('A7').value = 'Total Distance (km):';
+      worksheet.getCell('B7').value = summary.totalDistance;
+      worksheet.getCell('B7').numFmt = '0.00';
+      
+      worksheet.getCell('A8').value = 'Total Passengers:';
+      worksheet.getCell('B8').value = summary.totalPassengers;
+      
+      // Add spacing
+      worksheet.getRow(9).height = 20;
+      
+      // Define headers
       const headers = [
         'Scheduled Date',
         'Trip ID',
@@ -6331,362 +6813,233 @@ private async generatePdfReport(
         'Actual No of Passengers',
         'Department',
         'Cost Center',
-        'Start meter',
-        'End meter',
-        'Distance (km)',
-        'Started Time',
-        'Ended Time',
-        'Duration (Hrs)',
-        'Primary Approval',
-        'Safety Approval',
+        'Start meter reading',
+        'End meter reading',
+        'Distance Travelled (km)',
+        'Trip Started Time',
+        'Trip Ended Time',
+        'Duration (Hours)',
+        'Primary Approval By',
+        'Safety Approval By',
         'Vehicle',
         'Driver',
         'Cost (LKR)'
       ];
       
-      // Column widths - adjusted for A3 landscape
-      const colWidths = [40, 30, 35, 50, 45, 25, 30, 45, 40, 30, 30, 30, 35, 35, 25, 40, 40, 35, 35, 35];
-      
-      let currentY = doc.y;
-      let pageNumber = 1;
-
-      const drawHeader = (y: number) => {
-        let x = 30;
-        doc.fontSize(7).font('Helvetica-Bold');
-        headers.forEach((header, i) => {
-          doc.text(header, x, y, {
-            width: colWidths[i],
-            align: 'center',
-            lineBreak: false
-          });
-          x += colWidths[i];
-        });
-        
-        // Draw header underline
-        const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-        doc.moveTo(30, y + 20)
-          .lineTo(30 + totalWidth, y + 20)
-          .stroke();
-        
-        return y + 25;
-      };
-
-      // Draw headers on first page
-      currentY = drawHeader(currentY);
-      
-      // Add table rows with smaller font
-      doc.fontSize(6).font('Helvetica');
-      
-      trips.forEach((trip, index) => {
-        // Check if we need a new page
-        if (currentY > 750) {
-          doc.addPage();
-          pageNumber++;
-          
-          // Add page header
-          doc.fontSize(9).text(`Trip Report - Page ${pageNumber}`, 30, 30);
-          doc.moveDown(3);
-          
-          currentY = doc.y;
-          currentY = drawHeader(currentY);
-        }
-        
-        // Calculate values
-        const tripDate = new Date(trip.startDate);
-        const scheduledDate = `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear()}`;
-        
-        // Safely calculate distance
-        let distance = '0';
-        if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
-          const start = Number(trip.odometerLog.startReading);
-          const end = Number(trip.odometerLog.endReading);
-          if (!isNaN(start) && !isNaN(end)) {
-            distance = (end - start).toFixed(1);
-          }
-        }
-        
-        const tripStartedTime = formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
-        const tripEndedTime = formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
-        
-        let duration = '0';
-        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
-          try {
-            const start = new Date(trip.odometerLog.startRecordedAt);
-            const end = new Date(trip.odometerLog.endRecordedAt);
-            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-              const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-              duration = dur.toFixed(2);
-            }
-          } catch {
-            duration = '0';
-          }
-        }
-        
-        // Safely format cost
-        let costStr = '0.00';
-        if (trip.cost !== undefined && trip.cost !== null) {
-          const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
-          costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
-        }
-        
-        // Prepare row data
-        const rowData = [
-          scheduledDate,
-          `#${trip.id}`,
-          trip.tripType || 'Normal',
-          (trip.reason || '').substring(0, 20) + (trip.reason && trip.reason.length > 20 ? '...' : ''),
-          (trip.requester?.displayname || 'N/A').substring(0, 15) + (trip.requester?.displayname && trip.requester.displayname.length > 15 ? '...' : ''),
-          (trip.passengerCount || 0).toString(),
-          (trip.endPassengerCount || trip.passengerCount || 0).toString(),
-          (trip.requester?.department?.name || 'N/A').substring(0, 15) + (trip.requester?.department?.name && trip.requester.department.name.length > 15 ? '...' : ''),
-          (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 12) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 12 ? '...' : ''),
-          (trip.odometerLog?.startReading || 0).toString(),
-          (trip.odometerLog?.endReading || 0).toString(),
-          distance,
-          tripStartedTime,
-          tripEndedTime,
-          duration,
-          (trip.approval?.approver1?.displayname || 'N/A').substring(0, 12) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 12 ? '...' : ''),
-          (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 12) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 12 ? '...' : ''),
-          (trip.vehicle?.regNo || 'N/A').substring(0, 10) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 10 ? '...' : ''),
-          (trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A').substring(0, 12) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 12 ? '...' : ''),
-          costStr
-        ];
-        
-        // Draw row
-        let x = 30;
-        
-        rowData.forEach((data, i) => {
-          doc.text(data, x, currentY, {
-            width: colWidths[i],
-            align: 'center',
-            lineBreak: false
-          });
-          x += colWidths[i];
-        });
-        
-        // Draw row separator
-        const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-        doc.moveTo(30, currentY + 15)
-          .lineTo(30 + totalWidth, currentY + 15)
-          .stroke();
-        
-        currentY += 20;
+      // Add headers to row 11
+      const headerRow = worksheet.getRow(11);
+      headers.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
       });
       
-      // Add total at the end
-      if (currentY > 750) {
-        doc.addPage();
-        currentY = 40;
-      }
+      // Add data rows
+      let rowIndex = 12;
       
-      doc.moveDown(2);
-      doc.fontSize(9).font('Helvetica-Bold')
-        .text(`Total Cost: LKR ${formattedTotalCost}`, { align: 'right' });
+      trips.forEach(trip => {
+        try {
+          const rowData = this.formatTripForExcelRow(trip);
+          const row = worksheet.getRow(rowIndex);
+          
+          rowData.forEach((data, cellIndex) => {
+            const cell = row.getCell(cellIndex + 1);
+            cell.value = data;
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+            
+            // Format numbers
+            if (cellIndex >= 5 && cellIndex <= 11) { // Passenger counts, meter readings, distance
+              cell.numFmt = '0';
+            } else if (cellIndex === 14) { // Duration
+              cell.numFmt = '0.00';
+            } else if (cellIndex === 19) { // Cost
+              cell.numFmt = '#,##0.00';
+            }
+          });
+          
+          rowIndex++;
+        } catch (error) {
+          console.error(`Error adding trip ${trip.id} to Excel:`, error);
+          // Skip this trip
+        }
+      });
       
-      // Add page numbers
-      const totalPages = pageNumber;
-      for (let i = 1; i <= totalPages; i++) {
-        doc.switchToPage(i - 1);
-        doc.fontSize(8).font('Helvetica')
-          .text(`Page ${i} of ${totalPages}`, 30, doc.page.height - 40, { align: 'center' });
-      }
+      // Add total cost row
+      const totalRow = worksheet.getRow(rowIndex + 1);
       
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-private async generateExcelReport(trips: Trip[], startDate: Date, endDate: Date): Promise<Buffer> {
-  // For Excel generation, you'll need to install exceljs
-  // npm install exceljs
-  
-  const ExcelJS = require('exceljs');
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Trip Report');
-  
-  // Add title
-  worksheet.mergeCells('A1:T1');
-  const titleCell = worksheet.getCell('A1');
-  titleCell.value = 'Trip Report';
-  titleCell.font = { size: 16, bold: true };
-  titleCell.alignment = { horizontal: 'center' };
-  
-  // Add date range
-  worksheet.mergeCells('A2:T2');
-  const dateRangeCell = worksheet.getCell('A2');
-  dateRangeCell.value = `Date Range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`;
-  dateRangeCell.font = { size: 11 };
-  dateRangeCell.alignment = { horizontal: 'center' };
-  
-  // Add generated date
-  worksheet.mergeCells('A3:T3');
-  const generatedCell = worksheet.getCell('A3');
-  generatedCell.value = `Generated on: ${new Date().toLocaleString()}`;
-  generatedCell.font = { size: 10 };
-  generatedCell.alignment = { horizontal: 'center' };
-  
-  // Define headers
-  const headers = [
-    'Scheduled Date',
-    'Trip ID',
-    'Trip Type',
-    'Reason',
-    'Requested by',
-    'No of Passengers',
-    'Actual No of Passengers',
-    'Department',
-    'Cost Center',
-    'Start meter reading',
-    'End meter reading',
-    'Distance Travelled (km)',
-    'Trip Started Time',
-    'Trip Ended Time',
-    'Duration (Hours)',
-    'Primary Approval By',
-    'Safety Approval By',
-    'Vehicle',
-    'Driver',
-    'Cost (LKR)'
-  ];
-  
-  // Add headers to row 5
-  const headerRow = worksheet.getRow(5);
-  headers.forEach((header, index) => {
-    const cell = headerRow.getCell(index + 1);
-    cell.value = header;
-    cell.font = { bold: true };
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' }
-    };
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' }
-    };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-  });
-  
-  // Add data rows
-  let rowIndex = 6;
-  
-  trips.forEach(trip => {
-    const tripDate = new Date(trip.startDate);
-    const scheduledDate = `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
-    
-    const distance = trip.odometerLog?.startReading && trip.odometerLog?.endReading
-      ? trip.odometerLog.endReading - trip.odometerLog.startReading
-      : 0;
-    
-    const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
-    const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
-    
-    let duration = 0;
-    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
-      duration = (trip.odometerLog.endRecordedAt.getTime() - trip.odometerLog.startRecordedAt.getTime()) / (1000 * 60 * 60);
-      duration = parseFloat(duration.toFixed(2));
-    }
-    
-    const rowData = [
-      scheduledDate,
-      `#${trip.id.toString().padStart(2, '0')}`,
-      trip.tripType || 'Normal',
-      trip.reason || '',
-      trip.requester?.displayname || '',
-      trip.passengerCount,
-      trip.endPassengerCount || trip.passengerCount,
-      trip.requester?.department?.name || '',
-      trip.requester?.department?.costCenter?.name || '',
-      trip.odometerLog?.startReading || 0,
-      trip.odometerLog?.endReading || 0,
-      distance,
-      tripStartedTime,
-      tripEndedTime,
-      duration,
-      trip.approval?.approver1?.displayname || '',
-      trip.approval?.safetyApprover?.displayname || '',
-      trip.vehicle?.regNo || '',
-      trip.vehicle?.assignedDriverPrimary?.displayname || '',
-      trip.cost || 0
-    ];
-    
-    const row = worksheet.getRow(rowIndex);
-    rowData.forEach((data, cellIndex) => {
-      const cell = row.getCell(cellIndex + 1);
-      cell.value = data;
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
+      // Merge cells for "Total Cost" label
+      worksheet.mergeCells(`A${rowIndex + 1}:S${rowIndex + 1}`);
+      
+      const totalLabelCell = totalRow.getCell(1);
+      totalLabelCell.value = 'Total Cost';
+      totalLabelCell.font = { bold: true };
+      totalLabelCell.alignment = { horizontal: 'right' };
+      
+      const totalCost = summary.totalCost;
+      const totalCostCell = totalRow.getCell(20); // Column T
+      totalCostCell.value = totalCost;
+      totalCostCell.font = { bold: true };
+      totalCostCell.numFmt = '#,##0.00';
+      totalCostCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFE0E0' }
       };
       
-      // Format numbers
-      if (cellIndex >= 5 && cellIndex <= 11) { // Passenger counts, meter readings, distance
-        cell.numFmt = '0';
-      } else if (cellIndex === 14) { // Duration
-        cell.numFmt = '0.00';
-      } else if (cellIndex === 19) { // Cost
-        cell.numFmt = '#,##0.00';
+      // Apply borders to total row
+      for (let i = 1; i <= 20; i++) {
+        const cell = totalRow.getCell(i);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
       }
-    });
-    
-    rowIndex++;
-  });
-  
-  // Add total cost row
-  const totalRow = worksheet.getRow(rowIndex + 1);
-  
-  // Merge cells for "Total Cost" label
-  worksheet.mergeCells(`A${rowIndex + 1}:S${rowIndex + 1}`);
-  
-  const totalLabelCell = totalRow.getCell(1);
-  totalLabelCell.value = 'Total Cost';
-  totalLabelCell.font = { bold: true };
-  totalLabelCell.alignment = { horizontal: 'right' };
-  
-  const totalCost = trips.reduce((sum, trip) => sum + (trip.cost || 0), 0);
-  const totalCostCell = totalRow.getCell(20); // Column T
-  totalCostCell.value = totalCost;
-  totalCostCell.font = { bold: true };
-  totalCostCell.numFmt = '#,##0.00';
-  totalCostCell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFFFE0E0' }
-  };
-  
-  // Apply borders to total row
-  for (let i = 1; i <= 20; i++) {
-    const cell = totalRow.getCell(i);
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' }
-    };
+      
+      // Auto-fit columns
+      worksheet.columns.forEach((column, index) => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const columnLength = cell.value ? cell.value.toString().length : 0;
+          if (columnLength > maxLength) {
+            maxLength = columnLength;
+          }
+        });
+        column.width = Math.min(Math.max(maxLength + 2, 10), 30);
+      });
+      
+      // Write to buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      console.log(`✅ Excel generated: ${buffer.length} bytes`);
+      return Buffer.from(buffer);
+      
+    } catch (error) {
+      throw new Error(`Excel generation failed: ${error.message}`);
+    }
   }
-  
-  // Auto-fit columns
-  worksheet.columns.forEach(column => {
-    let maxLength = 0;
-    column.eachCell({ includeEmpty: true }, cell => {
-      const columnLength = cell.value ? cell.value.toString().length : 0;
-      if (columnLength > maxLength) {
-        maxLength = columnLength;
-      }
-    });
-    column.width = Math.min(maxLength + 2, 30);
-  });
-  
-  // Write to buffer
-  return await workbook.xlsx.writeBuffer();
-}
 
+  /**
+   * Format a single trip for Excel row
+   */
+  private formatTripForExcelRow(trip: Trip): any[] {
+    try {
+      // Format date as MM/DD/YYYY
+      const tripDate = new Date(trip.startDate);
+      const scheduledDate = isNaN(tripDate.getTime())
+        ? 'Invalid Date'
+        : `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+      
+      // Calculate distance safely
+      let distance = 0;
+      if (trip.odometerLog?.startReading !== undefined && 
+          trip.odometerLog?.endReading !== undefined) {
+        const start = Number(trip.odometerLog.startReading);
+        const end = Number(trip.odometerLog.endReading);
+        if (!isNaN(start) && !isNaN(end)) {
+          distance = end - start;
+        }
+      }
+      
+      const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+      const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+      
+      // Calculate duration safely
+      let duration = 0;
+      if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+        try {
+          const start = new Date(trip.odometerLog.startRecordedAt);
+          const end = new Date(trip.odometerLog.endRecordedAt);
+          if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            duration = parseFloat(duration.toFixed(2));
+          }
+        } catch {
+          duration = 0;
+        }
+      }
+      
+      // Safely parse cost
+      let cost = 0;
+      if (trip.cost !== undefined && trip.cost !== null) {
+        const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+        cost = isNaN(costNum) ? 0 : parseFloat(costNum.toFixed(2));
+      }
+      
+      return [
+        scheduledDate,
+        `#${trip.id.toString().padStart(2, '0')}`,
+        trip.tripType || 'Normal',
+        trip.reason || '',
+        trip.requester?.displayname || '',
+        trip.passengerCount || 0,
+        trip.endPassengerCount || trip.passengerCount || 0,
+        trip.requester?.department?.name || '',
+        trip.requester?.department?.costCenter?.name || '',
+        trip.odometerLog?.startReading || 0,
+        trip.odometerLog?.endReading || 0,
+        distance,
+        tripStartedTime,
+        tripEndedTime,
+        duration,
+        trip.approval?.approver1?.displayname || '',
+        trip.approval?.safetyApprover?.displayname || '',
+        trip.vehicle?.regNo || '',
+        trip.vehicle?.assignedDriverPrimary?.displayname || '',
+        cost
+      ];
+    } catch (error) {
+      console.error(`Error formatting trip ${trip.id} for Excel:`, error);
+      return Array(20).fill('Error');
+    }
+  }
+
+  /**
+   * Utility methods
+   */
+
+  private formatDateForDisplay(date: Date): string {
+    try {
+      return date.toLocaleDateString();
+    } catch {
+      return 'Invalid Date';
+    }
+  }
+
+  private formatTimeForDisplay(date: Date | undefined): string {
+    if (!date) return '';
+    
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      
+      const hours = d.getHours();
+      const minutes = d.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, '0');
+      
+      return `${displayHours}:${displayMinutes} ${ampm}`;
+    } catch {
+      return '';
+    }
+  }
 
 }

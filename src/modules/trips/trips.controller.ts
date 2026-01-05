@@ -15,7 +15,8 @@ import {
   ForbiddenException,
   BadRequestException,
   Res,
-  InternalServerErrorException
+  InternalServerErrorException,
+  NotFoundException
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
@@ -535,8 +536,6 @@ async getTripWithInstances(@Param('id', ParseIntPipe) id: number) {
 }
 
   // Add to TripsController class
-
-
 @Post('report/download')
 @Roles(UserRole.SYSADMIN, UserRole.HR)
 @ApiOperation({ summary: 'Download trip report in PDF/Excel format' })
@@ -573,23 +572,42 @@ async downloadTripReport(
   console.log(`📋 Report request received: fromDate=${fromDate}, toDate=${toDate}, format=${format}`);
   
   try {
-    // Parse dates - expecting YYYY-MM-DD format
-    const startDate = new Date(fromDate + 'T00:00:00'); // Add time component for local time
-    const endDate = new Date(toDate + 'T23:59:59'); // Add time component for end of day
+    // Validate request body
+    if (!fromDate || !toDate || !format) {
+      throw new BadRequestException('Missing required parameters: fromDate, toDate, or format');
+    }
     
-    // Validate dates
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      console.error(`❌ Invalid date format: fromDate=${fromDate}, toDate=${toDate}`);
-      throw new BadRequestException('Invalid date format. Use YYYY-MM-DD format.');
+    // Validate format
+    if (!['pdf', 'excel'].includes(format.toLowerCase())) {
+      throw new BadRequestException('Invalid format. Must be either "pdf" or "excel"');
+    }
+    
+    // Parse and validate dates
+    const startDate = new Date(fromDate + 'T00:00:00');
+    const endDate = new Date(toDate + 'T23:59:59');
+    
+    if (isNaN(startDate.getTime())) {
+      throw new BadRequestException(`Invalid fromDate: ${fromDate}. Use YYYY-MM-DD format.`);
+    }
+    
+    if (isNaN(endDate.getTime())) {
+      throw new BadRequestException(`Invalid toDate: ${toDate}. Use YYYY-MM-DD format.`);
     }
     
     if (startDate > endDate) {
-      throw new BadRequestException('Start date must be before end date');
+      throw new BadRequestException('Start date must be before or equal to end date');
     }
     
-    console.log(`📋 Parsed dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}`);
+    // Validate date range (e.g., don't allow requests for more than 1 year)
+    const maxDays = 365;
+    const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDifference > maxDays) {
+      throw new BadRequestException(`Date range cannot exceed ${maxDays} days`);
+    }
     
-    // Get report data
+    console.log(`📋 Validated dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}, days=${daysDifference}`);
+    
+    // Generate report
     console.log(`🔄 Generating ${format.toUpperCase()} report...`);
     const reportData = await this.tripsService.generateTripReport(
       startDate,
@@ -598,44 +616,74 @@ async downloadTripReport(
     );
     
     if (!reportData || reportData.length === 0) {
-      throw new BadRequestException('No data found for the selected date range');
+      throw new NotFoundException('No data available for the selected date range');
     }
     
     console.log(`✅ Report generated successfully. Size: ${reportData.length} bytes`);
     
-    // Set appropriate headers based on format
-    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const filename = `trip-report-${timestamp}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+    // Set response headers
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `trip-report-${fromDate}-to-${toDate}-${timestamp}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
     
-    if (format === 'pdf') {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Length', reportData.length);
-    } else {
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Length', reportData.length);
-    }
+    const headers = {
+      'Content-Type': format === 'pdf' 
+        ? 'application/pdf' 
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': reportData.length.toString(),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    };
     
-    // Send the binary data
+    Object.entries(headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    
+    // Send binary data
     res.send(reportData);
     
   } catch (error) {
-    console.error('❌ Error generating report:', error);
-    console.error('📋 Error stack:', error.stack);
+    console.error('❌ Error in downloadTripReport:', error);
     
-    if (error instanceof BadRequestException) {
+    // Map specific errors to appropriate HTTP status codes
+    if (error instanceof BadRequestException || 
+        error instanceof NotFoundException) {
       throw error;
     }
     
-    // Check for specific errors
-    if (error.message && error.message.includes('Cannot find module')) {
-      console.error('⚠️ Missing module. Please install: npm install pdfkit exceljs');
-      throw new InternalServerErrorException('Report generation module not found. Please install required packages.');
+    // Handle module not found errors
+    if (error.message && 
+        (error.message.includes('Cannot find module') || 
+         error.message.includes('require is not defined'))) {
+      console.error('⚠️ Missing required dependencies. Please install: npm install pdfkit exceljs');
+      throw new InternalServerErrorException({
+        message: 'Report generation module not configured properly',
+        code: 'MODULE_NOT_FOUND',
+        details: 'Please install required packages: pdfkit and exceljs'
+      });
     }
     
-    throw new InternalServerErrorException(`Failed to generate report: ${error.message}`);
+    // Handle PDF/Excel generation errors
+    if (error.message && 
+        (error.message.includes('PDF') || 
+         error.message.includes('Excel') || 
+         error.message.includes('worksheet') ||
+         error.message.includes('font'))) {
+      throw new InternalServerErrorException({
+        message: 'Failed to generate report file',
+        code: 'REPORT_GENERATION_ERROR',
+        details: error.message
+      });
+    }
+    
+    // Generic error
+    throw new InternalServerErrorException({
+      message: 'An unexpected error occurred while generating the report',
+      code: 'INTERNAL_SERVER_ERROR',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-
 }
+
 }

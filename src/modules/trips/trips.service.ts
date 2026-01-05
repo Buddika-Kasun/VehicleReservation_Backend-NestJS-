@@ -6583,6 +6583,29 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
       ];
       
       // FIXED: Adjusted column widths for A4 landscape (total width ~790)
+      /*const colWidths = [
+        30,  // Date
+        25,  // Trip ID
+        25,  // Type
+        50,  // Reason
+        45,  // Requester
+        25,  // Passengers
+        25,  // Actual Pass
+        40,  // Department
+        35,  // Cost Center
+        30,  // Start Meter
+        30,  // End Meter
+        30,  // Distance
+        35,  // Start Time
+        35,  // End Time
+        25,  // Duration
+        40,  // Prim. Approver
+        40,  // Safety Approver
+        35,  // Vehicle
+        35,  // Driver
+        35   // Cost
+      ];*/
+
       const colWidths = [
         30,  // Date
         25,  // Trip ID
@@ -6852,7 +6875,7 @@ private formatTripForPdfRow(trip: Trip): string[] {
       (trip.approval?.approver1?.displayname || 'N/A').substring(0, 10) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 10 ? '..' : ''), // 15: Prim. Approver
       (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 10) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 10 ? '..' : ''), // 16: Safety Approver
       (trip.vehicle?.regNo || 'N/A').substring(0, 8) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 8 ? '..' : ''), // 17: Vehicle
-      (trip.primaryDriver?.displayname || 'N/A').substring(0, 10) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 10 ? '..' : ''), // 18: Driver
+      (trip.primaryDriver?.displayname || 'N/A').substring(0, 10) + (trip.primaryDriver.displayname && trip.primaryDriver.displayname.length > 10 ? '..' : ''), // 18: Driver
       costStr // 19: Cost (no currency symbol for right alignment)
     ];
   } catch (error) {

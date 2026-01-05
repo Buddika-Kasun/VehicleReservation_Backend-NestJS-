@@ -6852,7 +6852,7 @@ private formatTripForPdfRow(trip: Trip): string[] {
       (trip.approval?.approver1?.displayname || 'N/A').substring(0, 10) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 10 ? '..' : ''), // 15: Prim. Approver
       (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 10) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 10 ? '..' : ''), // 16: Safety Approver
       (trip.vehicle?.regNo || 'N/A').substring(0, 8) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 8 ? '..' : ''), // 17: Vehicle
-      (trip.primaryDriver.displayname || 'N/A').substring(0, 10) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 10 ? '..' : ''), // 18: Driver
+      (trip.primaryDriver?.displayname || 'N/A').substring(0, 10) + (trip.vehicle?.assignedDriverPrimary?.displayname && trip.vehicle.assignedDriverPrimary.displayname.length > 10 ? '..' : ''), // 18: Driver
       costStr // 19: Cost (no currency symbol for right alignment)
     ];
   } catch (error) {

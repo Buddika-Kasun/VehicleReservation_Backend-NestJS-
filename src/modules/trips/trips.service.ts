@@ -6881,8 +6881,8 @@ private formatTripForPdfRow(trip: Trip): string[] {
       (trip.endPassengerCount || trip.passengerCount || 0).toString(), // 6: Actual Pass
       (trip.requester?.department?.name || 'N/A').substring(0, 10) + (trip.requester?.department?.name && trip.requester.department.name.length > 10 ? '..' : ''), // 7: Department
       (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 8) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 8 ? '..' : ''), // 8: Cost Center
-      (trip.odometerLog?.startReading.toFixed(0) || 0).toString(), // 9: Start Meter
-      (trip.odometerLog?.endReading.toFixed(0) || 0).toString(), // 10: End Meter
+      Math.floor(trip.odometerLog?.startReading || 0).toString(), // 9: Start Meter
+      Math.floor(trip.odometerLog?.endReading || 0).toString(), // 10: End Meter
       distance, // 11: Distance
       tripStartedTime, // 12: Start Time
       tripEndedTime, // 13: End Time
@@ -7155,8 +7155,8 @@ private formatTripForPdfRow(trip: Trip): string[] {
         trip.endPassengerCount || trip.passengerCount || 0,
         trip.requester?.department?.name || '',
         trip.requester?.department?.costCenter?.name || '',
-        trip.odometerLog?.startReading.toFixed(0) || 0,
-        trip.odometerLog?.endReading.toFixed(0) || 0,
+        Math.floor(trip.odometerLog?.startReading || 0),
+        Math.floor(trip.odometerLog?.endReading || 0),
         distance,
         tripStartedTime,
         tripEndedTime,

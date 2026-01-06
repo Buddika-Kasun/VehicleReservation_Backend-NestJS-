@@ -30,6 +30,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { FirebaseModule } from './infra/firebase/firebase.module';
 import { WsModule } from './ws/ws.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ChecklistModule } from './modules/checklist/checklist.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     HealthModule,
     NotificationsModule,
     DashboardModule,
+    ChecklistModule
   ],
 })
 export class AppModule {}

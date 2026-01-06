@@ -6437,6 +6437,20 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
     }).filter(trip => !trip.error); // Filter out errored trips
   }
 
+  // Helper function to convert decimal hours to hours and minutes
+private formatDuration(decimalHours: number): string {
+    const hours = Math.floor(decimalHours);
+    const minutes = Math.round((decimalHours - hours) * 60);
+    
+    if (hours === 0) {
+        return `${minutes} min`;
+    } else if (minutes === 0) {
+        return `${hours} hr`;
+    } else {
+        return `${hours} hr ${minutes} min`;
+    }
+}
+
   private async generatePdfReport(
   trips: Trip[], 
   startDate: Date, 
@@ -6526,29 +6540,29 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
       let currentY = doc.y + 5;
       
       // First column
-      doc.text(`Total Trips:`, startX, currentY);
-      doc.text(`${summary.totalTrips}`, startX + 60, currentY);
+      doc.text(`Total Trips`, startX, currentY);
+      doc.text(`: ${summary.totalTrips}`, startX + 60, currentY);
       
       currentY += 15;
-      doc.text(`Total Cost:`, startX, currentY);
-      doc.text(`LKR ${summary.totalCost.toFixed(2)}`, startX + 60, currentY);
+      doc.text(`Total Cost`, startX, currentY);
+      doc.text(`: LKR ${summary.totalCost.toFixed(2)}`, startX + 60, currentY);
       
       currentY += 15;
-      doc.text(`Total Distance:`, startX, currentY);
-      doc.text(`${summary.totalDistance.toFixed(2)} km`, startX + 60, currentY);
+      doc.text(`Total Distance`, startX, currentY);
+      doc.text(`: ${summary.totalDistance.toFixed(2)} km`, startX + 60, currentY);
       
       // Second column
       currentY = doc.y - 35; // Reset to first row
-      doc.text(`Avg Duration:`, startX + 180, currentY);
-      doc.text(`${summary.averageDuration.toFixed(2)} hrs`, startX + 240, currentY);
+      doc.text(`Avg Duration`, startX + 180, currentY);
+      doc.text(`: ${this.formatDuration(summary.averageDuration)}`, startX + 260, currentY);
       
       currentY += 15;
-      doc.text(`Total Passengers:`, startX + 180, currentY);
-      doc.text(`${summary.totalPassengers}`, startX + 240, currentY);
+      doc.text(`Total Passengers`, startX + 180, currentY);
+      doc.text(`: ${summary.totalPassengers}`, startX + 260, currentY);
       
       currentY += 15;
-      doc.text(`Avg Cost/Trip:`, startX + 180, currentY);
-      doc.text(`LKR ${summary.averageCost.toFixed(2)}`, startX + 240, currentY);
+      doc.text(`Avg Cost/Trip`, startX + 180, currentY);
+      doc.text(`: LKR ${summary.averageCost.toFixed(2)}`, startX + 260, currentY);
       
       // Set Y position after summary
       doc.y = currentY + 25;
@@ -6867,8 +6881,8 @@ private formatTripForPdfRow(trip: Trip): string[] {
       (trip.endPassengerCount || trip.passengerCount || 0).toString(), // 6: Actual Pass
       (trip.requester?.department?.name || 'N/A').substring(0, 10) + (trip.requester?.department?.name && trip.requester.department.name.length > 10 ? '..' : ''), // 7: Department
       (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 8) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 8 ? '..' : ''), // 8: Cost Center
-      (trip.odometerLog?.startReading || 0).toString(), // 9: Start Meter
-      (trip.odometerLog?.endReading || 0).toString(), // 10: End Meter
+      Math.floor(trip.odometerLog?.startReading || 0).toString(), // 9: Start Meter
+      Math.floor(trip.odometerLog?.endReading || 0).toString(), // 10: End Meter
       distance, // 11: Distance
       tripStartedTime, // 12: Start Time
       tripEndedTime, // 13: End Time
@@ -7141,8 +7155,8 @@ private formatTripForPdfRow(trip: Trip): string[] {
         trip.endPassengerCount || trip.passengerCount || 0,
         trip.requester?.department?.name || '',
         trip.requester?.department?.costCenter?.name || '',
-        trip.odometerLog?.startReading || 0,
-        trip.odometerLog?.endReading || 0,
+        Math.floor(trip.odometerLog?.startReading || 0),
+        Math.floor(trip.odometerLog?.endReading || 0),
         distance,
         tripStartedTime,
         tripEndedTime,

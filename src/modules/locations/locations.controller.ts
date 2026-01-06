@@ -4,10 +4,11 @@ import { LocationSearchDto } from './dto/location-search.dto';
 import { ReverseGeocodeDto } from './dto/reverse-geocode.dto'
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @Controller('locations')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-//@ApiBearerAuth()
 export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 

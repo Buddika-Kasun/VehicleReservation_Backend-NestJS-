@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, MoreThan, Repository } from 'typeorm';
-import { Company } from '../../database/entities/company.entity';
-import { ResponseService } from '../../common/services/response.service';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { ResponseService } from 'src/common/services/response.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
-import { CostConfiguration } from 'src/database/entities/cost-configuration.entity';
+import { CostConfiguration } from 'src/infra/database/entities/cost-configuration.entity';
 import { CreateCostConfigurationDto, UpdateCostConfigurationDto } from './dto/cost-configuration-request.dto';
 
 @Injectable()

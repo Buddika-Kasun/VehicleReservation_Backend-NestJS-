@@ -2,17 +2,18 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, ILike, Not, Repository } from 'typeorm';
-import { Status, User, UserRole } from 'src/database/entities/user.entity';
+import { Status, User, UserRole } from 'src/infra/database/entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
-import { Company } from 'src/database/entities/company.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
 import { hash } from 'src/common/utils/hash.util';
 import { ResponseService } from 'src/common/services/response.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { sanitizeUser, sanitizeUsers } from 'src/common/utils/sanitize-user.util';
 import { RegisterResponseDto, UserData } from '../auth/dto/authResponse.dto';
-import { Department } from 'src/database/entities/department.entity';
+import { Department } from 'src/infra/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
+import { EventBusService } from 'src/infra/redis/event-bus.service';
 
 @Injectable()
 export class UsersService {
@@ -22,6 +23,7 @@ export class UsersService {
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private readonly responseService: ResponseService,
+    private readonly eventBus: EventBusService,
   ) {}
 
   private async validateRequiredFields(dto: CreateUserDto): Promise<void> {
@@ -35,7 +37,7 @@ export class UsersService {
     if (!password) missingFields.push('password');
 
     // Email is required for non-driver/security roles
-    if (role !== UserRole.DRIVER && role !== UserRole.SECURITY && !email) {
+    if (role !== UserRole.DRIVER && role !== UserRole.SECURITY && role !== UserRole.SUPERVISOR && !email) {
       missingFields.push('email');
     }
 
@@ -119,15 +121,30 @@ export class UsersService {
 
     const sanitizedUser: UserData = sanitizeUser(savedUser);
 
-    return this.responseService.created(
+    const response = this.responseService.created(
       'User registered successfully. Please wait for admin approval.',
       {
         user: sanitizedUser,
       }
     );
+
+    try {
+      // Publish USER.CREATE event
+    await this.eventBus.publish('USER', 'CREATE', {
+      userId: savedUser.id,
+      username: savedUser.displayname,
+      email: savedUser.email,
+      role: savedUser.role,
+      companyId: savedUser.company?.id,
+    });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+    return response;
   }
 
-  async approveUser(id: number, dto: ApproveUserDto) {
+  async approveUser(id: number, dto: ApproveUserDto, reqUser: User) {
     const user = await this.userRepo.findOne({
       where: { id },
       relations: ['department'],
@@ -153,6 +170,8 @@ export class UsersService {
 
     const departmentId = Number(dto.departmentId);
 
+    const oldStatus = user.isApproved;
+
     user.isApproved = Status.APPROVED;
     user.isActive = true;
     user.department.id = departmentId;
@@ -162,6 +181,13 @@ export class UsersService {
 
     const sanitizedUser = sanitizeUser(approvedUser);
 
+    try {
+      //await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
+      // If user has auth level 3, might want to notify them differently or just generic approval
+    } catch (e) {
+      console.error('Failed to send approval notification', e);
+    }
+
     return this.responseService.success(
       'User approved successfully',
       {
@@ -169,6 +195,86 @@ export class UsersService {
       }
     );
   }
+
+  async getUsersWithAuthLevelThree(): Promise<User[]> {
+    return this.userRepo.find({
+      where: {
+        authenticationLevel: 3,
+        isActive: true,
+        role: Not(UserRole.SYSADMIN), // Exclude sysadmin if needed
+      },
+      relations: ['department', 'company'],
+    });
+  }
+
+  /*
+  async getApprovers(): Promise<User[]> {
+    // Users who can approve: HR, ADMIN, SYSADMIN, and users with authLevel == 3
+    return this.userRepo.find({
+      where: [
+        { role: UserRole.HR, isActive: true, isApproved: Status.APPROVED },
+        { role: UserRole.ADMIN, isActive: true, isApproved: Status.APPROVED },
+        { role: UserRole.SYSADMIN, isActive: true, isApproved: Status.APPROVED },
+        { authenticationLevel: 3, isActive: true, isApproved: Status.APPROVED },
+      ],
+      relations: ['department', 'company'],
+    });
+  }
+  */
+  // Replace your getApprovers method in UsersService with this:
+
+async getApprovers(): Promise<User[]> {
+  try {
+    // Get users who can approve: HR, ADMIN, SYSADMIN, and users with authLevel == 3
+    const approvers = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere(
+        '(user.role IN (:...roles) OR user.authenticationLevel = :authLevel)',
+        {
+          roles: [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN],
+          authLevel: 3,
+        }
+      )
+      .leftJoinAndSelect('user.department', 'department')
+      .leftJoinAndSelect('user.company', 'company')
+      .getMany();
+
+    /*
+    this.logger.log(`Found ${approvers.length} approvers:`, approvers.map(a => ({
+      id: a.id,
+      username: a.username,
+      role: a.role,
+      authLevel: a.authenticationLevel,
+    })));
+    */
+
+    return approvers;
+  } catch (error) {
+    //this.logger.error('Error fetching approvers:', error);
+    throw error;
+  }
+}
+
+// Also add this helper method to check if a user is an approver
+async isApprover(userId: number): Promise<boolean> {
+  try {
+    const user = await this.userRepo.findOne({
+      where: { id: userId, isActive: true, isApproved: Status.APPROVED },
+    });
+
+    if (!user) return false;
+
+    return (
+      [UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN].includes(user.role) ||
+      user.authenticationLevel === 3
+    );
+  } catch (error) {
+    //this.logger.error('Error checking if user is approver:', error);
+    return false;
+  }
+}
 
   async disapproveUser(id: number) {
     const user = await this.userRepo.findOne({ where: { id } });
@@ -186,6 +292,12 @@ export class UsersService {
     const disapprovedUser = await this.userRepo.save(user);
 
     const sanitizedUser = sanitizeUser(disapprovedUser);
+
+    try {
+      //await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
+    } catch (e) {
+      console.error('Failed to send rejection notification', e);
+    }
 
     return this.responseService.success(
       'User disapproved successfully',
@@ -362,7 +474,10 @@ export class UsersService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.company', 'company')
       .leftJoinAndSelect('user.department', 'department')
-      .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      //.where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .where('user.role IN (:...roles)', { 
+        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE] 
+      })
       .andWhere('user.isApproved = :status', { status: Status.APPROVED })
       .andWhere('user.authenticationLevel = :authLevel', { authLevel: 0 }) // Add this line
       .orderBy('user.createdAt', 'DESC')
@@ -400,7 +515,7 @@ export class UsersService {
     );
   }
 
-  async setUserApprove(id: number, state: boolean) {
+  async setUserApprove(id: number, state: boolean, reqUser: User) {
 
     const user = await this.userRepo.findOne({
       where: { id: id }
@@ -415,6 +530,8 @@ export class UsersService {
       );
     }
 
+    const oldAuthLevel = user.authenticationLevel;
+
     if(state === true) {
       user.authenticationLevel = 3;
     }
@@ -423,6 +540,7 @@ export class UsersService {
     }
 
     const savedUser = await this.userRepo.save(user);
+
 
     const minimalUser = {
       id: savedUser.id,
@@ -463,6 +581,68 @@ export class UsersService {
     );
   }
 
+  async checkTripCreationEligibility(userId: number): Promise<any> {
+  // Get current user with department
+  const currentUser = await this.userRepo.findOne({
+    where: { id: userId },
+    relations: ['department', 'department.head'], // 'head' instead of 'hod' based on your code
+  });
+
+  if (!currentUser) {
+    return this.responseService.error(
+      'User not found',
+      null,
+    );
+  }
+
+  if (!currentUser.department) {
+    return this.responseService.error(
+      'User does not belong to any department',
+      null,
+    );
+  }
+
+  // Check for HOD in the same department
+  const hodExists = currentUser.department.head;
+
+  if (!hodExists) {
+    return this.responseService.error(
+      'This department does not have a HOD assigned',
+    );
+  }
+
+  // Check for at least one Supervisor in the SAME DEPARTMENT
+  const supervisors = await this.userRepo.find({
+    where: {
+      role: UserRole.SUPERVISOR,
+      isApproved: Status.APPROVED,
+    },
+  });
+
+  const supervisorExists = supervisors.length > 0;
+
+  if (!supervisorExists) {
+    return this.responseService.error(
+      'No approved supervisors found',
+    );
+  }
+
+  const canCreateTrip = !!(hodExists && supervisorExists);
+
+  return this.responseService.success(
+    'You can create trips',
+    {
+      canCreateTrip: true,
+      department: {
+        id: currentUser.department.id,
+        name: currentUser.department.name,
+        hodName: hodExists.displayname || 'HOD',
+      },
+      supervisorCount: 1, // or query actual count
+    }
+  );
+}
+
   async findByEmail(email: string) {
     const user = await this.userRepo.findOne({ where: { email, role: Not(UserRole.SYSADMIN) } });
     if (!user) {
@@ -502,7 +682,7 @@ export class UsersService {
   }
 
   async findAuthByUsername(username: string) {
-    const user = await this.userRepo.findOne({ where: { username }, relations: ['company'] });
+    const user = await this.userRepo.findOne({ where: { username }, relations: ['company', 'department'] });
 
     return user;
   }

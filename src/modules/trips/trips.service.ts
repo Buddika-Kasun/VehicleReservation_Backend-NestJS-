@@ -1,18 +1,24 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, InternalServerErrorException, HttpException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ResponseService } from 'src/common/services/response.service';
-import { Approval, StatusApproval } from 'src/database/entities/approval.entity';
-import { OdometerLog } from 'src/database/entities/odometer-log.entity';
-import { Trip, TripStatus, RepetitionType, PassengerType } from 'src/database/entities/trip.entity';
-import { TripLocation } from 'src/database/entities/trip-location.entity';
-import { Status, User, UserRole } from 'src/database/entities/user.entity';
-import { Vehicle } from 'src/database/entities/vehicle.entity';
-import { Repository, In, Between, MoreThanOrEqual, LessThanOrEqual, Brackets } from 'typeorm';
+import { Approval, StatusApproval } from 'src/infra/database/entities/approval.entity';
+import { OdometerLog } from 'src/infra/database/entities/odometer-log.entity';
+import { Trip, TripStatus, RepetitionType, PassengerType, TripType } from 'src/infra/database/entities/trip.entity';
+import { TripLocation } from 'src/infra/database/entities/trip-location.entity';
+import { Status, User, UserRole } from 'src/infra/database/entities/user.entity';
+import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
+import { Repository, In, Between, MoreThanOrEqual, LessThanOrEqual, Brackets, Not } from 'typeorm';
 import { AvailableVehiclesResponseDto, AvailableVehicleDto, TripResponseDto } from './dto/trip-response.dto';
-import { AvailableVehiclesRequestDto, CreateTripDto } from './dto/create-trip.dto';
+import { AvailableVehiclesRequestDto, CreateTripDto, ReviewAvailableVehiclesRequest, ScheduleDataDto } from './dto/create-trip.dto';
 import { TripListRequestDto } from './dto/trip-list-request.dto';
-import { ApproverType } from 'src/database/entities/approval.entity';
-import { ApprovalConfig } from 'src/database/entities/approval-configuration.entity';
+import { ApproverType } from 'src/infra/database/entities/approval.entity';
+import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
+import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
+import { scheduled } from 'rxjs';
+import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
+import * as ExcelJS from 'exceljs';
+import { Buffer } from 'buffer';
+import * as PDFDocument from 'pdfkit';
 
 @Injectable()
 export class TripsService {
@@ -34,6 +40,8 @@ export class TripsService {
     private readonly odometerLogRepo: Repository<OdometerLog>,
     @InjectRepository(ApprovalConfig)
     private readonly approvalConfigRepo: Repository<ApprovalConfig>,
+    @InjectRepository(Schedule)
+    private readonly scheduleRepo: Repository<Schedule>,
     private readonly responseService: ResponseService,
   ) {}
 
@@ -84,29 +92,59 @@ export class TripsService {
     return totalDistance;
   }
 
-  private calculateRouteDuration(distanceInKM: number, stops: number): number {
-    // More sophisticated duration calculation
+  private calculateRouteDuration(
+    distanceInKM: number, 
+    stops: number = 0, 
+    mixedRoadsKmph: number = 40
+  ): number {
+    // More sophisticated duration calculation using mixed roads speed as base
     const distanceInKm = distanceInKM;
     
     // Base time for traffic, stops, etc.
     const baseTime = 5; // minutes for pickup/dropoff
     
+    // Calculate other speeds based on mixed roads speed
+    const denseTrafficKmph = mixedRoadsKmph * 0.375; // 15/40 = 0.375 of mixed roads
+    const cityTrafficKmph = mixedRoadsKmph * 0.625;  // 25/40 = 0.625 of mixed roads
+    const highwayKmph = mixedRoadsKmph * 1.5;        // 60/40 = 1.5 of mixed roads
+    
     // Calculate travel time
     let travelTime;
     if (distanceInKm <= 2) {
-      travelTime = (distanceInKm / 15) * 60; // Very slow in dense traffic
+      travelTime = (distanceInKm / denseTrafficKmph) * 60; // Very slow in dense traffic
     } else if (distanceInKm <= 10) {
-      travelTime = (distanceInKm / 25) * 60; // City traffic
+      travelTime = (distanceInKm / cityTrafficKmph) * 60; // City traffic
     } else if (distanceInKm <= 50) {
-      travelTime = (distanceInKm / 40) * 60; // Mixed roads
+      travelTime = (distanceInKm / mixedRoadsKmph) * 60; // Mixed roads
     } else {
-      travelTime = (distanceInKm / 60) * 60; // Highway
+      travelTime = (distanceInKm / highwayKmph) * 60; // Highway
     }
     
     // Add time for intermediate stops (5 minutes per stop)
     const stopTime = stops * 5;
     
     return parseFloat((baseTime + travelTime + stopTime).toFixed(2));
+  }
+
+  private calculateEstimatedRestingHours(durationInMinutes: number): number {
+    // Convert minutes to hours
+    const durationInHours = durationInMinutes / 60;
+    
+    let restingMinutes = 0;
+    
+    if (durationInHours <= 3) {
+        // No resting hours for trips less than or equal to 3 hours
+        restingMinutes = 0;
+    } else if (durationInHours <= 8) {
+        // For trips between 3-8 hours: 15 minutes per 2 hours
+        // Calculate how many 2-hour segments
+        const twoHourSegments = Math.floor((durationInHours - 3) / 2);
+        restingMinutes = twoHourSegments * 15;
+    } else {        
+        restingMinutes = 4 * 60;
+    }
+    
+    return restingMinutes;
   }
 
   private toRad(degrees: number): number {
@@ -274,6 +312,7 @@ export class TripsService {
     console.log(`Found ${tripsAtSameTime.size} trips at same time`);
     return tripsAtSameTime;
   }
+  
 
   private async findConflictingTrips(
     locationData: any, 
@@ -295,10 +334,12 @@ export class TripsService {
     const conflictingTrips: Trip[] = [];
 
     for (const [vehicleId, trip] of tripsAtSameTime) {
+      /*
       // Skip if vehicle doesn't have enough capacity
       if (trip.vehicle.seatingAvailability < passengerCount) {
         continue;
       }
+      */
 
       // Check if new trip locations are near existing trip's route
       const locationsNearby = this.areTripLocationsNearby(
@@ -321,7 +362,37 @@ export class TripsService {
     return conflictingTrips;
   }
 
+  private async findAllActiveTrips(): Promise<Map<number, Trip[]>> {
+    const trips = await this.tripRepo.find({
+      where: {
+        status: In([
+          TripStatus.DRAFT,
+          TripStatus.PENDING,
+          TripStatus.APPROVED,
+          TripStatus.READ,
+          TripStatus.ONGOING
+        ])
+      },
+      relations: ['vehicle']
+    });
+
+    const map = new Map<number, Trip[]>();
+
+    for (const trip of trips) {
+      if (!trip.vehicle) continue;
+
+      if (!map.has(trip.vehicle.id)) {
+        map.set(trip.vehicle.id, []);
+      }
+
+      map.get(trip.vehicle.id)!.push(trip);
+    }
+
+    return map;
+  }
+
   // Get available vehicles with recommendation logic
+  /*
   async getAvailableVehicles(requestDto: AvailableVehiclesRequestDto): Promise<AvailableVehiclesResponseDto> {
     const passengerCount = this.calculatePassengerCount(requestDto.passengerData); 
     console.log("=== getAvailableVehicles ===");
@@ -367,6 +438,92 @@ export class TripsService {
         // If it's a real conflict, we'll include it but mark as conflict
       }
       
+      return true;
+    });
+
+    console.log(`Available vehicles after filtering: ${availableVehicles.length}`);
+
+    // Get vehicle locations (mock implementation)
+    const vehicleLocations = await this.getVehicleLocations();
+
+    // Analyze and recommend vehicles
+    const analyzedVehicles = await this.analyzeAndRecommendVehicles(
+      availableVehicles,
+      vehicleLocations,
+      requestDto.locationData,
+      requestDto.scheduleData,
+      conflictingTrips,
+      tripsAtSameTime
+    );
+
+    return {
+      allVehicles: analyzedVehicles,
+    };
+  }
+  */
+
+
+  async getAvailableVehicles(requestDto: AvailableVehiclesRequestDto): Promise<AvailableVehiclesResponseDto> {
+    const passengerCount = this.calculatePassengerCount(requestDto.passengerData); 
+    console.log("=== getAvailableVehicles ===");
+    console.log("Passenger count:", passengerCount);
+    
+    // Get trips at same time (for ALL vehicle availability check)
+    const tripsAtSameTime = await this.findAllTripsAtSameTime(requestDto.scheduleData);
+    
+    // Get REAL conflicting trips (same time AND route proximity)
+    const conflictingTrips = await this.findConflictingTrips(
+      requestDto.locationData,
+      requestDto.scheduleData,
+      passengerCount
+    );
+
+    // Get all active vehicles
+    const allVehicles = await this.vehicleRepo.find({
+      where: { isActive: true },
+      relations: ['vehicleType']
+    });
+
+    console.log(`Total vehicles: ${allVehicles.length}`);
+    console.log(`Vehicles with trips at same time: ${tripsAtSameTime.size}`);
+    console.log(`Vehicles with REAL route conflicts: ${conflictingTrips.length}`);
+
+    const activeTripsByVehicle = await this.findAllActiveTrips();
+
+    const availableVehicles = allVehicles.filter(vehicle => {
+ 
+      /*
+      // Rule 1: seating capacity
+      if (vehicle.seatingAvailability < passengerCount) {
+        return false;
+      }
+      */
+
+      const tripAtSameTime = tripsAtSameTime.get(vehicle.id);
+
+      const isRealConflict = conflictingTrips.some(
+        trip => trip.vehicle?.id === vehicle.id
+      );
+
+      // CASE 1: same time + same route conflict
+      if (tripAtSameTime) {
+        if (!isRealConflict) {
+          // Same time but different route
+          return false;
+        }
+        // Same time + same route + enough seats
+        return true;
+      }
+
+      // CASE 2: not same time
+      const activeTrips = activeTripsByVehicle.get(vehicle.id);
+
+      if (activeTrips && activeTrips.length > 0) {
+        // Vehicle has an active trip that is not completed
+        return false;
+      }
+
+      // CASE 3: no trips or only completed/finished trips
       return true;
     });
 
@@ -532,13 +689,22 @@ export class TripsService {
     }
   }
 
+  //
   async createTrip(createTripDto: CreateTripDto, requesterId: number) { 
     const requester = await this.userRepo.findOne({ 
       where: { id: requesterId },
       relations: ['department', 'department.head'] 
-    });
+    }); 
     if (!requester) {
       throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Check if it's a scheduled trip
+    const isScheduledTrip = createTripDto.scheduleData.repetition !== RepetitionType.ONCE;
+    
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip) {
+      await this.validateScheduleData(createTripDto.scheduleData);
     }
 
     // Calculate passenger count
@@ -555,12 +721,14 @@ export class TripsService {
         throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
       }
 
+      /*
       // Check vehicle capacity
       if (vehicle.seatingAvailability < passengerCount) {
         throw new BadRequestException(
           this.responseService.error('Vehicle does not have enough seating capacity', 400)
         );
       }
+      */
     }
 
     // Check for conflicting trip if conflictTripId is provided
@@ -589,7 +757,7 @@ export class TripsService {
     const startCoords = createTripDto.locationData.startLocation.coordinates.coordinates;
     const endCoords = createTripDto.locationData.endLocation.coordinates.coordinates;
 
-    // Prepare intermediate stops in the correct format
+    // Prepare intermediate stops
     const intermediateStops = createTripDto.locationData.intermediateStops?.map((stop, index) => ({
       latitude: stop.coordinates?.coordinates?.[1] ?? 0,
       longitude: stop.coordinates?.coordinates?.[0] ?? 0,
@@ -597,18 +765,19 @@ export class TripsService {
       order: index + 1
     })) ?? [];
 
-    // Calculate total route distance including intermediate stops
+    // Calculate route distance
     const routeDistance = this.calculateRouteDistanceWithStops(
-      startCoords[1], // start latitude
-      startCoords[0], // start longitude
-      endCoords[1],   // end latitude
-      endCoords[0],   // end longitude
+      startCoords[1],
+      startCoords[0],
+      endCoords[1],
+      endCoords[0],
       intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
     );
 
     // Calculate estimated duration
     const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
 
+    // Create trip location
     const tripLocation = this.tripLocationRepo.create({
       startLatitude: startCoords[1],
       startLongitude: startCoords[0],
@@ -618,10 +787,9 @@ export class TripsService {
       endAddress: createTripDto.locationData.endLocation.address,
       intermediateStops: intermediateStops,
       totalStops: createTripDto.locationData.totalStops,
-      //locationData: createTripDto.locationData, // Store the complete location data
-      locationData: createTripDto.locationData.routeData, // Store the route data
-      distance: parseFloat(routeDistance.toFixed(2)), // in km
-      estimatedDuration: estimatedDuration, // in minutes
+      locationData: createTripDto.locationData.routeData,
+      distance: parseFloat(routeDistance.toFixed(2)),
+      estimatedDuration: estimatedDuration,
     });
 
     const savedLocation = await this.tripLocationRepo.save(tripLocation);
@@ -657,18 +825,34 @@ export class TripsService {
       }
     }
 
-    // Fix selectedOthers - convert id to string
+    // Fix selectedOthers
     const selectedOthers = createTripDto.passengerData.selectedOthers?.map(other => ({
       id: String(other.id),
       displayName: other.displayName,
       contactNo: other.contactNo,
     })) || [];
 
-    // Create trip
+    // Determine status and if approval is needed
+    let tripStatus = createTripDto.status || TripStatus.PENDING;
+    let requiresApproval = true;
+    
+    // Scheduled trips always need approval
+    if (isScheduledTrip) {
+      requiresApproval = true;
+      tripStatus = TripStatus.PENDING;
+    } else if (createTripDto.status === TripStatus.DRAFT) {
+      // One-time draft doesn't need approval
+      requiresApproval = false;
+    }
+
+    // Create the master trip
     const trip = this.tripRepo.create({
       ...createTripDto.scheduleData,
       startDate: this.formatDateForDB(createTripDto.scheduleData.startDate),
       startTime: this.formatTimeWithSeconds(createTripDto.scheduleData.startTime),
+      validTillDate: createTripDto.scheduleData.validTillDate 
+        ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
+        : null,
       location: savedLocation,
       mileage: routeDistance,
       passengerType: createTripDto.passengerData.passengerType,
@@ -680,13 +864,18 @@ export class TripsService {
       specialRemarks: createTripDto.specialRemarks,
       vehicle,
       requester,
-      status: createTripDto.status || TripStatus.PENDING,
-      conflictingTrips: conflictTrip ? [conflictTrip] : [], // like joinWIth
+      status: tripStatus,
+      conflictingTrips: conflictTrip ? [conflictTrip] : [],
+      // NEW: Add scheduled trip metadata
+      isScheduled: isScheduledTrip,
+      isInstance: false,
+      masterTripId: null,
+      instanceDate: null,
     });
 
     const savedTrip = await this.tripRepo.save(trip);
 
-    // Add selected group users using QueryBuilder
+    // Add selected group users
     if (selectedGroupUserIds.length > 0) {
       await this.tripRepo
         .createQueryBuilder()
@@ -695,7 +884,7 @@ export class TripsService {
         .add(selectedGroupUserIds);
     }
 
-    // If there's a conflict trip, also add this trip to the conflict trip's linkedTrips
+    // Handle conflict trip relationship
     if (conflictTrip) {
       const conflictTripWithRelations = await this.tripRepo.findOne({
         where: { id: conflictTrip.id },
@@ -712,21 +901,43 @@ export class TripsService {
       }
     }
 
-    // Update vehicle seatingAvailability
+    /*
+    // Update vehicle seating
     if (vehicle) {
-      const newSeatingAvailability = vehicle.seatingAvailability - passengerCount;
-
-      if (newSeatingAvailability < 0) {
+      vehicle.seatingAvailability -= passengerCount;
+      if (vehicle.seatingAvailability < 0) {
         throw new BadRequestException(
           this.responseService.error('Not enough seats available', 400)
         );
       }
-
-      vehicle.seatingAvailability = newSeatingAvailability;
       await this.vehicleRepo.save(vehicle);
     }
+    */
 
-    // Reload the trip with all relations
+    // Create approval if needed
+    let approvalMessage = '';
+    let tripInstances: Trip[] = [];
+    
+    if (requiresApproval) {
+      // Create approval for master trip
+      //await this.createSingleApproval(savedTrip, requester);
+      const approval = await this.createApprovalRecord(savedTrip.id, requester, createTripDto, tripLocation, routeDistance);
+      savedTrip.approval = approval;
+      await this.tripRepo.save(savedTrip);
+
+      approvalMessage = isScheduledTrip 
+        ? 'Scheduled trip submitted for single approval' 
+        : 'Trip submitted for single approval';
+    } else {
+      approvalMessage = 'Trip saved as draft';
+    }
+
+    // Generate trip instances for scheduled trips
+    if (isScheduledTrip) {
+      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData);
+    }
+
+    // Reload trip with relations
     const tripWithRelations = await this.tripRepo.findOne({
       where: { id: savedTrip.id },
       relations: [
@@ -740,26 +951,1105 @@ export class TripsService {
       ]
     });
 
-
-    // Create approval record if submitted directly
-    if (createTripDto.status === TripStatus.PENDING) {
-      const approval = await this.createApprovalRecord(savedTrip.id, requester, createTripDto, savedLocation, routeDistance);
-      
-      savedTrip.approval = approval;
-      await this.tripRepo.save(savedTrip);
-
-    }
+            // TODO publish event
 
     return {
       success: true,
-      message: createTripDto.status === TripStatus.PENDING 
-        ? 'Trip submitted for approval' 
-        : 'Trip saved as draft',
+      message: approvalMessage,
       trip: new TripResponseDto(tripWithRelations!),
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      instanceCount: tripInstances.length,
+      instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
       timestamp: new Date().toISOString(),
       statusCode: 200
     };
   }
+
+  async assignVehicleToTrip(
+    tripId: number,
+    vehicleId: number,
+    userId: number,
+  ): Promise<any> {
+    // Get the trip with all necessary relations
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'location',
+        'conflictingTrips',
+        'vehicle',
+        'requester',
+        'selectedGroupUsers',
+        'selectedIndividual',
+        'approval'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    // Check if trip already has a vehicle assigned
+    /*
+    if (trip.vehicle) {
+      throw new BadRequestException(
+        this.responseService.error('Trip already has a vehicle assigned', 400)
+      );
+    }
+    */
+
+    // Get the vehicle with relations
+    const vehicle = await this.vehicleRepo.findOne({
+      where: { id: vehicleId, isActive: true },
+      relations: ['assignedDriverPrimary', 'assignedDriverSecondary', 'vehicleType']
+    });
+
+    if (!vehicle) {
+      throw new NotFoundException(this.responseService.error('Vehicle not found or inactive', 404));
+    }
+
+    // Check vehicle seating capacity
+    /*
+    if (vehicle.seatingAvailability < trip.passengerCount) {
+      throw new BadRequestException(
+        this.responseService.error(
+          `Vehicle does not have enough seating capacity. Available: ${vehicle.seatingAvailability}, Required: ${trip.passengerCount}`,
+          400
+        )
+      );
+    }
+    */
+
+    // Update vehicle seating availability
+    //const previousAvailability = vehicle.seatingAvailability;
+    //const seatingAvailability = vehicle.seatingAvailability - trip.passengerCount;
+    
+    /*
+    if (seatingAvailability < 0) {
+      throw new BadRequestException(
+        this.responseService.error('Not enough seats available after assignment', 400)
+      );
+    }
+    */
+
+    // If trip was DRAFT, change status to PENDING (requires approval)
+    /*
+    if (trip.status === TripStatus.DRAFT) {
+      trip.status = TripStatus.PENDING;
+      
+      // Create approval record if not exists
+      if (!trip.approval) {
+        await this.createApprovalRecord(trip.id, trip.requester, {
+          scheduleData: {
+            startDate: trip.startDate.toString(),
+            startTime: trip.startTime,
+            repetition: trip.repetition
+          }
+        } as CreateTripDto, trip.location, trip.mileage);
+      }
+    }
+    */
+
+    // Save changes in a transaction
+    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => { 
+      
+      if (trip.status != TripStatus.DRAFT) {
+        // 1. Handle vehicle seating availability if trip has a vehicle
+        /*
+        if (trip.vehicle) {
+          // Pass the transactional entity manager to restoreVehicleSeats
+          await this.restoreVehicleSeats(trip.vehicle.id, trip.passengerCount, transactionalEntityManager);
+        }
+        */
+        
+        // 2. Delete approval record if exists
+        if (trip.approval) {
+          const approvalId = trip.approval.id;
+
+          trip.approval = null;
+
+          await transactionalEntityManager.save(Trip, trip);
+
+          await transactionalEntityManager.delete(Approval, { id: approvalId });
+        }
+      }
+      
+      trip.status = TripStatus.DRAFT;
+        
+      // Update trip with vehicle
+      trip.vehicle = vehicle;
+      trip.primaryDriver = vehicle.assignedDriverPrimary;
+      trip.secondaryDriver = vehicle.assignedDriverSecondary;     
+      
+      // Save trip with vehicle assignment
+      await transactionalEntityManager.save(Trip, trip); 
+    });
+
+    // Send notifications
+    try {
+      // TODO: Publish event for notifications
+      // this.eventEmitter.emit('vehicle.assigned', {
+      //   tripId: trip.id,
+      //   vehicleId: vehicle.id,
+      //   assignedBy: userId,
+      //   passengerCount: trip.passengerCount,
+      //   vehicleModel: vehicle.model,
+      //   vehicleRegNo: vehicle.regNo
+      // });
+    } catch (e) {
+      console.error('Failed to send notification:', e);
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle assigned to trip successfully',
+      data: {
+        trip: trip.id,
+        vehicle: vehicle.model
+      },
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  async confirmReviewTrip(tripId: number, userId: number){
+    const requester = await this.userRepo.findOne({ 
+      where: { id: userId },
+      relations: ['department', 'department.head'] 
+    }); 
+    if (!requester) {
+      throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Get the current trip with necessary relations
+    const currentTrip = await this.tripRepo.findOne({ 
+      where: { id: tripId },
+      relations: [
+        'vehicle', 
+        'location',
+        'schedule',
+        'requester',
+        'selectedIndividual',
+        'selectedGroupUsers',
+        'primaryDriver',
+        'secondaryDriver',
+      ] 
+    }); 
+    
+    if (!currentTrip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    // Check if it's a scheduled trip
+    const isScheduledTrip = currentTrip.isScheduled;
+    
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip && currentTrip.schedule) {
+      const scheduleData = {
+        startDate: currentTrip.schedule.startDate.toString(),
+        startTime: currentTrip.schedule.startTime,
+        repetition: currentTrip.schedule.repetition,
+        validTillDate: currentTrip.schedule.validTillDate?.toString(),
+        includeWeekends: currentTrip.schedule.includeWeekends,
+        repeatAfterDays: currentTrip.schedule.repeatAfterDays
+      };
+      await this.validateScheduleData(scheduleData);
+    }
+
+    // Get passenger count from existing trip
+    const passengerCount = currentTrip.passengerCount;
+
+    // Validate vehicle if provided
+    let vehicle: Vehicle | undefined;
+    if (currentTrip.vehicle) {
+      vehicle = await this.vehicleRepo.findOne({ 
+        where: { id: currentTrip.vehicle.id },
+        relations: ['assignedDriverPrimary', 'assignedDriverSecondary']
+      });
+      if (!vehicle) {
+        throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
+      }
+
+      /*
+      // Check vehicle capacity
+      if (vehicle.seatingAvailability < passengerCount) {
+        throw new BadRequestException(
+          this.responseService.error('Vehicle does not have enough seating capacity', 400)
+        );
+      }
+      */
+    }
+
+    // Check for conflicting trips based on vehicle
+    let conflictingTrips: Trip[] = [];
+    if (vehicle) {
+      // Check if vehicle has any trips at the same time that could conflict
+      conflictingTrips = await this.findVehicleConflictingTrips(
+        vehicle.id,
+        currentTrip.startDate.toString(),
+        currentTrip.startTime,
+        currentTrip.location,
+        currentTrip.id // Exclude current trip from conflict check
+      );
+
+      //currentTrip.primaryDriver = vehicle.assignedDriverPrimary;
+      //currentTrip.secondaryDriver = vehicle.assignedDriverSecondary;
+    }
+
+    // Determine status and if approval is needed
+    let tripStatus = TripStatus.PENDING;
+    let requiresApproval = true;
+
+    // Update trip status
+    currentTrip.status = tripStatus;
+    const savedTrip = await this.tripRepo.save(currentTrip);
+
+    // Handle conflict trip relationships
+    if (conflictingTrips.length > 0) {
+      for (const conflictTrip of conflictingTrips) {
+        const conflictTripWithRelations = await this.tripRepo.findOne({
+          where: { id: conflictTrip.id },
+          relations: ['conflictingTrips']
+        });
+
+        if (conflictTripWithRelations) {
+          if (!conflictTripWithRelations.conflictingTrips) {
+            conflictTripWithRelations.conflictingTrips = [];
+          }
+          
+          // Add current trip to conflict trip's conflictingTrips
+          if (!conflictTripWithRelations.conflictingTrips.some(t => t.id === savedTrip.id)) {
+            conflictTripWithRelations.conflictingTrips.push(savedTrip);
+            await this.tripRepo.save(conflictTripWithRelations);
+          }
+
+          // Also add conflict trip to current trip's conflictingTrips
+          if (!currentTrip.conflictingTrips) {
+            currentTrip.conflictingTrips = [];
+          }
+          
+          if (!currentTrip.conflictingTrips.some(t => t.id === conflictTrip.id)) {
+            currentTrip.conflictingTrips.push(conflictTrip);
+            await this.tripRepo.save(currentTrip);
+          }
+        }
+      }
+    }
+
+    /*
+    // Update vehicle seating
+    if (vehicle) {
+      // Only update if the trip wasn't already counted in vehicle seating
+      vehicle.seatingAvailability -= passengerCount;
+      if (vehicle.seatingAvailability < 0) {
+        throw new BadRequestException(
+          this.responseService.error('Not enough seats available', 400)
+        );
+      }
+      await this.vehicleRepo.save(vehicle);
+    }
+    */
+
+    // Create approval 
+    let approvalMessage = '';
+    let tripInstances: Trip[] = [];
+    
+    if (requiresApproval) {
+      // Create approval record
+      const createTripDtoMock = {
+        scheduleData: {
+          startDate: currentTrip.startDate.toString(),
+          startTime: currentTrip.startTime,
+          repetition: currentTrip.repetition
+        },
+        tripTypeData: {
+          tripType: currentTrip.tripType,
+        },
+        specialRemarks: currentTrip.specialRemarks
+      } as CreateTripDto;
+      
+      const approval = await this.createApprovalRecord(
+        savedTrip.id, 
+        currentTrip.requester, 
+        createTripDtoMock, 
+        currentTrip.location!, 
+        currentTrip.mileage
+      );
+      savedTrip.approval = approval;
+      await this.tripRepo.save(savedTrip);
+
+      approvalMessage = isScheduledTrip 
+        ? 'Scheduled trip submitted for approval' 
+        : 'Trip submitted for approval';
+    }
+
+    // Generate trip instances for scheduled trips
+    if (isScheduledTrip && currentTrip.schedule) {
+      const scheduleData = {
+        startDate: currentTrip.schedule.startDate.toString(),
+        startTime: currentTrip.schedule.startTime,
+        repetition: currentTrip.schedule.repetition,
+        validTillDate: currentTrip.schedule.validTillDate?.toString(),
+        includeWeekends: currentTrip.schedule.includeWeekends,
+        repeatAfterDays: currentTrip.schedule.repeatAfterDays
+      };
+      tripInstances = await this.generateTripInstances(savedTrip, scheduleData);
+    }
+
+    // Reload trip with relations
+    const tripWithRelations = await this.tripRepo.findOne({
+      where: { id: savedTrip.id },
+      relations: [
+        'vehicle', 
+        'vehicle.assignedDriverPrimary', 
+        'vehicle.assignedDriverSecondary',
+        'conflictingTrips',
+        'conflictingTrips.location',
+        'conflictingTrips.requester',
+        'selectedGroupUsers'
+      ]
+    });
+
+    // TODO publish event
+
+    return {
+      success: true,
+      message: approvalMessage || 'Trip confirmed successfully',
+      trip: new TripResponseDto(tripWithRelations!),
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      instanceCount: tripInstances.length,
+      instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  // Helper method to find vehicle conflicting trips
+  private async findVehicleConflictingTrips(
+    vehicleId: number,
+    startDate: string,
+    startTime: string,
+    tripLocation: TripLocation,
+    excludeTripId?: number
+  ): Promise<Trip[]> {
+    const dbDate = this.formatDateForDB(startDate);
+    const dbTime = this.formatTimeWithSeconds(startTime);
+    
+    // Get time in minutes for comparison
+    const [hours, minutes] = dbTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+
+    // Get all trips for this vehicle at same time
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .where('vehicle.id = :vehicleId', { vehicleId })
+      .andWhere('trip.status IN (:...statuses)', {
+        statuses: [TripStatus.PENDING, TripStatus.APPROVED, TripStatus.READ, TripStatus.ONGOING]
+      })
+      .andWhere('trip.startDate = :date', { date: dbDate });
+
+    if (excludeTripId) {
+      queryBuilder.andWhere('trip.id != :excludeTripId', { excludeTripId });
+    }
+
+    const vehicleTrips = await queryBuilder.getMany();
+    const conflictingTrips: Trip[] = [];
+
+    // Check each trip for time and route conflicts
+    for (const existingTrip of vehicleTrips) {
+      if (!existingTrip.location) continue;
+
+      // Check time within window
+      const tripTimeStr = this.formatTimeWithSeconds(existingTrip.startTime);
+      const [tripHours, tripMinutes] = tripTimeStr.split(':').map(Number);
+      const tripTotalMinutes = tripHours * 60 + tripMinutes;
+      
+      // Calculate time difference
+      let timeDiff = Math.abs(tripTotalMinutes - totalMinutes);
+      timeDiff = Math.min(timeDiff, 1440 - timeDiff);
+      
+      if (timeDiff > this.CONFLICT_TIME_WINDOW) {
+        continue;
+      }
+
+      // Check route proximity
+      const isNearby = this.areTripLocationsNearby(
+        tripLocation.startLatitude,
+        tripLocation.startLongitude,
+        tripLocation.endLatitude,
+        tripLocation.endLongitude,
+        existingTrip.location
+      );
+
+      if (isNearby) {
+        conflictingTrips.push(existingTrip);
+      }
+    }
+
+    return conflictingTrips;
+  }
+
+  async createTripAsDraft(createTripDto: CreateTripDto, requesterId: number) { 
+    const requester = await this.userRepo.findOne({ 
+      where: { id: requesterId },
+      relations: ['department', 'department.head'] 
+    }); 
+    if (!requester) {
+      throw new NotFoundException(this.responseService.error('Requester not found', 404));
+    }
+
+    // Validate trip type data
+    if (createTripDto.tripTypeData.tripType === TripType.FIXED_RATE && !createTripDto.tripTypeData.fixedRate) {
+      throw new BadRequestException(
+        this.responseService.error('Fixed rate amount is required for fixed rate trips', 400)
+      );
+    }
+
+    if (!createTripDto.tripTypeData.reason?.trim()) {
+      throw new BadRequestException(
+        this.responseService.error('Reason is required for the trip', 400)
+      );
+    }
+
+    // Parse fixed rate if provided
+    let parsedFixedRate: number | undefined;
+    if (createTripDto.tripTypeData.tripType === TripType.FIXED_RATE && createTripDto.tripTypeData.fixedRate) {
+      // Remove commas and parse the fixed rate
+      const cleanFixedRate = createTripDto.tripTypeData.fixedRate.replace(/,/g, '');
+      parsedFixedRate = parseFloat(cleanFixedRate);
+      
+      if (isNaN(parsedFixedRate) || parsedFixedRate <= 0) {
+        throw new BadRequestException(
+          this.responseService.error('Invalid fixed rate amount', 400)
+        );
+      }
+    }
+
+    // Check if it's a scheduled trip
+    const isScheduledTrip = createTripDto.scheduleData.repetition !== RepetitionType.ONCE;
+    
+    let schedule: Schedule | null;
+    // For scheduled trips, validate schedule
+    if (isScheduledTrip) {
+      await this.validateScheduleData(createTripDto.scheduleData);
+
+      schedule = await this.createSchedule(createTripDto.scheduleData);
+    }
+
+    // Calculate passenger count
+    const passengerCount = this.calculatePassengerCount(createTripDto.passengerData);
+
+    // Create trip location
+    const startCoords = createTripDto.locationData.startLocation.coordinates.coordinates;
+    const endCoords = createTripDto.locationData.endLocation.coordinates.coordinates;
+
+    // Prepare intermediate stops
+    const intermediateStops = createTripDto.locationData.intermediateStops?.map((stop, index) => ({
+      latitude: stop.coordinates?.coordinates?.[1] ?? 0,
+      longitude: stop.coordinates?.coordinates?.[0] ?? 0,
+      address: stop.address ?? '',
+      order: index + 1
+    })) ?? [];
+
+    // Calculate route distance
+    /*
+    const routeDistance = this.calculateRouteDistanceWithStops(
+      startCoords[1],
+      startCoords[0],
+      endCoords[1],
+      endCoords[0],
+      intermediateStops.map(stop => ({ latitude: stop.latitude, longitude: stop.longitude }))
+    );
+    */
+    const routeDistance = createTripDto.locationData.totalDistance;
+
+    // Calculate estimated duration
+    //const estimatedDuration = this.calculateRouteDuration(routeDistance, intermediateStops.length);
+    //const estimatedDuration = this.calculateRouteDuration(routeDistance);
+    const estimatedDuration = createTripDto.locationData.totalDuration;
+    
+    const estimatedRestingHours = this.calculateEstimatedRestingHours(estimatedDuration * 2);
+
+    //const upNdownDistance = routeDistance * 2;
+    //const upNdownDuration = estimatedDuration * 2;
+
+    // Create trip location
+    const tripLocation = this.tripLocationRepo.create({
+      startLatitude: startCoords[1],
+      startLongitude: startCoords[0],
+      startAddress: createTripDto.locationData.startLocation.address,
+      endLatitude: endCoords[1],
+      endLongitude: endCoords[0],
+      endAddress: createTripDto.locationData.endLocation.address,
+      intermediateStops: intermediateStops,
+      totalStops: createTripDto.locationData.totalStops,
+      locationData: createTripDto.locationData.routeData,
+      distance: parseFloat(routeDistance.toFixed(2)),
+      estimatedDuration: estimatedDuration,
+      estimatedRestingHours: estimatedRestingHours,
+    });
+
+    const savedLocation = await this.tripLocationRepo.save(tripLocation);
+
+    // Handle passenger data
+    let selectedIndividual: User | undefined;
+    const selectedGroupUserIds: number[] = [];
+
+    if (createTripDto.passengerData.selectedIndividual) {
+      selectedIndividual = await this.userRepo.findOne({
+        where: { id: createTripDto.passengerData.selectedIndividual.id }
+      });
+    }
+
+    if (createTripDto.passengerData.selectedGroupUsers?.length) {
+      createTripDto.passengerData.selectedGroupUsers.forEach(user => {
+        selectedGroupUserIds.push(user.id);
+      });
+      
+      if (selectedGroupUserIds.length > 0) {
+        const users = await this.userRepo.find({
+          where: { id: In(selectedGroupUserIds) }
+        });
+        
+        if (users.length !== selectedGroupUserIds.length) {
+          const foundIds = users.map(u => u.id);
+          const missingIds = selectedGroupUserIds.filter(id => !foundIds.includes(id));
+          
+          throw new BadRequestException(
+            this.responseService.error(`Users not found: ${missingIds.join(', ')}`, 400)
+          );
+        }
+      }
+    }
+
+    // Fix selectedOthers
+    const selectedOthers = createTripDto.passengerData.selectedOthers?.map(other => ({
+      id: String(other.id),
+      displayName: other.displayName,
+      contactNo: other.contactNo,
+    })) || [];
+
+    // Determine status and if approval is needed
+    let tripStatus = TripStatus.DRAFT;
+    let requiresApproval = true;
+    
+    // Scheduled trips always need approval
+    if (isScheduledTrip) {
+      requiresApproval = true;
+      tripStatus = TripStatus.DRAFT;
+    } else if (createTripDto.status === TripStatus.DRAFT) {
+      // One-time draft doesn't need approval
+      requiresApproval = false;
+    }
+
+    // Create the master trip
+    const trip = this.tripRepo.create({
+      ...createTripDto.scheduleData,
+      startDate: this.formatDateForDB(createTripDto.scheduleData.startDate),
+      startTime: this.formatTimeWithSeconds(createTripDto.scheduleData.startTime),
+      validTillDate: createTripDto.scheduleData.validTillDate 
+        ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
+        : null,
+      location: savedLocation,
+      mileage: routeDistance,
+      passengerType: createTripDto.passengerData.passengerType,
+      passengerCount,
+      selectedIndividual,
+      selectedOthers,
+      includeMeInGroup: createTripDto.passengerData.includeMeInGroup ?? true,
+      purpose: createTripDto.purpose,
+      specialRemarks: createTripDto.specialRemarks,
+      //vehicle,
+      requester,
+      status: tripStatus,
+      //conflictingTrips: conflictTrip ? [conflictTrip] : [],
+      // NEW: Add scheduled trip metadata
+      isScheduled: isScheduledTrip,
+      schedule: schedule,
+      isInstance: false,
+      masterTripId: null,
+      instanceDate: null,
+      tripType: createTripDto.tripTypeData.tripType,
+      fixedRate: parsedFixedRate,
+      cost: parsedFixedRate,
+      reason: createTripDto.tripTypeData.reason,
+    });
+
+    const savedTrip = await this.tripRepo.save(trip);
+
+    // Add selected group users
+    if (selectedGroupUserIds.length > 0) {
+      await this.tripRepo
+        .createQueryBuilder()
+        .relation(Trip, 'selectedGroupUsers')
+        .of(savedTrip.id)
+        .add(selectedGroupUserIds);
+    }
+            // TODO publish event
+
+    return {
+      success: true,
+      //message: approvalMessage,
+      trip: savedTrip,
+      masterTripId: savedTrip.id,
+      isScheduled: isScheduledTrip,
+      //instanceCount: tripInstances.length,
+      //instanceIds: tripInstances.map(inst => inst.id),
+      requiresApproval: requiresApproval,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+
+  private async createSchedule(scheduleData: ScheduleDataDto): Promise<Schedule> {
+    const schedule = this.scheduleRepo.create({
+      startDate: new Date(scheduleData.startDate),
+      validTillDate: scheduleData.validTillDate ? new Date(scheduleData.validTillDate) : undefined,
+      startTime: scheduleData.startTime,
+      repetition: scheduleData.repetition,
+      includeWeekends: scheduleData.includeWeekends || false,
+      repeatAfterDays: scheduleData.repeatAfterDays,
+    });
+
+    return await this.scheduleRepo.save(schedule);
+  }
+
+  // NEW HELPER METHODS TO ADD TO YOUR SERVICE:
+  private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
+    const startDate = new Date(scheduleData.startDate);
+    const today = new Date();
+
+    startDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    if (startDate < today) {
+      throw new BadRequestException(
+        this.responseService.error('Start date cannot be in the past', 400)
+      );
+    }
+    
+    if (scheduleData.validTillDate) {
+      const validTillDate = new Date(scheduleData.validTillDate);
+      if (validTillDate < startDate) {
+        throw new BadRequestException(
+          this.responseService.error('Valid till date cannot be before start date', 400)
+        );
+      }
+    }
+    
+    if (scheduleData.repetition === RepetitionType.DAILY && scheduleData.repeatAfterDays) {
+      if (scheduleData.repeatAfterDays < 1) {
+        throw new BadRequestException(
+          this.responseService.error('Repeat after days must be at least 1', 400)
+        );
+      }
+    }
+  }
+
+  private async generateTripInstances(masterTrip: Trip, scheduleData: ScheduleDataDto): Promise<Trip[]> {
+    const { repetition, startDate, validTillDate, includeWeekends, repeatAfterDays } = scheduleData;
+    
+    const start = new Date(startDate);
+    const end = validTillDate ? new Date(validTillDate) : this.getDefaultEndDate(start, repetition);
+    
+    const instanceDates = this.calculateInstanceDates(start, end, repetition, includeWeekends, repeatAfterDays);
+    
+    const instances: Trip[] = [];
+    
+    for (const instanceDate of instanceDates) {
+      // Clone location for each instance
+      const locationCopy = await this.cloneTripLocation(masterTrip.location);
+      
+      // Create instance
+      const tripInstance = this.tripRepo.create({
+        location: locationCopy,
+        mileage: masterTrip.mileage,
+        passengerType: masterTrip.passengerType,
+        passengerCount: masterTrip.passengerCount,
+        selectedIndividual: masterTrip.selectedIndividual,
+        selectedOthers: masterTrip.selectedOthers,
+        includeMeInGroup: masterTrip.includeMeInGroup,
+        purpose: masterTrip.purpose,
+        specialRemarks: masterTrip.specialRemarks,
+        vehicle: masterTrip.vehicle,
+        requester: masterTrip.requester,
+        startDate: instanceDate.toISOString().split('T')[0],
+        startTime: masterTrip.startTime,
+        repetition: RepetitionType.ONCE,
+        status: TripStatus.PENDING,
+        isScheduled: false,
+        isInstance: true,
+        masterTripId: masterTrip.id,
+        instanceDate: instanceDate,
+        tripType: masterTrip.tripType,
+        fixedRate: masterTrip.fixedRate,
+        reason: masterTrip.reason,
+        primaryDriver: masterTrip.primaryDriver,
+        secondaryDriver: masterTrip.secondaryDriver,
+      });
+      
+      const savedInstance = await this.tripRepo.save(tripInstance);
+      instances.push(savedInstance);
+      
+      // Copy selected group users
+      if (masterTrip.selectedGroupUsers && masterTrip.selectedGroupUsers.length > 0) {
+        const groupUserIds = masterTrip.selectedGroupUsers.map(user => user.id);
+        await this.tripRepo
+          .createQueryBuilder()
+          .relation(Trip, 'selectedGroupUsers')
+          .of(savedInstance.id)
+          .add(groupUserIds);
+      }
+    }
+    
+    return instances;
+  }
+
+  private getDefaultEndDate(start: Date, repetition: RepetitionType): Date {
+    const end = new Date(start);
+    
+    switch (repetition) {
+      case RepetitionType.DAILY:
+        end.setDate(end.getDate() + 30);
+        break;
+      case RepetitionType.WEEKLY:
+        end.setDate(end.getDate() + 90);
+        break;
+      case RepetitionType.MONTHLY:
+        end.setMonth(end.getMonth() + 6);
+        break;
+      default:
+        end.setDate(end.getDate() + 30);
+    }
+    
+    return end;
+  }
+
+  private calculateInstanceDates(
+    start: Date,
+    end: Date,
+    repetition: RepetitionType,
+    includeWeekends?: boolean,
+    repeatAfterDays?: number
+  ): Date[] {
+    const dates: Date[] = [];
+    let current = new Date(start);
+    
+    // Skip the start date - move to next occurrence
+    switch (repetition) {
+      case RepetitionType.DAILY:
+        const interval = repeatAfterDays || 1;
+        // Move current to next occurrence
+        current.setDate(current.getDate() + interval);
+        
+        while (current <= end) {
+          if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
+            dates.push(new Date(current));
+          }
+          current.setDate(current.getDate() + interval);
+        }
+        break;
+        
+      case RepetitionType.WEEKLY:
+        // Skip the start week, move to next week
+        current.setDate(current.getDate() + 7);
+        
+        while (current <= end) {
+          dates.push(new Date(current));
+          current.setDate(current.getDate() + 7);
+        }
+        break;
+        
+      case RepetitionType.MONTHLY:
+        // Skip the start month, move to next month
+        current.setMonth(current.getMonth() + 1);
+        
+        while (current <= end) {
+          dates.push(new Date(current));
+          current.setMonth(current.getMonth() + 1);
+        }
+        break;
+    }
+    
+    return dates;
+  }
+
+  private async cloneTripLocation(location: TripLocation): Promise<TripLocation> {
+    const locationCopy = this.tripLocationRepo.create({
+      startLatitude: location.startLatitude,
+      startLongitude: location.startLongitude,
+      startAddress: location.startAddress,
+      endLatitude: location.endLatitude,
+      endLongitude: location.endLongitude,
+      endAddress: location.endAddress,
+      intermediateStops: location.intermediateStops ? [...location.intermediateStops] : [],
+      totalStops: location.totalStops,
+      locationData: location.locationData ? { ...location.locationData } : null,
+      distance: location.distance,
+      estimatedDuration: location.estimatedDuration,
+    });
+    
+    return await this.tripLocationRepo.save(locationCopy);
+  }
+
+  // Add to your TripsService
+
+  async approveScheduledTrip(masterTripId: number, approverId: number, remarks?: string): Promise<any> {
+    try {
+    // Get master trip
+    const masterTrip = await this.tripRepo.findOne({
+      where: { id: masterTripId, isScheduled: true, isInstance: false },
+      relations: [
+        'approval', 
+        'approval.approver1', 
+        'approval.approver2', 
+        'approval.safetyApprover', 
+        'requester',
+        'vehicle'
+      ]
+    });
+
+    if (!masterTrip) {
+      throw new NotFoundException(this.responseService.error('Master scheduled trip not found', 404));
+    }
+
+    // Get all instances
+    const instances = await this.tripRepo.find({
+      where: { 
+        masterTripId: masterTripId,
+        isInstance: true 
+      }
+    });
+
+    // Get user making the request
+    const user = await this.userRepo.findOne({ where: { id: approverId } });
+    if (!user) {
+      throw new NotFoundException(this.responseService.error('User not found', 404));
+    }
+
+    const approval = masterTrip.approval;
+    const isSysAdmin = user.role === UserRole.SYSADMIN;
+
+    // Check if already approved
+    if (approval?.overallStatus === StatusApproval.APPROVED) {
+      throw new BadRequestException(this.responseService.error('Master scheduled trip is already approved', 400));
+    }
+
+    // Check if rejected
+    if (approval?.overallStatus === StatusApproval.REJECTED) {
+      throw new BadRequestException(this.responseService.error('Master scheduled trip is already rejected', 400));
+    }
+
+    // Check authorization (SAME AS NORMAL APPROVAL)
+    let isAuthorized = false;
+    let approverType: ApproverType | null = null;
+
+    if (isSysAdmin) {
+      isAuthorized = true;
+    } else {
+      if (approval?.approver1?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.HOD;
+      } else if (approval?.approver2?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.SECONDARY;
+      } else if (approval?.safetyApprover?.id === approverId) {
+        isAuthorized = true;
+        approverType = ApproverType.SAFETY;
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new ForbiddenException(
+        this.responseService.error('You are not authorized to approve this scheduled trip', 403)
+      );
+    }
+
+    // Process approval (SAME AS NORMAL APPROVAL)
+    const now = new Date();
+    
+    // Update approval based on approver type
+    if (approverType === ApproverType.HOD) {
+      approval.approver1Status = StatusApproval.APPROVED;
+      approval.approver1ApprovedAt = now;
+      approval.approver1Comments = remarks;
+    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+      approval.approver2Status = StatusApproval.APPROVED;
+      approval.approver2ApprovedAt = now;
+      approval.approver2Comments = remarks;
+    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+      approval.safetyApproverStatus = StatusApproval.APPROVED;
+      approval.safetyApproverApprovedAt = now;
+      approval.safetyApproverComments = remarks;
+    } else if (isSysAdmin) {
+      approval.approver1Status = StatusApproval.APPROVED;
+      approval.approver1ApprovedAt = now;
+      approval.approver1Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+
+      approval.approver2Status = StatusApproval.APPROVED;
+      approval.approver2ApprovedAt = now;
+      approval.approver2Comments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+
+      approval.safetyApproverStatus = StatusApproval.APPROVED;
+      approval.safetyApproverApprovedAt = now;
+      approval.safetyApproverComments = `Approved by SYSADMIN: ${remarks || 'No comment'}`;
+    }
+
+    // Update overall status and move to next step
+    approval.updateOverallStatus();
+    
+    // If no rejection, move to next step
+    if (!approval.hasAnyRejection()) {
+      approval.moveToNextStep();
+    }
+
+    // If fully approved, update master trip status and create approvals for instances
+    if (approval.overallStatus.toString() === 'approved') {
+      masterTrip.status = TripStatus.APPROVED;
+      
+      // Create approvals for all instances (same as master)
+      for (const instance of instances) {
+        // Check if instance already has approval
+        const existingApproval = await this.approvalRepo.findOne({
+          where: { trip: { id: instance.id } }
+        });
+
+        if (!existingApproval) {
+          // Create new approval for instance (copy from master)
+          const instanceApproval = this.approvalRepo.create({
+            trip: instance,
+            approver1: approval.approver1 || null,
+            approver1Status: approval.approver1Status || StatusApproval.APPROVED,
+            approver1ApprovedAt: approval.approver1ApprovedAt || now,
+            approver1Comments: approval.approver1Comments || `Approved as part of scheduled trip #${masterTripId}`,
+            approver2: approval.approver2 || null,
+            approver2Status: approval.approver2Status || StatusApproval.APPROVED,
+            approver2ApprovedAt: approval.approver2ApprovedAt || now,
+            approver2Comments: approval.approver2Comments || `Approved as part of scheduled trip #${masterTripId}`,
+            safetyApprover: approval.safetyApprover || null,
+            safetyApproverStatus: approval.safetyApproverStatus || StatusApproval.APPROVED,
+            safetyApproverApprovedAt: approval.safetyApproverApprovedAt || now,
+            safetyApproverComments: approval.safetyApproverComments || `Approved as part of scheduled trip #${masterTripId}`,
+            overallStatus: StatusApproval.APPROVED,
+            currentStep: ApproverType.COMPLETED,
+            requireApprover1: approval.requireApprover1 || true,
+            requireApprover2: approval.requireApprover2 || false,
+            requireSafetyApprover: approval.requireSafetyApprover || false,
+          });
+
+          await this.approvalRepo.save(instanceApproval);
+        } else {
+          // If instance already has approval, update it
+          existingApproval.overallStatus = StatusApproval.APPROVED;
+          existingApproval.currentStep = ApproverType.COMPLETED;
+          await this.approvalRepo.save(existingApproval);
+        }
+
+        // Update instance status
+        instance.status = TripStatus.APPROVED;
+        await this.tripRepo.save(instance);
+      }
+    }
+
+    // Save master changes
+    await this.approvalRepo.save(approval);
+    await this.tripRepo.save(masterTrip);
+
+          // TODO publish event
+      
+      return {
+        success: true,
+        message: `Scheduled trip ${approverType} approval submitted successfully`,
+        data: {
+          masterTripId: masterTrip.id,
+          approvalStatus: approval.overallStatus,
+          currentStep: approval.currentStep,
+          approvedBy: user.displayname,
+          approvedAt: now,
+          nextStep: approval.currentStep ? `Waiting for ${approval.currentStep} approval` : 'Fully approved',
+          instanceCount: instances.length
+        },
+        timestamp: now.toISOString(),
+        statusCode: 200
+      };
+    } catch (error) {
+      console.error('Error in approveScheduledTrip:', error);
+      throw new InternalServerErrorException(
+        this.responseService.error('Failed to approve scheduled trip', 500)
+      );
+    }
+  }
+
+  // Add to your TripsService
+
+  async getTripWithInstances(tripId: number): Promise<any> {
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'location',
+        'vehicle',
+        'requester',
+        'selectedGroupUsers'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    let instances: Trip[] = [];
+    
+    // If this is a master scheduled trip, get its instances
+    if (trip.isScheduled && !trip.isInstance) {
+      instances = await this.tripRepo.find({
+        where: { 
+          masterTripId: tripId,
+          isInstance: true 
+        },
+        relations: ['location', 'vehicle', 'requester'],
+        order: { instanceDate: 'ASC' }
+      });
+    }
+    
+    // If this is an instance, get its master and sibling instances
+    if (trip.isInstance && trip.masterTripId) {
+      const masterTrip = await this.tripRepo.findOne({
+        where: { id: trip.masterTripId },
+        relations: ['location', 'vehicle', 'requester']
+      });
+      
+      instances = await this.tripRepo.find({
+        where: { 
+          masterTripId: trip.masterTripId,
+          isInstance: true,
+          id: Not(tripId) // Exclude current instance
+        },
+        relations: ['location', 'vehicle', 'requester'],
+        order: { instanceDate: 'ASC' }
+      });
+      
+      return {
+        masterTrip: masterTrip ? new TripResponseDto(masterTrip) : null,
+        currentInstance: new TripResponseDto(trip),
+        siblingInstances: instances.map(inst => new TripResponseDto(inst)),
+        isInstance: true
+      };
+    }
+
+    return {
+      masterTrip: new TripResponseDto(trip),
+      instances: instances.map(inst => new TripResponseDto(inst)),
+      instanceCount: instances.length,
+      isScheduled: trip.isScheduled,
+      isInstance: false
+    };
+  }
+  //
 
   async getCombinedTripForDriver(tripId: number) {
     const trip = await this.tripRepo.findOne({
@@ -880,16 +2170,20 @@ export class TripsService {
     // Calculate trip distance
     //const tripDistance = await this.calculateTripDistance(tripLocation);
 
+    // NEW: Check if trip type is safety approval
+    const isSafetyApprovalTrip = createTripDto.tripTypeData?.tripType === TripType.SAFETY_APPROVAL
+    
     // Check if secondary approval is required (based on distance)
     const requireApprover2 = approvalConfig?.distanceLimit 
       ? tripDistance > approvalConfig.distanceLimit 
       : false;
     
     // Check if safety approval is required (based on restricted hours)
-    const requireSafetyApprover = await this.isDuringRestrictedHours(
+    const requireSafetyApprover = isSafetyApprovalTrip || 
+    (await this.isDuringRestrictedHours(
       createTripDto.scheduleData.startTime,
       approvalConfig
-    );
+    ));
 
     // Get approver2 from config if required
     let approver2: User | undefined;
@@ -931,23 +2225,16 @@ export class TripsService {
   private async getRequesterHOD(requester: User): Promise<User | undefined> {
     // Implement logic to get requester's department HOD
     // This depends on your user structure
-    if (requester.department?.head) {
-      return requester.department.head;
+    const user = await this.userRepo.findOne({ 
+      where: { id: requester.id },
+      relations: ['department', 'department.head'] 
+    }); 
+
+    if (user.department?.head) {
+      return user.department.head;
     }
 
     return undefined;
-  }
-
-  private async calculateTripDistance(tripLocation: TripLocation): Promise<number> {
-    // Calculate actual distance using Haversine formula
-    const distance = this.calculateDistance(
-      tripLocation.startLatitude,
-      tripLocation.startLongitude,
-      tripLocation.endLatitude,
-      tripLocation.endLongitude
-    );
-    
-    return distance; // in km
   }
 
   private async isDuringRestrictedHours(startTime: string, approvalConfig?: ApprovalConfig): Promise<boolean> {
@@ -1030,8 +2317,8 @@ export class TripsService {
     };
   }
 
-  async cancelTrip(tripId: number, userId: number, cancellationReason?: string) {
-    if (userId === null || userId === undefined) {
+  async cancelTrip(tripId: number, user: any, cancellationReason?: string) {
+    if (user === null || user === undefined) {
       throw new ForbiddenException('User not authenticated');
     }
 
@@ -1052,31 +2339,18 @@ export class TripsService {
     if (!trip) {
       throw new NotFoundException(this.responseService.error('Trip not found', 404));
     }
-
-    console.log("ids: ", trip.requester.id, userId);
     
     // Check if requester is the trip owner
-    if (trip.requester.id !== userId) { 
+    if (trip.requester.id !== user.userId && user.role == 'supervisor') { 
       throw new ForbiddenException(
         this.responseService.error('You are not authorized to cancel this trip', 403)
       );
     }
 
-    // Check if trip can be canceled (only PENDING or DRAFT status)
     /*
-    const allowedStatuses = [TripStatus.PENDING, TripStatus.DRAFT];
-    if (!allowedStatuses.includes(trip.status)) {
-      throw new BadRequestException(
-        this.responseService.error(
-          `Cannot cancel trip with status: ${trip.status}. Only trips with PENDING status can be cancelled.`,
-          400
-        )
-      );
-    }
-    */
-    if (trip.approval.approver1Status === StatusApproval.APPROVED ||
-        trip.approval.approver2Status === StatusApproval.APPROVED ||
-        trip.approval.safetyApproverStatus === StatusApproval.APPROVED) {
+    if (trip.approval?.approver1Status === StatusApproval.APPROVED ||
+        trip.approval?.approver2Status === StatusApproval.APPROVED ||
+        trip.approval?.safetyApproverStatus === StatusApproval.APPROVED) {
       throw new BadRequestException(
         this.responseService.error(
           `Cannot cancel trip. Only trips with zero approval can be cancelled.`,
@@ -1094,13 +2368,35 @@ export class TripsService {
         )
       );
     }
+    */
+
+    if (
+      trip.status == TripStatus.READ ||
+      trip.status == TripStatus.ONGOING ||
+      trip.status == TripStatus.COMPLETED ||
+      trip.status == TripStatus.FINISHED
+    ) {
+        throw new BadRequestException(
+        this.responseService.error(
+          `Cannot cancel trip.`,
+          400
+        )
+      );
+    }
+
+    // Store passenger count before transaction
+    const passengerCount = trip.passengerCount;
+    const vehicleId = trip.vehicle?.id;
 
     // Start transaction to ensure data consistency
     return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      /*
       // 1. Handle vehicle seating availability if trip has a vehicle
       if (trip.vehicle) {
-        await this.restoreVehicleSeats(trip, transactionalEntityManager);
+        // Pass the transactional entity manager to restoreVehicleSeats
+        await this.restoreVehicleSeats(vehicleId, passengerCount, transactionalEntityManager);
       }
+      */
 
       // 2. Handle conflict trips
       await this.handleConflictTrips(trip, transactionalEntityManager);
@@ -1108,21 +2404,31 @@ export class TripsService {
       // 3. Delete approval record if exists
       if (trip.approval) {
         await transactionalEntityManager.remove(Approval, trip.approval);
-        trip.approval = null; // Clear the reference
       }
-
-      // 4. Update trip status to CANCELED
-      trip.status = TripStatus.CANCELED;
       
-      // 5. Save the canceled trip
-      const canceledTrip = await transactionalEntityManager.save(trip);
+      // 4. Update trip status to CANCELED
+      await transactionalEntityManager.update(
+        Trip,
+        { id: tripId },
+        { 
+          status: TripStatus.CANCELED,
+          // Add any other fields you want to update
+          updatedAt: new Date()
+        }
+      );
+
+      try {
+        // TODO publish event
+      } catch (e) {
+        console.error('Failed to send cancellation notification', e);
+      }
 
       return {
         success: true,
         message: 'Trip canceled successfully',
         data: {
-          tripId: canceledTrip.id,
-          status: canceledTrip.status,
+          tripId: tripId, // Return the original ID
+          status: TripStatus.CANCELED,
           timestamp: new Date().toISOString()
         },
         statusCode: 200
@@ -1130,24 +2436,36 @@ export class TripsService {
     });
   }
 
-  private async restoreVehicleSeats(trip: Trip, transactionalEntityManager) {
+  /*
+  private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
+    if (!vehicleId) return;
+    
     const vehicle = await transactionalEntityManager.findOne(
       Vehicle,
-      { where: { id: trip.vehicle.id } }
+      { where: { id: vehicleId } }
     );
 
     if (vehicle) {
+      console.log(`Restoring ${passengerCount} seats to vehicle ${vehicleId}`);
+      console.log(`Before: ${vehicle.seatingAvailability} seats available`);
+      
       // Restore seats that were allocated for this trip
-      vehicle.seatingAvailability += trip.passengerCount;
+      vehicle.seatingAvailability += passengerCount;
       
       // Ensure seating availability doesn't exceed max capacity
-      if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-        vehicle.seatingAvailability = vehicle.seatingCapacity;
+      const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
+      if (vehicle.seatingAvailability > maxAvailable) {
+        vehicle.seatingAvailability = maxAvailable;
       }
-
-      await transactionalEntityManager.save(vehicle);
+      
+      console.log(`After: ${vehicle.seatingAvailability} seats available`);
+      
+      await transactionalEntityManager.save(Vehicle, vehicle);
+    } else {
+      console.warn(`Vehicle ${vehicleId} not found when trying to restore seats`);
     }
   }
+  */
 
   private async handleConflictTrips(trip: Trip, transactionalEntityManager) {
     // Remove this trip from all conflicting trips' linkedTrips
@@ -1193,6 +2511,7 @@ export class TripsService {
           
           await transactionalEntityManager.save(fullConflictTrip);
 
+          /*
           // Restore vehicle seats for the conflict trip if it's still active
           if (fullConflictTrip.vehicle && 
               [TripStatus.PENDING, TripStatus.APPROVED].includes(fullConflictTrip.status)) {
@@ -1212,6 +2531,7 @@ export class TripsService {
               await transactionalEntityManager.save(conflictVehicle);
             }
           }
+          */
         }
       }
 
@@ -1264,12 +2584,7 @@ export class TripsService {
     };
   }
 
-  async getUserTrips(userId: number, requestDto: TripListRequestDto) {
-    // Validate user exists
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(this.responseService.error('User not found', 404));
-    }
+  async getUserTrips(user: any, requestDto: TripListRequestDto) {
 
     // Create base query builder
     const queryBuilder = this.tripRepo
@@ -1279,18 +2594,21 @@ export class TripsService {
       .leftJoinAndSelect('trip.requester', 'requester')
       .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
-      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers')
-      .where(new Brackets(qb => {
-        // User is either the requester OR in selectedGroupUsers OR in linkedTrips
-        qb.where('requester.id = :userId', { userId })
-          .orWhere('selectedGroupUsers.id = :userId', { userId })
-          .orWhere('linkedTrips.requester.id = :userId', { userId })
-          .orWhere('conflictingTrips.requester.id = :userId', { userId });
-      }));
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+    if(user.role != 'sysadmin' 
+      //&& user.role != 'supervisor'
+    ) {
+      queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    }
+
 
     // Apply time filter
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     
@@ -1298,7 +2616,10 @@ export class TripsService {
 
     switch (requestDto.timeFilter) {
       case 'today':
-        queryBuilder.andWhere('trip.startDate = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
         break;
       case 'week':
         queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
@@ -1334,8 +2655,51 @@ export class TripsService {
     // Transform trips to TripCardDto format
     const tripCards = await Promise.all(
       trips.map(async (trip) => {
-        const tripType = await this.determineTripType(trip, userId);
+        const tripType = await this.determineTripType(trip, user.userId);
         
+
+        let instanceCount = 0;
+      let instanceIds: number[] | null = null;
+
+      // If this is a master scheduled trip (not an instance itself), fetch its instances
+      if (trip.isScheduled && !trip.isInstance) {
+        // Fetch all instances for this master trip
+        const instances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.id,
+            isInstance: true
+          },
+          select: ['id'] // Only need IDs
+        });
+        
+        instanceCount = instances.length;
+        instanceIds = instances.map(instance => instance.id);
+      } 
+      // If this is an instance trip, we might want to find its master and other instances
+      else if (trip.isInstance && trip.masterTripId) {
+        // Get the master trip and all its instances
+        const masterTripId = trip.masterTripId;
+        
+        // Get all instances including this one
+        const allInstances = await this.tripRepo.find({
+          where: {
+            masterTripId: masterTripId,
+            isInstance: true
+          },
+          select: ['id']
+        });
+        
+        instanceCount = allInstances.length;
+        instanceIds = allInstances.map(instance => instance.id);
+        
+        // Also get the master trip ID for reference
+        const masterTrip = await this.tripRepo.findOne({
+          where: { id: masterTripId },
+          select: ['id', 'isScheduled']
+        });
+      }
+
+
         return {
           id: trip.id,
           vehicleModel: trip.vehicle?.model || 'Unknown',
@@ -1347,6 +2711,182 @@ export class TripsService {
           driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
           startLocation: trip.location?.startAddress,
           endLocation: trip.location?.endAddress,
+
+          // Scheduled trip fields from entity
+        isScheduled: trip.isScheduled ?? false,
+        isInstance: trip.isInstance ?? false,
+        masterTripId: trip.masterTripId,
+        instanceDate: trip.instanceDate,
+        
+        // Calculated instance data
+        instanceCount: instanceCount,
+        instanceIds: instanceIds,
+        
+        // Other schedule fields
+        repetition: trip.repetition,
+        validTillDate: trip.validTillDate,
+        includeWeekends: trip.includeWeekends ?? false,
+        repeatAfterDays: trip.repeatAfterDays
+        };
+      })
+    );
+
+    const hasMore = skip + trips.length < total;
+
+    return {
+      success: true,
+      data: {
+        trips: tripCards,
+        total,
+        page: requestDto.page,
+        limit: requestDto.limit,
+        hasMore,
+      },
+      statusCode: 200,
+    };
+  }
+
+  async getSupervisorTrips(user: any, requestDto: TripListRequestDto) {
+
+    // Create base query builder
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.requester', 'requester')
+      .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+      .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+    /*
+    if(user.role != 'sysadmin' && user.role != 'supervisor'
+    ) {
+      queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    }
+    */
+
+    // Apply time filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    switch (requestDto.timeFilter) {
+      case 'today':
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
+        break;
+      case 'week':
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        break;
+      case 'month':
+        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      case 'all':
+      default:
+        // No date filter
+        break;
+    }
+
+    // Apply status filter if provided
+    if (requestDto.statusFilter) {
+      queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+    }
+
+    // Calculate pagination
+    const skip = (requestDto.page - 1) * requestDto.limit;
+    
+    // Get total count
+    const total = await queryBuilder.getCount();
+    
+    // Get paginated results
+    const trips = await queryBuilder
+      .orderBy('trip.startDate', 'DESC')
+      .addOrderBy('trip.startTime', 'DESC')
+      .skip(skip)
+      .take(requestDto.limit)
+      .getMany();
+
+    // Transform trips to TripCardDto format
+    const tripCards = await Promise.all(
+      trips.map(async (trip) => {
+        const tripType = await this.determineTripType(trip, user.userId);
+        
+        let instanceCount = 0;
+      let instanceIds: number[] | null = null;
+
+      // If this is a master scheduled trip (not an instance itself), fetch its instances
+      if (trip.isScheduled && !trip.isInstance) {
+        // Fetch all instances for this master trip
+        const instances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.id,
+            isInstance: true
+          },
+          select: ['id'] // Only need IDs
+        });
+        
+        instanceCount = instances.length;
+        instanceIds = instances.map(instance => instance.id);
+      } 
+      // If this is an instance trip, we might want to find its master and other instances
+      else if (trip.isInstance && trip.masterTripId) {
+        // Get the master trip and all its instances
+        const masterTripId = trip.masterTripId;
+        
+        // Get all instances including this one
+        const allInstances = await this.tripRepo.find({
+          where: {
+            masterTripId: masterTripId,
+            isInstance: true
+          },
+          select: ['id']
+        });
+        
+        instanceCount = allInstances.length;
+        instanceIds = allInstances.map(instance => instance.id);
+        
+        // Also get the master trip ID for reference
+        const masterTrip = await this.tripRepo.findOne({
+          where: { id: masterTripId },
+          select: ['id', 'isScheduled']
+        });
+      }
+
+        return {
+          id: trip.id,
+          vehicleModel: trip.vehicle?.model || 'Unknown',
+          vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+          status: trip.status,
+          date: this.formatDateForDB(trip.startDate.toString()),
+          time: trip.startTime.substring(0, 5), // Format to HH:MM
+          tripType,
+          driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+          startLocation: trip.location?.startAddress,
+          endLocation: trip.location?.endAddress,
+
+          // Scheduled trip fields from entity
+        isScheduled: trip.isScheduled ?? false,
+        isInstance: trip.isInstance ?? false,
+        masterTripId: trip.masterTripId,
+        instanceDate: trip.instanceDate,
+        
+        // Calculated instance data
+        instanceCount: instanceCount,
+        instanceIds: instanceIds,
+        
+        // Other schedule fields
+        repetition: trip.repetition,
+        validTillDate: trip.validTillDate,
+        includeWeekends: trip.includeWeekends ?? false,
+        repeatAfterDays: trip.repeatAfterDays
         };
       })
     );
@@ -1560,10 +3100,7 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(approval.trip);
 
-    // If approved and there's a next step, send notification
-    if (status === StatusApproval.APPROVED && approval.currentStep) {
-      await this.sendNextApprovalNotification(approval);
-    }
+    // TODO publish event
 
     return {
       success: true,
@@ -1575,24 +3112,6 @@ export class TripsService {
       },
       statusCode: 200
     };
-  }
-
-  private async sendNextApprovalNotification(approval: Approval) {
-    let nextApprover: User | undefined;
-    
-    switch (approval.currentStep) {
-      case ApproverType.SECONDARY:
-        nextApprover = approval.approver2;
-        break;
-      case ApproverType.SAFETY:
-        nextApprover = approval.safetyApprover;
-        break;
-    }
-    
-    if (nextApprover) {
-      // Implement notification logic
-      console.log(`Notification sent to next approver: ${nextApprover.displayname}`);
-    }
   }
 
   async getPendingApprovalsForUser(userId: number) {
@@ -1659,6 +3178,7 @@ export class TripsService {
     };
   }
 
+  /*
   async getPendingApprovalTrips(userId: number, filterDto: any) {
     const user = await this.userRepo.findOne({ 
       where: { id: userId }
@@ -1793,6 +3313,190 @@ export class TripsService {
       statusCode: 200
     };
   }
+  */
+
+  async getPendingApprovalTrips(userId: number, filterDto: any) {
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId }
+    });
+    
+    if (!user) {
+      throw new NotFoundException(this.responseService.error('User not found', 404));
+    }
+
+    // Get pagination parameters
+    const page = parseInt(filterDto.page) || 1;
+    const limit = parseInt(filterDto.limit) || 5;
+    const skip = (page - 1) * limit;
+    const status = filterDto.status || 'pending';
+
+    // Check if user is SYSADMIN
+    const isSysAdmin = user.role === UserRole.SYSADMIN;
+
+    // Create query builder - SYSADMIN sees ALL approvals, not just where they are approvers
+    const queryBuilder = this.approvalRepo
+      .createQueryBuilder('approval')
+      .leftJoinAndSelect('approval.trip', 'trip')
+      .leftJoinAndSelect('trip.requester', 'requester')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .leftJoinAndSelect('approval.approver1', 'approver1')
+      .leftJoinAndSelect('approval.approver2', 'approver2')
+      .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover');
+
+    // For SYSADMIN: No approver restriction, see ALL approvals
+    // For regular users: Only see approvals where they are approver
+    if (!isSysAdmin) {
+      queryBuilder.where(new Brackets(qb => {
+        qb.where('approval.approver1 = :userId', { userId })
+          .orWhere('approval.approver2 = :userId', { userId })
+          .orWhere('approval.safetyApprover = :userId', { userId });
+      }));
+    }
+
+    // Apply status filter based on parameter
+    switch (status) {
+      case 'pending':
+        queryBuilder.andWhere('approval.overallStatus = :status', { status: StatusApproval.PENDING });
+        break;
+      case 'approved':
+        queryBuilder.andWhere('approval.overallStatus = :status', { status: StatusApproval.APPROVED });
+        break;
+      case 'rejected':
+        queryBuilder.andWhere('approval.overallStatus = :status', { status: StatusApproval.REJECTED });
+        break;
+      case 'all':
+        // No status filter for 'all'
+        break;
+      default:
+        queryBuilder.andWhere('approval.overallStatus = :status', { status: StatusApproval.PENDING });
+    }
+
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Get paginated results
+    const approvals = await queryBuilder
+      .orderBy('approval.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getMany();
+
+    // For regular users: Filter to only include approvals where user is the current step approver
+    // For SYSADMIN: Show all approvals
+    let filteredApprovals = approvals;
+    
+    if (!isSysAdmin) {
+      filteredApprovals = approvals.filter(approval => {
+        if (approval.approver1?.id === userId) {
+          return true;
+        }
+        if (approval.approver2?.id === userId) {
+          return true;
+        }
+        if (approval.safetyApprover?.id === userId) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    // Create an array to hold trip data with instance information
+    const tripsWithInstances = [];
+
+    // Process each approval to get instance data
+    for (const approval of filteredApprovals) {
+      const trip = approval.trip;
+      
+      let instanceCount = 0;
+      let instanceIds: number[] | null = null;
+
+      // If this is a master scheduled trip (not an instance itself), fetch its instances
+      if (trip.isScheduled && !trip.isInstance) {
+        // Fetch all instances for this master trip
+        const instances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.id,
+            isInstance: true
+          },
+          select: ['id'] // Only need IDs
+        });
+        
+        instanceCount = instances.length;
+        instanceIds = instances.map(instance => instance.id);
+      } 
+      // If this is an instance trip, we might want to find its master and other instances
+      else if (trip.isInstance && trip.masterTripId) {
+        // Get the master trip and all its instances
+        const masterTripId = trip.masterTripId;
+        
+        // Get all instances including this one
+        const allInstances = await this.tripRepo.find({
+          where: {
+            masterTripId: masterTripId,
+            isInstance: true
+          },
+          select: ['id']
+        });
+        
+        instanceCount = allInstances.length;
+        instanceIds = allInstances.map(instance => instance.id);
+        
+        // Also get the master trip ID for reference
+        const masterTrip = await this.tripRepo.findOne({
+          where: { id: masterTripId },
+          select: ['id', 'isScheduled']
+        });
+      }
+
+      tripsWithInstances.push({
+        id: trip.id,
+        requesterName: trip.requester?.displayname || 'Unknown',
+        startLocation: trip.location?.startAddress || '',
+        endLocation: trip.location?.endAddress || '',
+        startDate: trip.startDate,
+        startTime: trip.startTime,
+        vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+        status: trip.status,
+        requestedAt: trip.createdAt,
+        approvalStep: approval.currentStep.toLowerCase(),
+        assignedApprover: this.getAssignedApproverInfo(approval),
+        approver1Name: approval.approver1?.displayname,
+        approver2Name: approval.approver2?.displayname,
+        safetyApproverName: approval.safetyApprover?.displayname,
+        
+        // Scheduled trip fields from entity
+        isScheduled: trip.isScheduled ?? false,
+        isInstance: trip.isInstance ?? false,
+        masterTripId: trip.masterTripId,
+        instanceDate: trip.instanceDate,
+        
+        // Calculated instance data
+        instanceCount: instanceCount,
+        instanceIds: instanceIds,
+        
+        // Other schedule fields
+        repetition: trip.repetition,
+        validTillDate: trip.validTillDate,
+        includeWeekends: trip.includeWeekends ?? false,
+        repeatAfterDays: trip.repeatAfterDays
+      });
+    }
+
+    return {
+      success: true,
+      message: isSysAdmin ? 'All approval requests retrieved successfully' : 'Pending approvals retrieved successfully',
+      data: {
+        trips: tripsWithInstances,
+        total: total,
+        page: page,
+        limit: limit,
+        hasMore: skip + filteredApprovals.length < total,
+      },
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
 
   private getAssignedApproverInfo(approval: Approval): string {
     if (!approval.currentStep) return 'No approver assigned';
@@ -1809,50 +3513,8 @@ export class TripsService {
     }
   }
 
-  private getPassengerList(trip: Trip): string[] {
-    const passengers: string[] = [];
-    
-    // Add requester
-    if (trip.requester?.displayname) {
-      passengers.push(trip.requester.displayname);
-    }
-    
-    // Add selected group users
-    if (trip.selectedGroupUsers && trip.selectedGroupUsers.length > 0) {
-      trip.selectedGroupUsers.forEach(user => {
-        if (user.displayname) {
-          passengers.push(user.displayname);
-        }
-      });
-    }
-    
-    // Add selected individual
-    if (trip.selectedIndividual?.displayname) {
-      passengers.push(trip.selectedIndividual.displayname);
-    }
-    
-    // Add selected others
-    if (trip.selectedOthers && trip.selectedOthers.length > 0) {
-      trip.selectedOthers.forEach(other => {
-        if (other.displayName) {
-          passengers.push(other.displayName);
-        } else if (other.id) {
-          passengers.push(`Guest ${other.id}`);
-        }
-      });
-    }
-    
-    // If includeMeInGroup is true for group trips, ensure requester is included
-    if (trip.passengerType === PassengerType.GROUP && 
-        trip.includeMeInGroup && 
-        trip.requester?.displayname && 
-        !passengers.includes(trip.requester.displayname)) {
-      passengers.unshift(trip.requester.displayname);
-    }
-    
-    return passengers.length > 0 ? passengers : ['Unknown'];
-  }
 
+  /*
   async getTripById(id: number) {
     const trip = await this.tripRepo.findOne({
       where: { id },
@@ -1921,6 +3583,178 @@ export class TripsService {
         model: trip.vehicle.model,
         regNo: trip.vehicle.regNo,
         vehicleType: trip.vehicle.vehicleType?.vehicleType,
+        seatingCapacity: trip.vehicle.seatingCapacity,
+        seatingAvailability: trip.vehicle.seatingAvailability
+      } : null,
+      
+      // Location info (basic)
+      location: trip.location ? {
+        startAddress: trip.location.startAddress,
+        endAddress: trip.location.endAddress,
+        totalStops: trip.location.totalStops
+      } : null,
+      
+      // Detailed sections
+      details: {
+        // Passenger details
+        passengers: await this.getPassengerDetails(trip),
+        
+        // Approval details
+        approval: await this.getApprovalDetails(trip),
+        
+        // Driver details (separate from vehicle)
+        drivers: await this.getDriverDetails(trip),
+        
+        // Route details
+        route: await this.getRouteDetails(trip),
+        
+        // Vehicle details (complete)
+        vehicleDetails: await this.getVehicleDetails(trip),
+        
+        // Conflict details
+        conflicts: await this.getConflictDetails(trip)
+      }
+    };
+
+    return {
+      success: true,
+      message: 'Trip retrieved successfully',
+      data: responseData,
+      timestamp: new Date().toISOString(),
+      statusCode: 200
+    };
+  }
+  */
+
+  async getTripById(id: number) {
+    const trip = await this.tripRepo.findOne({
+      where: { id },
+      relations: [
+        'requester',
+        'requester.department',
+        'vehicle',
+        'vehicle.vehicleType',
+        'vehicle.assignedDriverPrimary',
+        'vehicle.assignedDriverSecondary',
+        'location',
+        'approval',
+        'approval.approver1',
+        'approval.approver1.department',
+        'approval.approver2',
+        'approval.approver2.department',
+        'approval.safetyApprover',
+        'approval.safetyApprover.department',
+        'selectedGroupUsers',
+        'selectedIndividual',
+        'conflictingTrips',
+        'conflictingTrips.requester',
+        'conflictingTrips.location',
+        'conflictingTrips.vehicle',
+        'linkedTrips',
+        'linkedTrips.requester',
+        'linkedTrips.location',
+        'linkedTrips.vehicle',
+        'odometerLog',
+        'primaryDriver',
+        'secondaryDriver',
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    // Get instance data for scheduled trips
+    let instanceCount = 0;
+    let instanceIds: { id: number, startDate: Date }[] = [];
+    
+    if (trip.isScheduled) {
+      if (!trip.isInstance) {
+        // This is a master trip, get its instances
+        const instances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.id,
+            isInstance: true
+          },
+          select: ['id', 'startDate']
+        });
+        instanceCount = instances.length;
+        instanceIds = instances.map(inst => (
+          {
+            id: inst.id,
+            startDate: inst.startDate
+          }
+        ));
+      } else if (trip.masterTripId) {
+        // This is an instance, get all instances from the same master
+        const allInstances = await this.tripRepo.find({
+          where: {
+            masterTripId: trip.masterTripId,
+            isInstance: true
+          },
+          select: ['id', 'startDate']
+        });
+        instanceCount = allInstances.length;
+        instanceIds = allInstances.map(inst => (
+          {
+            id: inst.id,
+            startDate: inst.startDate
+          }
+        ));
+      }
+    }
+
+    // Build the response data structure
+    const responseData = {
+      // Basic trip info (no duplicates)
+      id: trip.id,
+      status: trip.status,
+      purpose: trip.purpose,
+      specialRemarks: trip.specialRemarks,
+      startDate: trip.startDate,
+      startTime: trip.startTime,
+      repetition: trip.repetition,
+      passengerType: trip.passengerType,
+      passengerCount: trip.passengerCount,
+      includeMeInGroup: trip.includeMeInGroup,
+      cost: trip.cost,
+      mileage: trip.mileage,
+      createdAt: trip.createdAt,
+      updatedAt: trip.updatedAt,
+
+      tripType: trip.tripType, // 'normal', 'fixed_rate', or 'safety_approval'
+      fixedRate: trip.fixedRate, // number or null
+      reason: trip.reason, 
+      
+      // Schedule details
+      schedule: {
+        isScheduled: trip.isScheduled,
+        isInstance: trip.isInstance,
+        masterTripId: trip.masterTripId,
+        instanceDate: trip.instanceDate,
+        validTillDate: trip.validTillDate,
+        includeWeekends: trip.includeWeekends,
+        repeatAfterDays: trip.repeatAfterDays,
+        instanceCount: instanceCount,
+        instanceIds: instanceIds
+      },
+      
+      // Requester info (simplified)
+      requester: {
+        id: trip.requester?.id,
+        name: trip.requester?.displayname,
+        email: trip.requester?.email,
+        phone: trip.requester?.phone,
+        department: trip.requester?.department?.name
+      },
+      
+      // Vehicle info (without driver details in main object)
+      vehicle: trip.vehicle ? {
+        id: trip.vehicle.id,
+        model: trip.vehicle.model,
+        regNo: trip.vehicle.regNo,
+        vehicleType: trip.vehicle.vehicleType?.vehicleType,
+        costPerKm: trip.vehicle.vehicleType?.costPerKm,
         seatingCapacity: trip.vehicle.seatingCapacity,
         seatingAvailability: trip.vehicle.seatingAvailability
       } : null,
@@ -2084,12 +3918,8 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
-    // Send notifications if needed
-    if (approval.overallStatus.toString() === 'approved') {
-      await this.sendTripApprovedNotification(trip);
-    } else if (approval.currentStep) {
-      await this.sendNextApprovalNotification(approval);
-    }
+            // TODO publish event
+
 
     return {
       success: true,
@@ -2210,13 +4040,13 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
+    /*
     // Restore vehicle seats if vehicle was assigned
     if (trip.vehicle) {
       await this.restoreVehicleSeatsForRejection(trip);
     }
-
-    // Send rejection notification
-    await this.sendTripRejectedNotification(trip, user, rejectionReason);
+    */
+        // TODO publish event
 
     return {
       success: true,
@@ -2233,6 +4063,7 @@ export class TripsService {
     };
   }
 
+  /*
   private async restoreVehicleSeatsForRejection(trip: Trip) {
     // Restore seats that were allocated for this rejected trip
     const vehicle = await this.vehicleRepo.findOne({ 
@@ -2240,48 +4071,20 @@ export class TripsService {
     });
 
     if (vehicle) {
-      // Restore seats
+      // Restore seats that were allocated for this trip
       vehicle.seatingAvailability += trip.passengerCount;
       
       // Ensure seating availability doesn't exceed max capacity
-      if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-        vehicle.seatingAvailability = vehicle.seatingCapacity;
+      const maxAvailable = vehicle.seatingCapacity - 1; // Assuming driver takes 1 seat
+      if (vehicle.seatingAvailability > maxAvailable) {
+        vehicle.seatingAvailability = maxAvailable;
       }
-
+      
       await this.vehicleRepo.save(vehicle);
+
     }
   }
-
-  
-  // Helper methods
-  private async sendTripRejectedNotification(trip: Trip, rejectedBy: User, reason: string) {
-    // Send notification to requester
-    console.log(`Trip ${trip.id} rejected by ${rejectedBy.displayname}. Reason: ${reason}`);
-    // Implement actual notification logic (email, push, etc.)
-  }
-
-  private determineCurrentApproverType(approval: Approval): ApproverType {
-    if (approval.currentStep) {
-      return approval.currentStep;
-    }
-    
-    // If no current step, determine based on what's pending
-    if (approval.requireApprover1 && approval.approver1Status === StatusApproval.PENDING) {
-      return ApproverType.HOD;
-    } else if (approval.requireApprover2 && approval.approver2Status === StatusApproval.PENDING) {
-      return ApproverType.SECONDARY;
-    } else if (approval.requireSafetyApprover && approval.safetyApproverStatus === StatusApproval.PENDING) {
-      return ApproverType.SAFETY;
-    }
-    
-    return ApproverType.HOD; // Default
-  }
-
-  private async sendTripApprovedNotification(trip: Trip) {
-    // Send notification to requester
-    console.log(`Trip ${trip.id} approved. Notifying requester: ${trip.requester.displayname}`);
-    // Implement actual notification logic (email, push, etc.)
-  }  
+  */
 
   private async getPassengerDetails(trip: Trip) {
     const passengers = [];
@@ -2396,6 +4199,7 @@ export class TripsService {
     };
   }
 
+  /*
   private async getDriverDetails(trip: Trip) {
     if (!trip.vehicle) {
       return {
@@ -2420,6 +4224,31 @@ export class TripsService {
       } : null
     };
   }
+  */
+  private async getDriverDetails(trip: Trip) {
+    if (!trip.vehicle) {
+      return {
+        hasDrivers: false,
+        message: 'No vehicle assigned'
+      };
+    }
+
+    return {
+      hasDrivers: true,
+      primary: trip.primaryDriver ? {
+        id: trip.primaryDriver.id,
+        name: trip.primaryDriver.displayname,
+        phone: trip.primaryDriver.phone,
+        role: trip.primaryDriver.role
+      } : null,
+      secondary: trip.secondaryDriver ? {
+        id: trip.secondaryDriver.id,
+        name: trip.secondaryDriver.displayname,
+        phone: trip.secondaryDriver.phone,
+        role: trip.secondaryDriver.role
+      } : null
+    };
+  }
 
   private async getRouteDetails(trip: Trip) {
     if (!trip.location) {
@@ -2427,6 +4256,13 @@ export class TripsService {
         hasRoute: false,
         message: 'No route information available'
       };
+    }
+
+    let actualDistance = null;
+    let actualDuration = null;
+    if (trip.status == TripStatus.COMPLETED) {
+      actualDistance = (trip.odometerLog?.endReading - trip.odometerLog?.startReading).toString();
+      actualDuration = this.calculateDurationMinutes(trip.odometerLog.endRecordedAt, trip.odometerLog.startRecordedAt).toString();
     }
 
     return {
@@ -2449,10 +4285,18 @@ export class TripsService {
       },
       metrics: {
         distance: trip.location.distance,
-        estimatedDuration: trip.location.estimatedDuration
+        actualDistance: actualDistance,
+        estimatedDuration: (Math.round(trip.location.estimatedDuration)).toString(),
+        actualDuration: actualDuration,
+        estimatedRestingMinutes: trip.location.estimatedRestingHours,
       },
       rawData: trip.location.locationData
     };
+  }
+
+  private calculateDurationMinutes(endTime: Date, startTime: Date): number {
+    const durationMs = endTime.getTime() - startTime.getTime();
+    return Math.round(durationMs / (1000 * 60)); // Convert ms to minutes
   }
 
   private async getVehicleDetails(trip: Trip) {
@@ -2993,6 +4837,7 @@ export class TripsService {
     };
   }
 
+  /*
   async recordOdometerReading(
     tripId: number,
     userId: number,
@@ -3006,26 +4851,26 @@ export class TripsService {
     });
 
     if (!trip) {
-      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+      return new NotFoundException(this.responseService.error('Trip not found', 404));
     }
 
     // Check if trip is approved or read
     if (trip.status !== TripStatus.APPROVED && trip.status !== TripStatus.FINISHED) {
-      throw new BadRequestException(
-        this.responseService.error('Cannot record odometer for non-approved trip', 400)
+      return new BadRequestException(
+        this.responseService.error('Cannot record odometer for non-approved trip or ongoing trips', 400)
       );
     }
 
     // Get user recording the reading
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException(this.responseService.error('User not found', 404));
+      return new NotFoundException(this.responseService.error('User not found', 404));
     }
 
-    // Check user authorization (only SYSADMIN, ADMIN, HR, DRIVER can record)
+    // Check user authorization (only SYSADMIN, SECURITY can record)
     const allowedRoles = [UserRole.SYSADMIN, UserRole.SECURITY];
     if (!allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(
+      return new ForbiddenException(
         this.responseService.error('You are not authorized to record odometer readings', 403)
       );
     }
@@ -3054,16 +4899,16 @@ export class TripsService {
     if (readingType === 'start') {
       // Check if start reading already exists
       if (odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('Start odometer reading already recorded', 400)
         );
       }
 
       // Validate start reading cannot be less than vehicle's last odometer reading
       if (reading < vehicleLastReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error(
-            `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading`,// (${vehicleLastReading})`,
             400
           )
         );
@@ -3086,21 +4931,21 @@ export class TripsService {
     } else if (readingType === 'end') {
       // Check if start reading exists
       if (!odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('Start odometer reading must be recorded first', 400)
         );
       }
 
       // Check if end reading already exists
       if (odometerLog.endReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('End odometer reading already recorded', 400)
         );
       }
 
       // Validate end reading is greater than start reading
       if (reading <= odometerLog.startReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error('End odometer reading must be greater than start reading', 400)
         );
       }
@@ -3109,9 +4954,9 @@ export class TripsService {
       // (This check might be redundant if start reading already passed this check,
       // but we keep it for safety)
       if (reading < vehicleLastReading) {
-        throw new BadRequestException(
+        return new BadRequestException(
           this.responseService.error(
-            `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading`,// (${vehicleLastReading})`,
             400
           )
         );
@@ -3125,6 +4970,9 @@ export class TripsService {
       // Check if trip is fully read and update status
       if (odometerLog.startReading && odometerLog.endReading) {
         trip.status = TripStatus.COMPLETED;
+        console.log('=================================================================     run  1   =======================================')
+        trip.cost = this.calculateCost(trip.vehicle.vehicleType.costPerKm, odometerLog.startReading, odometerLog.endReading);
+        console.log('=================================================================     run   2    =======================================')
       }
 
       // Check if there are approved conflicting trips and update their end odometer to 0
@@ -3155,13 +5003,18 @@ export class TripsService {
           
           // Ensure seating availability doesn't exceed max capacity
           if (vehicle.seatingAvailability > vehicle.seatingCapacity) {
-            vehicle.seatingAvailability = vehicle.seatingCapacity;
+            vehicle.seatingAvailability = vehicle.seatingCapacity - 1;
           }
           
           await transactionalEntityManager.save(vehicle);
         }
       }
 
+      try {
+                // TODO publish event
+      } catch (e) {
+        console.error('Failed to send odometer notification', e);
+      }
     });
 
     // Update vehicle's last odometer reading
@@ -3190,8 +5043,290 @@ export class TripsService {
       statusCode: 200,
     };
   }
+  */
+
+  async recordOdometerReading(
+  tripId: number,
+  userId: number,
+  reading: number,
+  readingType: 'start' | 'end'
+): Promise<any> {
+  // Find the trip with relations
+  const trip = await this.tripRepo.findOne({
+    where: { id: tripId },
+    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips']
+  });
+
+  if (!trip) {
+    return new NotFoundException(this.responseService.error('Trip not found', 404));
+  }
+
+  // Check if trip is approved or read
+  /*
+  if (trip.status !== TripStatus.APPROVED && trip.status !== TripStatus.FINISHED) {
+    return new BadRequestException(
+      this.responseService.error('Cannot record odometer for non-approved trip or ongoing trip', 400)
+    );
+  }
+  */
+
+  // Get user recording the reading
+  const user = await this.userRepo.findOne({ where: { id: userId } });
+  if (!user) {
+    return new NotFoundException(this.responseService.error('User not found', 404));
+  }
+
+  // Check user authorization (only SYSADMIN, SECURITY can record)
+  const allowedRoles = [UserRole.SYSADMIN, UserRole.SECURITY];
+  if (!allowedRoles.includes(user.role)) {
+    return new ForbiddenException(
+      this.responseService.error('You are not authorized to record odometer readings', 403)
+    );
+  }
+
+  // Get vehicle's last odometer reading
+  let vehicleLastReading = 0;
+  if (trip.vehicle?.odometerLastReading) {
+    vehicleLastReading = trip.vehicle.odometerLastReading;
+  }
+
+  const now = new Date();
+
+  // Create or get odometer log
+  let odometerLog = trip.odometerLog;
+  if (!odometerLog) {
+    odometerLog = this.odometerLogRepo.create({
+      vehicle: trip.vehicle,
+      trip,
+    });
+  }
+
+  // Calculate passenger count for this trip
+  const passengerCount = this.calculateTripPassengerCount(trip);
+
+  // Validate reading based on type
+  if (readingType === 'start') {
+    if (trip.status !== TripStatus.APPROVED) {
+      return new BadRequestException(
+        this.responseService.error('Cannot record odometer for non-approved trip', 400)
+      );
+    }
+
+    // Check if start reading already exists
+    if (odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('Start odometer reading already recorded', 400)
+      );
+    }
+
+    // Validate start reading cannot be less than vehicle's last odometer reading
+    if (reading < vehicleLastReading) {
+      return new BadRequestException(
+        this.responseService.error(
+          `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+          400
+        )
+      );
+    }
+
+    // Update start reading fields
+    odometerLog.startReading = reading;
+    odometerLog.startRecordedBy = user;
+    odometerLog.startRecordedAt = now;
+
+    // Update trip status to READ if start reading is recorded
+    trip.status = TripStatus.READ;
+    
+    // Check if there are approved conflicting trips and update their start odometer to 0
+    if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
+    }
+  } else if (readingType === 'end') {
+    // Check if trip is in READ status (must have start reading recorded)
+    if (trip.status !== TripStatus.FINISHED) {
+      return new BadRequestException(
+        this.responseService.error('Cannot record end odometer for incomplete trip', 400)
+      );
+    }
+
+    // Check if start reading exists
+    if (!odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('Start odometer reading must be recorded first', 400)
+      );
+    }
+
+    // Check if end reading already exists
+    if (odometerLog.endReading) {
+      return new BadRequestException(
+        this.responseService.error('End odometer reading already recorded', 400)
+      );
+    }
+
+    // Validate end reading is greater than start reading
+    if (reading <= odometerLog.startReading) {
+      return new BadRequestException(
+        this.responseService.error('End odometer reading must be greater than start reading', 400)
+      );
+    }
+
+    // Validate end reading cannot be less than vehicle's last odometer reading
+    if (reading < vehicleLastReading) {
+      return new BadRequestException(
+        this.responseService.error(
+          `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+          400
+        )
+      );
+    }
+
+    // Update end reading fields
+    odometerLog.endReading = reading;
+    odometerLog.endRecordedBy = user;
+    odometerLog.endRecordedAt = now;
+    
+    // Update trip status to COMPLETED
+    trip.status = TripStatus.COMPLETED; 
+    /*
+    trip.cost = (odometerLog.endReading - odometerLog.startReading) * trip.vehicle.vehicleType.costPerKm;
+    
+    // Calculate cost if vehicle type has cost per km
+    if (trip.vehicle?.vehicleType?.costPerKm && odometerLog.startReading && odometerLog.endReading) {
+      const distance = odometerLog.endReading - odometerLog.startReading;
+      trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+      console.log(`Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`);
+    }
+    */
+
+    // UPDATED: Only calculate cost if NOT a fixed rate trip
+    if (!(trip.tripType === TripType.FIXED_RATE)) {
+      // Calculate cost based on distance and vehicle type cost per km
+      if (trip.vehicle?.vehicleType?.costPerKm && odometerLog.startReading && odometerLog.endReading) {
+        const distance = odometerLog.endReading - odometerLog.startReading;
+        trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+        console.log(`Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`);
+      }
+    }
+
+    // Check if there are approved conflicting trips and update their end odometer to 0
+    if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+    }
+  } else {
+    return new BadRequestException(
+      this.responseService.error('Invalid reading type. Must be "start" or "end"', 400)
+    );
+  }
+
+  try {
+    // Save all changes in a transaction
+    await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      // Save odometer log first
+      await transactionalEntityManager.save(OdometerLog, odometerLog);
+      
+      // Update trip with reference to odometer log
+      trip.odometerLog = odometerLog;
+      await transactionalEntityManager.save(Trip, trip);
+      
+      // Update vehicle's last odometer reading
+      if (trip.vehicle) {
+        await transactionalEntityManager.update(
+          Vehicle, 
+          { id: trip.vehicle.id },
+          { odometerLastReading: reading, updatedAt: now }
+        );
+        
+        /*
+        // RESTORE VEHICLE SEATS when end reading is recorded
+        if (readingType === 'end' && passengerCount > 0) {
+          const vehicle = await transactionalEntityManager.findOne(
+            Vehicle, 
+            { where: { id: trip.vehicle.id } }
+          );
+          
+          if (vehicle) {
+            // Restore seats that were allocated for this trip
+            // Make sure seatingAvailability doesn't exceed seatingCapacity
+            const newAvailability = Math.min(
+              vehicle.seatingCapacity,
+              vehicle.seatingAvailability + passengerCount
+            );
+            
+            vehicle.seatingAvailability = newAvailability;
+            await transactionalEntityManager.save(Vehicle, vehicle);
+          }
+        }
+        */
+      }
+
+      
+    });
+
+    return this.responseService.success(
+      `${readingType} odometer reading recorded successfully`,
+      {
+        tripId: trip.id,
+        readingType,
+        reading,
+        recordedBy: {
+          id: user.id,
+          name: user.displayname,
+          role: user.role,
+        },
+        recordedAt: now.toISOString(),
+        tripStatus: trip.status,
+        startReading: odometerLog.startReading,
+        endReading: odometerLog.endReading,
+        startRecordedAt: odometerLog.startRecordedAt?.toISOString(),
+        endRecordedAt: odometerLog.endRecordedAt?.toISOString(),
+        startRecordedBy: odometerLog.startRecordedBy?.displayname,
+        endRecordedBy: odometerLog.endRecordedBy?.displayname,
+        vehicleLastReading: vehicleLastReading,
+        cost: trip.cost,
+        distance: odometerLog.endReading && odometerLog.startReading 
+          ? odometerLog.endReading - odometerLog.startReading 
+          : null,
+      },
+      200
+    );
+  } catch (error) {
+    // Log the actual error for debugging
+    console.error('Error recording odometer reading:', error);
+    console.error('Transaction error:', error);
+    
+    if (error instanceof HttpException) {
+      return error;
+    }
+    
+    return new InternalServerErrorException(
+      this.responseService.error('Failed to record odometer reading', 500)
+    );
+  }
+}
 
   // Helper method to calculate passenger count from Trip entity
+  private calculateCost(costPerKm: number, startReading: number, endReading: number): number {
+    // Validate inputs
+    if (!costPerKm || costPerKm <= 0) {
+      console.warn('Invalid cost per km:', costPerKm);
+      return 0;
+    }
+    
+    if (!startReading || !endReading || endReading <= startReading) {
+      console.warn('Invalid odometer readings:', { startReading, endReading });
+      return 0;
+    }
+    
+    // Calculate distance traveled
+    const distance = endReading - startReading;
+    
+    // Calculate cost
+    const cost = distance * costPerKm;
+    
+    // Return with 2 decimal places
+    return parseFloat(cost.toFixed(2));
+  }
+
   private calculateTripPassengerCount(trip: Trip): number {
     let passengerCount = 0;
 
@@ -3282,8 +5417,10 @@ export class TripsService {
               // Check if conflict trip is fully read
               if (conflictOdometerLog.startReading !== null && conflictOdometerLog.endReading !== null) {
                 fullConflictTrip.status = TripStatus.COMPLETED;
+                fullConflictTrip.cost = 0;
               }
 
+              /*
               // RESTORE VEHICLE SEATS for conflict trip when end reading is recorded
               if (fullConflictTrip.vehicle && conflictPassengerCount > 0) {
                 const conflictVehicle = await this.vehicleRepo.findOne({
@@ -3301,7 +5438,8 @@ export class TripsService {
                   
                   await this.vehicleRepo.save(conflictVehicle);
                 }
-              }        
+              } 
+              */       
             }
           }
 
@@ -3347,11 +5485,12 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
 
   const isSysAdmin = requestingUser.role === UserRole.SYSADMIN;
   const isDriver = requestingUser.role === UserRole.DRIVER;
+  const isSupervisor = requestingUser.role === UserRole.SUPERVISOR;
 
   // If user is not SYSADMIN and not DRIVER, they can't access this endpoint
-  if (!isSysAdmin && !isDriver) {
+  if (!isSysAdmin && !isDriver && !isSupervisor) {
     throw new ForbiddenException(
-      this.responseService.error('Only drivers or sysadmins can access assigned trips', 403)
+      this.responseService.error('Only drivers or Supervisor or sysadmins can access assigned trips', 403)
     );
   }
 
@@ -3369,7 +5508,7 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
     .leftJoinAndSelect('trip.odometerLog', 'odometerLog');
 
   // Apply driver filter only if user is a DRIVER (not SYSADMIN)
-  if (isDriver) {
+  if (isDriver || isSupervisor) {
     queryBuilder.where(new Brackets(qb => {
       qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId })
         .orWhere('vehicle.assignedDriverSecondary.id = :driverId', { driverId });
@@ -3452,10 +5591,9 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
       });
     }
   } else {
-    console.log('==================RUN============')
     // Default: exclude DRAFT and CANCELED trips for drivers
     queryBuilder.andWhere('trip.status NOT IN (:...excludedStatuses)', {
-      excludedStatuses: [TripStatus.DRAFT, TripStatus.CANCELED, TripStatus.REJECTED, TripStatus.PENDING]
+      excludedStatuses: [TripStatus.DRAFT, TripStatus.CANCELED, TripStatus.REJECTED]
     });
   }
 
@@ -3679,7 +5817,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   });
 
   if (!trip) {
-    throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    return new NotFoundException(this.responseService.error('Trip not found', 404));
   }
 
   // Get user making the request
@@ -3689,7 +5827,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   });
   
   if (!user) {
-    throw new NotFoundException(this.responseService.error('User not found', 404));
+    return new NotFoundException(this.responseService.error('User not found', 404));
   }
 
   const isSysAdmin = user.role === UserRole.SYSADMIN;
@@ -3700,14 +5838,14 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   const isAssignedDriver = isPrimaryDriver || isSecondaryDriver;
 
   if (!isSysAdmin && !isAssignedDriver) {
-    throw new ForbiddenException(
+    return new ForbiddenException(
       this.responseService.error('You are not authorized to start this trip', 403)
     );
   }
 
   // Check current trip status
   if (trip.status !== TripStatus.READ) {
-    throw new BadRequestException(
+    return new BadRequestException(
       this.responseService.error(
         `Cannot start trip with status: ${trip.status}. Trip must be READ.`,
         400
@@ -3717,7 +5855,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
 
   // Check if odometer start reading is done
   if (!trip.odometerLog?.startReading) {
-    throw new BadRequestException(
+    return new BadRequestException(
       this.responseService.error(
         'Cannot start trip without odometer start reading. Please complete meter reading first.',
         400
@@ -3725,7 +5863,26 @@ async startTrip(tripId: number, userId: number): Promise<any> {
     );
   }
 
+  // NEW: Check if current time is within 15 minutes window of scheduled start time
   const now = new Date();
+  const tripDateTime = this.getTripDateTime(trip.startDate, trip.startTime);
+  
+  // Calculate time difference in minutes
+  const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
+  
+  // If more than 15 minutes early or late
+  if (timeDiffMinutes > 15) {
+    const isEarly = now < tripDateTime;
+    const minutesAway = Math.abs(timeDiffMinutes);
+    
+    return new BadRequestException(
+      this.responseService.error(
+        `Cannot start trip. You are ${minutesAway.toFixed(0)} minutes ${isEarly ? 'before' : 'after'} the scheduled start time. ` +
+        'Trip can only be started within 15 minutes of the scheduled time.',
+        400
+      )
+    );
+  }
 
   // Start the main trip
   trip.status = TripStatus.ONGOING;
@@ -3760,6 +5917,13 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   // Save the main trip
   await this.tripRepo.save(trip);
 
+  // Notify relevant users
+  try {
+    // TODO publish event
+  } catch (e) {
+    console.error('Failed to send trip start notification', e);
+  }
+
   return {
     success: true,
     message: 'Trip started successfully',
@@ -3771,7 +5935,28 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   };
 }
 
-async endTrip(tripId: number, userId: number): Promise<any> {
+// Helper method to combine date and time into a single Date object
+private getTripDateTime(date: Date, timeString: string): Date {
+  const dateObj = new Date(date);
+  const [hours, minutes, seconds = 0] = timeString.split(':').map(Number);
+  
+  dateObj.setHours(hours, minutes, seconds, 0);
+  return dateObj;
+}
+
+async endTrip(tripId: number, userId: number, endPassengerCount: number): Promise<any> {
+  if (!endPassengerCount || endPassengerCount <= 0) {
+    throw new BadRequestException(
+      this.responseService.error('Passenger count must be greater than 0', 400)
+    );
+  }
+
+  if (endPassengerCount > 50) { // Adjust max limit as needed
+    throw new BadRequestException(
+      this.responseService.error('Passenger count is too high', 400)
+    );
+  }
+
   // Get trip with all necessary relations
   const trip = await this.tripRepo.findOne({
     where: { id: tripId },
@@ -3827,6 +6012,7 @@ async endTrip(tripId: number, userId: number): Promise<any> {
 
   // End the main trip
   trip.status = TripStatus.FINISHED;
+  trip.endPassengerCount = endPassengerCount;
   trip.updatedAt = now;
 
   // Also end all connected trips that are ongoing
@@ -3856,6 +6042,13 @@ async endTrip(tripId: number, userId: number): Promise<any> {
   // Save the main trip
   await this.tripRepo.save(trip);
 
+  // Notify relevant users
+  try {
+    // TODO publish event
+  } catch (e) {
+    console.error('Failed to send trip end notification', e);
+  }
+
   return {
     success: true,
     message: 'Trip ended successfully',
@@ -3867,5 +6060,1134 @@ async endTrip(tripId: number, userId: number): Promise<any> {
   };
 }
 
+  // Add to TripsService class
+  /**
+   * Generate trip report in PDF or Excel format
+   */
+  async generateTripReport(
+    startDate: Date,
+    endDate: Date,
+    format: 'pdf' | 'excel'
+  ): Promise<Buffer> {
+    console.log(`🔄 Starting report generation: ${startDate.toISOString()} to ${endDate.toISOString()}, format: ${format}`);
+    
+    try {
+      // Validate input parameters
+      this.validateReportParameters(startDate, endDate, format);
+
+      // Get trips data for the date range
+      const trips = await this.getTripsForReport(startDate, endDate);
+      
+      if (!trips || trips.length === 0) {
+        console.log(`⚠️ No trips found for date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+        throw new NotFoundException('No trips found for the selected date range');
+      }
+
+      console.log(`✅ Found ${trips.length} trips for report`);
+
+      // Generate report based on format
+      if (format === 'pdf') {
+        return await this.generatePdfReport(trips, startDate, endDate);
+      } else {
+        return await this.generateExcelReport(trips, startDate, endDate);
+      }
+    } catch (error) {
+      console.error(`❌ Error in generateTripReport:`, error);
+      
+      // Re-throw known exceptions
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException ||
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      
+      // Wrap unknown errors with context
+      throw new InternalServerErrorException(
+        `Failed to generate trip report: ${error.message || 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Get report preview with summary and sample data
+   */
+  async getReportPreview(
+    startDate: Date,
+    endDate: Date,
+    userId: number
+  ): Promise<any> {
+    try {
+      // Validate dates
+      this.validateDateRange(startDate, endDate);
+
+      // Get trips data for the date range
+      const trips = await this.getTripsForReport(startDate, endDate);
+      
+      if (!trips || trips.length === 0) {
+        throw new NotFoundException('No trips found for the selected date range');
+      }
+      
+      // Calculate summary
+      const summary = this.calculateReportSummary(trips);
+      
+      // Get preview rows (limit to 5 for preview)
+      const previewRows = this.formatTripsForPreview(trips.slice(0, 5));
+      
+      return {
+        success: true,
+        data: {
+          summary,
+          dateRange: {
+            fromDate: startDate.toISOString().split('T')[0],
+            toDate: endDate.toISOString().split('T')[0],
+            days: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+          },
+          previewRows,
+          totalTrips: trips.length
+        },
+        timestamp: new Date().toISOString(),
+        statusCode: 200
+      };
+    } catch (error) {
+      console.error('Error in getReportPreview:', error);
+      
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      throw new InternalServerErrorException(
+        `Failed to generate report preview: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Private helper methods
+   */
+
+  /**
+   * Validate report generation parameters
+   */
+  private validateReportParameters(startDate: Date, endDate: Date, format: string): void {
+    // Check if dates are valid
+    if (!startDate || !endDate) {
+      throw new BadRequestException('Start date and end date are required');
+    }
+    
+    if (isNaN(startDate.getTime())) {
+      throw new BadRequestException('Invalid start date');
+    }
+    
+    if (isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid end date');
+    }
+    
+    // Validate date range
+    this.validateDateRange(startDate, endDate);
+    
+    // Validate format
+    if (format !== 'pdf' && format !== 'excel') {
+      throw new BadRequestException('Format must be either "pdf" or "excel"');
+    }
+  }
+
+  /**
+   * Validate date range constraints
+   */
+  private validateDateRange(startDate: Date, endDate: Date): void {
+    // Check if start date is before end date
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date must be before or equal to end date');
+    }
+    
+    // Check date range limit (max 1 year)
+    const maxDays = 365;
+    const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysDifference > maxDays) {
+      throw new BadRequestException(`Date range cannot exceed ${maxDays} days`);
+    }
+    
+    // Check if dates are in the future (optional, adjust as needed)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (startDate > today) {
+      throw new BadRequestException('Start date cannot be in the future');
+    }
+  }
+
+  /**
+   * Get trips for report with all necessary relations
+   */
+  private async getTripsForReport(startDate: Date, endDate: Date): Promise<Trip[]> {
+    try {
+      const startDateStr = this.formatDateForDB(startDate.toISOString().split('T')[0]);
+      const endDateStr = this.formatDateForDB(endDate.toISOString().split('T')[0]);
+      
+      console.log(`🔍 Querying trips from ${startDateStr} to ${endDateStr}`);
+      
+      const trips = await this.tripRepo
+        .createQueryBuilder('trip')
+        .leftJoinAndSelect('trip.requester', 'requester')
+        .leftJoinAndSelect('requester.department', 'department')
+        .leftJoinAndSelect('department.costCenter', 'costCenter')
+        .leftJoinAndSelect('trip.vehicle', 'vehicle')
+        .leftJoinAndSelect('vehicle.assignedDriverPrimary', 'driver')
+        .leftJoinAndSelect('trip.primaryDriver', 'primaryDriver')
+        .leftJoinAndSelect('trip.location', 'location')
+        .leftJoinAndSelect('trip.odometerLog', 'odometerLog')
+        .leftJoinAndSelect('trip.approval', 'approval')
+        .leftJoinAndSelect('approval.approver1', 'approver1')
+        .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
+        .where('trip.status IN (:...statuses)', {
+          statuses: [TripStatus.COMPLETED]
+        })
+        .andWhere('trip.startDate BETWEEN :startDate AND :endDate', {
+          startDate: startDateStr,
+          endDate: endDateStr
+        })
+        .orderBy('trip.startDate', 'ASC')
+        .addOrderBy('trip.startTime', 'ASC')
+        .getMany();
+      
+      console.log(`✅ Retrieved ${trips?.length || 0} trips from database`);
+      return trips || [];
+    } catch (error) {
+      console.error('Database query error in getTripsForReport:', error);
+      throw new InternalServerErrorException('Failed to retrieve trip data from database');
+    }
+  }
+
+  /**
+   * Calculate report summary statistics
+   */
+  private calculateReportSummary(trips: Trip[]): any {
+    try {
+      let totalCost = 0;
+      let totalDistance = 0;
+      let totalPassengers = 0;
+      let totalDuration = 0;
+      let tripsWithCost = 0;
+      let tripsWithDistance = 0;
+      let tripsWithDuration = 0;
+      
+      trips.forEach(trip => {
+        // Handle cost (safely parse)
+        if (trip.cost !== null && trip.cost !== undefined) {
+          const cost = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+          if (!isNaN(cost)) {
+            totalCost += cost;
+            tripsWithCost++;
+          }
+        }
+        
+        // Handle distance from odometer log
+        if (trip.odometerLog?.startReading !== undefined && 
+            trip.odometerLog?.endReading !== undefined) {
+          const start = Number(trip.odometerLog.startReading);
+          const end = Number(trip.odometerLog.endReading);
+          if (!isNaN(start) && !isNaN(end)) {
+            totalDistance += (end - start);
+            tripsWithDistance++;
+          }
+        }
+        
+        // Handle passengers
+        const passengers = trip.endPassengerCount || trip.passengerCount;
+        if (passengers !== null && passengers !== undefined) {
+          totalPassengers += Number(passengers);
+        }
+        
+        // Handle duration
+        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+          try {
+            const start = new Date(trip.odometerLog.startRecordedAt);
+            const end = new Date(trip.odometerLog.endRecordedAt);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              const duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              totalDuration += duration;
+              tripsWithDuration++;
+            }
+          } catch (e) {
+            console.warn(`Could not parse duration for trip ${trip.id}:`, e);
+          }
+        }
+      });
+      
+      // Calculate averages safely
+      const avgDuration = tripsWithDuration > 0 ? totalDuration / tripsWithDuration : 0;
+      const avgCost = tripsWithCost > 0 ? totalCost / tripsWithCost : 0;
+      const avgDistance = tripsWithDistance > 0 ? totalDistance / tripsWithDistance : 0;
+      
+      return {
+        totalTrips: trips.length,
+        totalCost: parseFloat(totalCost.toFixed(2)),
+        totalDistance: parseFloat(totalDistance.toFixed(2)),
+        averageDuration: parseFloat(avgDuration.toFixed(2)),
+        averageCost: parseFloat(avgCost.toFixed(2)),
+        averageDistance: parseFloat(avgDistance.toFixed(2)),
+        totalPassengers: totalPassengers,
+        tripsWithCompleteData: {
+          cost: tripsWithCost,
+          distance: tripsWithDistance,
+          duration: tripsWithDuration
+        }
+      };
+    } catch (error) {
+      console.error('Error in calculateReportSummary:', error);
+      // Return basic summary even if calculation fails
+      return {
+        totalTrips: trips.length,
+        totalCost: 0,
+        totalDistance: 0,
+        averageDuration: 0,
+        averageCost: 0,
+        averageDistance: 0,
+        totalPassengers: 0,
+        error: 'Some statistics could not be calculated'
+      };
+    }
+  }
+
+  /**
+   * Format trips for preview display
+   */
+  private formatTripsForPreview(trips: Trip[]): any[] {
+    return trips.map(trip => {
+      try {
+        // Format date as MM/DD/YYYY
+        const tripDate = new Date(trip.startDate);
+        const scheduledDate = isNaN(tripDate.getTime()) 
+          ? 'Invalid Date'
+          : `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+        
+        // Calculate distance safely
+        let distance = 0;
+        if (trip.odometerLog?.startReading !== undefined && 
+            trip.odometerLog?.endReading !== undefined) {
+          const start = Number(trip.odometerLog.startReading);
+          const end = Number(trip.odometerLog.endReading);
+          if (!isNaN(start) && !isNaN(end)) {
+            distance = end - start;
+          }
+        }
+        
+        // Format times
+        const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+        const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+        
+        // Calculate duration safely
+        let duration = 0;
+        if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+          try {
+            const start = new Date(trip.odometerLog.startRecordedAt);
+            const end = new Date(trip.odometerLog.endRecordedAt);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+              duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+              duration = parseFloat(duration.toFixed(2));
+            }
+          } catch (e) {
+            duration = 0;
+          }
+        }
+        
+        // Safely parse cost
+        let cost = 0;
+        if (trip.cost !== undefined && trip.cost !== null) {
+          const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+          cost = isNaN(costNum) ? 0 : parseFloat(costNum.toFixed(2));
+        }
+        
+        return {
+          scheduledDate,
+          tripId: `#${trip.id.toString().padStart(2, '0')}`,
+          tripType: trip.tripType || 'Normal',
+          reason: (trip.reason || '').substring(0, 50) + (trip.reason && trip.reason.length > 50 ? '...' : ''),
+          requestedBy: trip.requester?.displayname || 'N/A',
+          noOfPassengers: trip.passengerCount || 0,
+          actualNoOfPassengers: trip.endPassengerCount || trip.passengerCount || 0,
+          department: trip.requester?.department?.name || 'N/A',
+          costCenter: trip.requester?.department?.costCenter?.name || 'N/A',
+          startMeterReading: trip.odometerLog?.startReading || 0,
+          endMeterReading: trip.odometerLog?.endReading || 0,
+          distanceTravelled: distance,
+          tripStartedTime,
+          tripEndedTime,
+          duration,
+          primaryApprovalBy: trip.approval?.approver1?.displayname || 'N/A',
+          safetyApprovalBy: trip.approval?.safetyApprover?.displayname || 'N/A',
+          vehicle: trip.vehicle?.regNo || 'N/A',
+          driver: trip.vehicle?.assignedDriverPrimary?.displayname || 'N/A',
+          cost: cost
+        };
+      } catch (error) {
+        console.error(`Error formatting trip ${trip.id} for preview:`, error);
+        // Return minimal data for this trip
+        return {
+          scheduledDate: 'Error',
+          tripId: `#${trip.id}`,
+          tripType: 'Error',
+          reason: 'Could not format trip data',
+          requestedBy: 'N/A',
+          error: true
+        };
+      }
+    }).filter(trip => !trip.error); // Filter out errored trips
+  }
+
+  private async generatePdfReport(
+  trips: Trip[], 
+  startDate: Date, 
+  endDate: Date
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log(`📄 Starting PDF generation for ${trips.length} trips`);
+      
+      // Dynamically require PDFKit to handle module not found gracefully
+      let PDFDocument;
+      try {
+        PDFDocument = require('pdfkit');
+      } catch (error) {
+        throw new Error('PDFKit module not found. Please install: npm install pdfkit');
+      }
+
+      // Use A4 landscape for better compatibility
+      const doc = new PDFDocument({ 
+        margin: 20, // Reduced margins for more space
+        size: 'A4',
+        layout: 'landscape'
+      });
+
+      const chunks: Uint8Array[] = [];
+      
+      doc.on('data', (chunk: Uint8Array) => {
+        chunks.push(chunk);
+      });
+      
+      doc.on('end', () => {
+        try {
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), totalLength);
+          console.log(`✅ PDF generated: ${buffer.length} bytes`);
+          resolve(buffer);
+        } catch (error) {
+          reject(new Error(`Failed to create PDF buffer: ${error.message}`));
+        }
+      });
+      
+      doc.on('error', (error) => {
+        reject(new Error(`PDF generation failed: ${error.message}`));
+      });
+
+      // Helper function to format time
+      const formatTimeForDisplay = (date: Date | string | undefined): string => {
+        if (!date) return 'N/A';
+        try {
+          const d = new Date(date);
+          return isNaN(d.getTime()) ? 'N/A' : 
+            `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } catch {
+          return 'N/A';
+        }
+      };
+
+      // Set default font
+      doc.font('Helvetica');
+      
+      // Add title
+      doc.fontSize(14).font('Helvetica-Bold').text('TRIP REPORT', { align: 'center' });
+      doc.moveDown(0.3);
+      
+      // Add date range
+      doc.fontSize(8).text(
+        `Period: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`,
+        { align: 'center' }
+      );
+      
+      doc.fontSize(8).text(
+        `Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        { align: 'center' }
+      );
+      
+      doc.moveDown(0.5);
+      
+      // Calculate summary for PDF
+      const summary = this.calculateReportSummary(trips);
+      
+      // Create summary box
+      doc.fontSize(9).font('Helvetica-Bold').text('SUMMARY', { underline: true });
+      doc.fontSize(8).font('Helvetica');
+      
+      // Summary in columns for better layout
+      const startX = 20;
+      let currentY = doc.y + 5;
+      
+      // First column
+      doc.text(`Total Trips:`, startX, currentY);
+      doc.text(`${summary.totalTrips}`, startX + 60, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Cost:`, startX, currentY);
+      doc.text(`LKR ${summary.totalCost.toFixed(2)}`, startX + 60, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Distance:`, startX, currentY);
+      doc.text(`${summary.totalDistance.toFixed(2)} km`, startX + 60, currentY);
+      
+      // Second column
+      currentY = doc.y - 35; // Reset to first row
+      doc.text(`Avg Duration:`, startX + 180, currentY);
+      doc.text(`${summary.averageDuration.toFixed(2)} hrs`, startX + 240, currentY);
+      
+      currentY += 15;
+      doc.text(`Total Passengers:`, startX + 180, currentY);
+      doc.text(`${summary.totalPassengers}`, startX + 240, currentY);
+      
+      currentY += 15;
+      doc.text(`Avg Cost/Trip:`, startX + 180, currentY);
+      doc.text(`LKR ${summary.averageCost.toFixed(2)}`, startX + 240, currentY);
+      
+      // Set Y position after summary
+      doc.y = currentY + 25;
+      
+      if (trips.length === 0) {
+        doc.fontSize(12).text('No trips found for the selected period.', { align: 'center' });
+        doc.end();
+        return;
+      }
+
+      // FIXED: Optimized headers with shorter names
+      const headers = [
+        'Date',
+        'Trip ID',
+        'Type',
+        'Reason',
+        'Requester',
+        'Passengers',
+        'Actual Pass',
+        'Department',
+        'Cost Center',
+        'Start Meter',
+        'End Meter',
+        'Distance (km)',
+        'Start Time',
+        'End Time',
+        'Duration',
+        'Prim. Approver',
+        'Safety Approver',
+        'Vehicle',
+        'Driver',
+        'Cost'
+      ];
+      
+      // FIXED: Adjusted column widths for A4 landscape (total width ~790)
+      /*const colWidths = [
+        30,  // Date
+        25,  // Trip ID
+        25,  // Type
+        50,  // Reason
+        45,  // Requester
+        25,  // Passengers
+        25,  // Actual Pass
+        40,  // Department
+        35,  // Cost Center
+        30,  // Start Meter
+        30,  // End Meter
+        30,  // Distance
+        35,  // Start Time
+        35,  // End Time
+        25,  // Duration
+        40,  // Prim. Approver
+        40,  // Safety Approver
+        35,  // Vehicle
+        35,  // Driver
+        35   // Cost
+      ];*/
+
+      const colWidths = [
+        30,  // Date
+        25,  // Trip ID
+        25,  // Type
+        50,  // Reason
+        45,  // Requester
+        25,  // Passengers
+        25,  // Actual Pass
+        40,  // Department
+        35,  // Cost Center
+        30,  // Start Meter
+        30,  // End Meter
+        30,  // Distance
+        35,  // Start Time
+        35,  // End Time
+        25,  // Duration
+        40,  // Prim. Approver
+        40,  // Safety Approver
+        35,  // Vehicle
+        35,  // Driver
+        35   // Cost
+      ];
+      
+      // Verify total width fits page
+      const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+      const pageWidth = doc.page.width - 40; // Account for margins
+      
+      if (totalWidth > pageWidth) {
+        console.warn(`⚠️ Table width (${totalWidth}) exceeds page width (${pageWidth})`);
+        // You could add scaling logic here if needed
+      }
+      
+      let currentYPos = doc.y;
+      let pageNumber = 1;
+      
+      // Function to draw table headers
+      const drawHeader = (y: number) => {
+        let x = 20; // Start from left margin
+        
+        doc.fontSize(6).font('Helvetica-Bold');
+        headers.forEach((header, i) => {
+          // Draw header with center alignment and word wrapping
+          doc.text(header, x, y, {
+            width: colWidths[i],
+            align: 'center',
+            lineBreak: false,
+            ellipsis: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw header underline
+        doc.moveTo(20, y + 12)
+          .lineTo(20 + totalWidth, y + 12)
+          .lineWidth(0.5)
+          .stroke();
+        
+        return y + 15; // Return new Y position
+      };
+
+      // Draw headers on first page
+      currentYPos = drawHeader(currentYPos);
+      
+      // Set font for data rows
+      doc.fontSize(6).font('Helvetica');
+      
+      // Track total cost for footer
+      let calculatedTotalCost = 0;
+      
+      // Add table rows
+      trips.forEach((trip, index) => {
+        // Check if we need a new page (leave space for footer)
+        if (currentYPos > doc.page.height - 60) {
+          doc.addPage();
+          pageNumber++;
+          
+          // Add page header
+          doc.fontSize(8).font('Helvetica-Bold')
+            .text(`Trip Report - Page ${pageNumber}`, 20, 20);
+          
+          doc.y = 40; // Reset Y position
+          currentYPos = doc.y;
+          currentYPos = drawHeader(currentYPos);
+        }
+        
+        // Format trip data safely
+        const rowData = this.formatTripForPdfRow(trip);
+        
+        // Track cost for total
+        const costStr = rowData[19]; // Cost is last column
+        const costValue = parseFloat(costStr.replace(/[^\d.-]/g, '')) || 0;
+        calculatedTotalCost += costValue;
+        
+        // Draw row
+        let x = 20;
+        
+        rowData.forEach((data, i) => {
+          // Different alignment for numeric columns
+          const align = (i >= 5 && i <= 11) || i === 14 || i === 19 ? 'right' : 
+                       i === 0 || i === 1 || i === 2 ? 'center' : 'left';
+          
+          doc.text(data, x, currentYPos, {
+            width: colWidths[i],
+            align: align,
+            lineBreak: false,
+            ellipsis: true
+          });
+          x += colWidths[i];
+        });
+        
+        // Draw light row separator
+        doc.moveTo(20, currentYPos + 10)
+          .lineTo(20 + totalWidth, currentYPos + 10)
+          .lineWidth(0.1)
+          .strokeColor('#CCCCCC')
+          .stroke();
+        
+        currentYPos += 12; // Reduced row height for more rows per page
+      });
+      
+      // Add footer with total
+      // First check if we need a new page for the footer
+      if (currentYPos > doc.page.height - 40) {
+        doc.addPage();
+        currentYPos = 20;
+      }
+      
+      // Move to footer position
+      doc.y = currentYPos + 10;
+      
+      // Draw footer separator line
+      doc.moveTo(20, doc.y)
+        .lineTo(20 + totalWidth, doc.y)
+        .lineWidth(0.5)
+        .strokeColor('#000000')
+        .stroke();
+      
+      doc.moveDown(0.5);
+      
+      // FIXED: Calculate correct X position for total cost (aligned with Cost column)
+      // Sum widths of all columns except the last one
+      const columnsBeforeCost = colWidths.slice(0, colWidths.length - 1);
+      const totalWidthBeforeCost = columnsBeforeCost.reduce((a, b) => a + b, 0);
+      const costColumnX = 20 + totalWidthBeforeCost;
+      const costColumnWidth = colWidths[colWidths.length - 1];
+      
+      // Draw total cost aligned with the Cost column
+      doc.fontSize(8).font('Helvetica-Bold');
+      
+      // Draw "Total:" label in the second last column (Driver column)
+      const driverColumnX = 20 + totalWidthBeforeCost - colWidths[colWidths.length - 2];
+      doc.text('Total:', driverColumnX, doc.y, {
+        width: colWidths[colWidths.length - 2],
+        align: 'right'
+      });
+      
+      // Draw the total cost value in the Cost column
+      doc.text(`LKR ${calculatedTotalCost.toFixed(2)}`, costColumnX, doc.y, {
+        width: costColumnWidth,
+        align: 'right'
+      });
+      
+      // Add page numbers on all pages
+      const totalPages = pageNumber;
+      for (let i = 0; i < totalPages; i++) {
+        doc.switchToPage(i);
+        
+        // Add page number at bottom
+        doc.fontSize(7).font('Helvetica')
+          .text(`Page ${i + 1} of ${totalPages}`, 
+                20, 
+                doc.page.height - 20, 
+                { 
+                  width: doc.page.width - 40,
+                  align: 'center' 
+                });
+        
+        // Add report title on all pages (except maybe first)
+        if (i > 0) {
+          doc.fontSize(8).font('Helvetica-Bold')
+            .text(`Trip Report - Page ${i + 1}`, 20, 20);
+        }
+      }
+      
+      doc.end();
+    } catch (error) {
+      reject(new Error(`PDF generation setup failed: ${error.message}`));
+    }
+  });
+}
+
+/**
+ * Format a single trip for PDF row (optimized for A4)
+ */
+private formatTripForPdfRow(trip: Trip): string[] {
+  try {
+    // Format date as DD/MM/YY (shorter)
+    const tripDate = new Date(trip.startDate);
+    const scheduledDate = isNaN(tripDate.getTime())
+      ? 'N/A'
+      : `${tripDate.getDate().toString().padStart(2, '0')}/${(tripDate.getMonth() + 1).toString().padStart(2, '0')}/${tripDate.getFullYear().toString().slice(-2)}`;
+    
+    // Calculate distance safely
+    let distance = '0.0';
+    if (trip.odometerLog?.startReading !== undefined && trip.odometerLog?.endReading !== undefined) {
+      const start = Number(trip.odometerLog.startReading);
+      const end = Number(trip.odometerLog.endReading);
+      if (!isNaN(start) && !isNaN(end)) {
+        distance = (end - start).toFixed(1);
+      }
+    }
+    
+    // Format times (24-hour format for consistency)
+    const formatTime = (date: Date | string | undefined): string => {
+      if (!date) return 'N/A';
+      try {
+        const d = new Date(date);
+        return isNaN(d.getTime()) ? 'N/A' : 
+          `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      } catch {
+        return 'N/A';
+      }
+    };
+    
+    const tripStartedTime = formatTime(trip.odometerLog?.startRecordedAt);
+    const tripEndedTime = formatTime(trip.odometerLog?.endRecordedAt);
+    
+    // Calculate duration
+    let duration = '0.00';
+    if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+      try {
+        const start = new Date(trip.odometerLog.startRecordedAt);
+        const end = new Date(trip.odometerLog.endRecordedAt);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          duration = dur.toFixed(2);
+        }
+      } catch {
+        duration = '0.00';
+      }
+    }
+    
+    // Format cost safely (remove currency symbol for alignment)
+    let costStr = '0.00';
+    if (trip.cost !== undefined && trip.cost !== null) {
+      const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+      costStr = isNaN(costNum) ? '0.00' : costNum.toFixed(2);
+    }
+    
+    // FIXED: Optimized text lengths for better fit
+    return [
+      scheduledDate, // 0: Date
+      `#${trip.id}`, // 1: Trip ID
+      (trip.tripType || 'N').substring(0, 3), // 2: Type (short)
+      (trip.reason || '').substring(0, 15) + (trip.reason && trip.reason.length > 15 ? '..' : ''), // 3: Reason
+      (trip.requester?.displayname || 'N/A').substring(0, 12) + (trip.requester?.displayname && trip.requester.displayname.length > 12 ? '..' : ''), // 4: Requester
+      (trip.passengerCount || 0).toString(), // 5: Passengers
+      (trip.endPassengerCount || trip.passengerCount || 0).toString(), // 6: Actual Pass
+      (trip.requester?.department?.name || 'N/A').substring(0, 10) + (trip.requester?.department?.name && trip.requester.department.name.length > 10 ? '..' : ''), // 7: Department
+      (trip.requester?.department?.costCenter?.name || 'N/A').substring(0, 8) + (trip.requester?.department?.costCenter?.name && trip.requester.department.costCenter.name.length > 8 ? '..' : ''), // 8: Cost Center
+      (trip.odometerLog?.startReading || 0).toString(), // 9: Start Meter
+      (trip.odometerLog?.endReading || 0).toString(), // 10: End Meter
+      distance, // 11: Distance
+      tripStartedTime, // 12: Start Time
+      tripEndedTime, // 13: End Time
+      duration, // 14: Duration
+      (trip.approval?.approver1?.displayname || 'N/A').substring(0, 10) + (trip.approval?.approver1?.displayname && trip.approval.approver1.displayname.length > 10 ? '..' : ''), // 15: Prim. Approver
+      (trip.approval?.safetyApprover?.displayname || 'N/A').substring(0, 10) + (trip.approval?.safetyApprover?.displayname && trip.approval.safetyApprover.displayname.length > 10 ? '..' : ''), // 16: Safety Approver
+      (trip.vehicle?.regNo || 'N/A').substring(0, 8) + (trip.vehicle?.regNo && trip.vehicle.regNo.length > 8 ? '..' : ''), // 17: Vehicle
+      (trip.primaryDriver?.displayname || 'N/A').substring(0, 10) + (trip.primaryDriver?.displayname && trip.primaryDriver?.displayname.length > 10 ? '..' : ''), // 18: Driver
+      costStr // 19: Cost (no currency symbol for right alignment)
+    ];
+  } catch (error) {
+    console.error(`Error formatting trip ${trip.id} for PDF:`, error);
+    // Return placeholder data
+    return Array(20).fill('ERR');
+  }
+}
+
+  /**
+   * Generate Excel report
+   */
+  private async generateExcelReport(trips: Trip[], startDate: Date, endDate: Date): Promise<Buffer> {
+    try {
+      console.log(`📊 Starting Excel generation for ${trips.length} trips`);
+      
+      // Dynamically require ExcelJS
+      let ExcelJS;
+      try {
+        ExcelJS = require('exceljs');
+      } catch (error) {
+        throw new Error('ExcelJS module not found. Please install: npm install exceljs');
+      }
+      
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Trip Report');
+      
+      // Add title
+      worksheet.mergeCells('A1:T1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'Trip Report';
+      titleCell.font = { size: 16, bold: true };
+      titleCell.alignment = { horizontal: 'center' };
+      
+      // Add date range
+      worksheet.mergeCells('A2:T2');
+      const dateRangeCell = worksheet.getCell('A2');
+      dateRangeCell.value = `Date Range: ${this.formatDateForDisplay(startDate)} to ${this.formatDateForDisplay(endDate)}`;
+      dateRangeCell.font = { size: 11 };
+      dateRangeCell.alignment = { horizontal: 'center' };
+      
+      // Add generated date
+      worksheet.mergeCells('A3:T3');
+      const generatedCell = worksheet.getCell('A3');
+      generatedCell.value = `Generated on: ${new Date().toLocaleString()}`;
+      generatedCell.font = { size: 10 };
+      generatedCell.alignment = { horizontal: 'center' };
+      
+      // Add summary section
+      const summary = this.calculateReportSummary(trips);
+      worksheet.mergeCells('A4:T4');
+      const summaryTitleCell = worksheet.getCell('A4');
+      summaryTitleCell.value = 'SUMMARY';
+      summaryTitleCell.font = { bold: true, size: 12 };
+      
+      // Add summary data
+      worksheet.getCell('A5').value = 'Total Trips:';
+      worksheet.getCell('B5').value = summary.totalTrips;
+      
+      worksheet.getCell('A6').value = 'Total Cost:';
+      worksheet.getCell('B6').value = summary.totalCost;
+      worksheet.getCell('B6').numFmt = '#,##0.00';
+      
+      worksheet.getCell('A7').value = 'Total Distance (km):';
+      worksheet.getCell('B7').value = summary.totalDistance;
+      worksheet.getCell('B7').numFmt = '0.00';
+      
+      worksheet.getCell('A8').value = 'Total Passengers:';
+      worksheet.getCell('B8').value = summary.totalPassengers;
+      
+      // Add spacing
+      worksheet.getRow(9).height = 20;
+      
+      // Define headers
+      const headers = [
+        'Scheduled Date',
+        'Trip ID',
+        'Trip Type',
+        'Reason',
+        'Requested by',
+        'No of Passengers',
+        'Actual No of Passengers',
+        'Department',
+        'Cost Center',
+        'Start meter reading',
+        'End meter reading',
+        'Distance Travelled (km)',
+        'Trip Started Time',
+        'Trip Ended Time',
+        'Duration (Hours)',
+        'Primary Approval By',
+        'Safety Approval By',
+        'Vehicle',
+        'Driver',
+        'Cost (LKR)'
+      ];
+      
+      // Add headers to row 11
+      const headerRow = worksheet.getRow(11);
+      headers.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+      
+      // Add data rows
+      let rowIndex = 12;
+      
+      trips.forEach(trip => {
+        try {
+          const rowData = this.formatTripForExcelRow(trip);
+          const row = worksheet.getRow(rowIndex);
+          
+          rowData.forEach((data, cellIndex) => {
+            const cell = row.getCell(cellIndex + 1);
+            cell.value = data;
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+            
+            // Format numbers
+            if (cellIndex >= 5 && cellIndex <= 11) { // Passenger counts, meter readings, distance
+              cell.numFmt = '0';
+            } else if (cellIndex === 14) { // Duration
+              cell.numFmt = '0.00';
+            } else if (cellIndex === 19) { // Cost
+              cell.numFmt = '#,##0.00';
+            }
+          });
+          
+          rowIndex++;
+        } catch (error) {
+          console.error(`Error adding trip ${trip.id} to Excel:`, error);
+          // Skip this trip
+        }
+      });
+      
+      // Add total cost row
+      const totalRow = worksheet.getRow(rowIndex + 1);
+      
+      // Merge cells for "Total Cost" label
+      worksheet.mergeCells(`A${rowIndex + 1}:S${rowIndex + 1}`);
+      
+      const totalLabelCell = totalRow.getCell(1);
+      totalLabelCell.value = 'Total Cost';
+      totalLabelCell.font = { bold: true };
+      totalLabelCell.alignment = { horizontal: 'right' };
+      
+      const totalCost = summary.totalCost;
+      const totalCostCell = totalRow.getCell(20); // Column T
+      totalCostCell.value = totalCost;
+      totalCostCell.font = { bold: true };
+      totalCostCell.numFmt = '#,##0.00';
+      totalCostCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFE0E0' }
+      };
+      
+      // Apply borders to total row
+      for (let i = 1; i <= 20; i++) {
+        const cell = totalRow.getCell(i);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      }
+      
+      // Auto-fit columns
+      worksheet.columns.forEach((column, index) => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const columnLength = cell.value ? cell.value.toString().length : 0;
+          if (columnLength > maxLength) {
+            maxLength = columnLength;
+          }
+        });
+        column.width = Math.min(Math.max(maxLength + 2, 10), 30);
+      });
+      
+      // Write to buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      console.log(`✅ Excel generated: ${buffer.length} bytes`);
+      return Buffer.from(buffer);
+      
+    } catch (error) {
+      throw new Error(`Excel generation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Format a single trip for Excel row
+   */
+  private formatTripForExcelRow(trip: Trip): any[] {
+    try {
+      // Format date as MM/DD/YYYY
+      const tripDate = new Date(trip.startDate);
+      const scheduledDate = isNaN(tripDate.getTime())
+        ? 'Invalid Date'
+        : `${tripDate.getMonth() + 1}/${tripDate.getDate()}/${tripDate.getFullYear()}`;
+      
+      // Calculate distance safely
+      let distance = 0;
+      if (trip.odometerLog?.startReading !== undefined && 
+          trip.odometerLog?.endReading !== undefined) {
+        const start = Number(trip.odometerLog.startReading);
+        const end = Number(trip.odometerLog.endReading);
+        if (!isNaN(start) && !isNaN(end)) {
+          distance = end - start;
+        }
+      }
+      
+      const tripStartedTime = this.formatTimeForDisplay(trip.odometerLog?.startRecordedAt);
+      const tripEndedTime = this.formatTimeForDisplay(trip.odometerLog?.endRecordedAt);
+      
+      // Calculate duration safely
+      let duration = 0;
+      if (trip.odometerLog?.startRecordedAt && trip.odometerLog?.endRecordedAt) {
+        try {
+          const start = new Date(trip.odometerLog.startRecordedAt);
+          const end = new Date(trip.odometerLog.endRecordedAt);
+          if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            duration = parseFloat(duration.toFixed(2));
+          }
+        } catch {
+          duration = 0;
+        }
+      }
+      
+      // Safely parse cost
+      let cost = 0;
+      if (trip.cost !== undefined && trip.cost !== null) {
+        const costNum = typeof trip.cost === 'string' ? parseFloat(trip.cost) : Number(trip.cost);
+        cost = isNaN(costNum) ? 0 : parseFloat(costNum.toFixed(2));
+      }
+      
+      return [
+        scheduledDate,
+        `#${trip.id.toString().padStart(2, '0')}`,
+        trip.tripType || 'Normal',
+        trip.reason || '',
+        trip.requester?.displayname || '',
+        trip.passengerCount || 0,
+        trip.endPassengerCount || trip.passengerCount || 0,
+        trip.requester?.department?.name || '',
+        trip.requester?.department?.costCenter?.name || '',
+        trip.odometerLog?.startReading || 0,
+        trip.odometerLog?.endReading || 0,
+        distance,
+        tripStartedTime,
+        tripEndedTime,
+        duration,
+        trip.approval?.approver1?.displayname || '',
+        trip.approval?.safetyApprover?.displayname || '',
+        trip.vehicle?.regNo || '',
+        trip.primaryDriver?.displayname || '',
+        cost
+      ];
+    } catch (error) {
+      console.error(`Error formatting trip ${trip.id} for Excel:`, error);
+      return Array(20).fill('Error');
+    }
+  }
+
+  /**
+   * Utility methods
+   */
+
+  private formatDateForDisplay(date: Date): string {
+    try {
+      return date.toLocaleDateString();
+    } catch {
+      return 'Invalid Date';
+    }
+  }
+
+  private formatTimeForDisplay(date: Date | undefined): string {
+    if (!date) return '';
+    
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      
+      const hours = d.getHours();
+      const minutes = d.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, '0');
+      
+      return `${displayHours}:${displayMinutes} ${ampm}`;
+    } catch {
+      return '';
+    }
+  }
 
 }

@@ -1,7 +1,7 @@
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 
 export class ApproveUserDto {
   @ApiProperty({

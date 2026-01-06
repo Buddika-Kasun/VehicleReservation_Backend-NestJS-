@@ -1,10 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { Company } from "src/database/entities/company.entity";
-import { Department } from "src/database/entities/department.entity";
+import { Company } from "src/infra/database/entities/company.entity";
+import { Department } from "src/infra/database/entities/department.entity";
 import { ResponseService } from "src/common/services/response.service";
-import { CostCenter } from "src/database/entities/cost-center.entity";
+import { CostCenter } from "src/infra/database/entities/cost-center.entity";
 
 @Injectable()
 export class ValidationService {

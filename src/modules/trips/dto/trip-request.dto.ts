@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNumber, IsDateString, IsEnum, IsOptional, IsPositive, Min, Max, IsBoolean } from 'class-validator';
-import { TripStatus } from 'src/database/entities/trip.entity';
+import { TripStatus } from 'src/infra/database/entities/trip.entity';
 
 export class CreateTripDto {
   @ApiProperty({ example: 1, description: 'Vehicle ID' })

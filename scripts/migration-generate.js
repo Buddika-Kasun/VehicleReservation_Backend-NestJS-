@@ -15,7 +15,7 @@ if (!migrationName) {
 console.log(`Generating migration: ${migrationName}`);
 
 try {
-  const cmd = `npx typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:generate src/database/migrations/${migrationName}`;
+  const cmd = `npx typeorm-ts-node-commonjs -d src/config/typeorm.config.ts migration:generate src/infra/database/migrations/${migrationName}`;
   execSync(cmd, { stdio: 'inherit' });
 
   console.log(`✔ Migration ${migrationName} generated`);

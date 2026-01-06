@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Ht
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CostCenterService } from './cost-center.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { CreateCostCenterDto, UpdateCostCenterDto } from './dto/cost-center-request.dto';
 import { CostCenterListResponseDto, CostCenterResponseDto } from './dto/cost-center-response.dto';

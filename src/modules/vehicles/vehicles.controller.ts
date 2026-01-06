@@ -7,7 +7,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody, ApiConsumes, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { UseGuards } from '@nestjs/common';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { VehicleService } from './vehicles.service';
 import { AssignDriverDto, CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle-request.dto';
@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/config/multer.config';
 import { VehiclePictureDto } from './dto/vehicle-picture.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { GetUser } from 'src/common/decorators/user.decorator';
 
 @ApiTags('Vehicles API')
 @Controller('vehicle')
@@ -36,7 +37,7 @@ export class VehicleController {
   }
 
   @Get('get-all')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get all vehicles with pagination and filters' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -58,7 +59,7 @@ export class VehicleController {
   }
 
   @Get('get/:id')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get a vehicle by ID' })
   @ApiResponse({ status: 200, description: 'Vehicle retrieved successfully', type: VehicleResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })
@@ -67,7 +68,7 @@ export class VehicleController {
   }
 
   @Put('update/:id')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Update a vehicle' })
   @ApiBody({ type: UpdateVehicleDto })
   @ApiResponse({ status: 200, description: 'Vehicle updated successfully', type: VehicleResponseDto })
@@ -81,7 +82,7 @@ export class VehicleController {
   }
 
   @Delete('delete/:id')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Delete a vehicle' })
   @ApiResponse({ status: 200, description: 'Vehicle deleted successfully' })
   @ApiResponse({ status: 404, description: 'Vehicle not found or already assigned' })
@@ -90,7 +91,7 @@ export class VehicleController {
   }
 
   @Post('assign-drivers')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Assign drivers to a vehicle' })
   @ApiBody({ type: AssignDriverDto })
   @ApiResponse({ status: 200, description: 'Drivers assigned successfully' })
@@ -137,7 +138,7 @@ export class VehicleController {
   }
 
   @Get('available-vehicles')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get all available (unassigned) vehicles' })
   @ApiQuery({ name: 'companyId', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Available vehicles retrieved successfully', type: VehicleListResponseDto })
@@ -146,12 +147,15 @@ export class VehicleController {
   }
 
   @Get('driver/:driverId')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get all vehicles assigned to a specific driver' })
   @ApiResponse({ status: 200, description: 'Driver vehicles retrieved successfully', type: VehicleListResponseDto })
   @ApiResponse({ status: 404, description: 'Driver not found' })
-  async getDriverVehicles(@Param('driverId', ParseIntPipe) driverId: number) {
-    return await this.vehicleService.getDriverVehicles(driverId);
+  async getDriverVehicles(
+    @Param('driverId', ParseIntPipe) driverId: number,
+    @GetUser() user: any,
+  ) {
+    return await this.vehicleService.getDriverVehicles(driverId, user);
   }
 
   @Post(':id/picture-upload')

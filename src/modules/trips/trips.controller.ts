@@ -13,29 +13,36 @@ import {
   Request,
   UseGuards,
   ForbiddenException,
-  BadRequestException
+  BadRequestException,
+  Res,
+  InternalServerErrorException,
+  NotFoundException
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
 import { TripResponseDto, AvailableVehiclesResponseDto } from './dto/trip-response.dto';
-import { AvailableVehiclesRequestDto, CreateTripDto } from './dto/create-trip.dto';
+import { AssignVehicleToTripDto, AvailableVehiclesRequestDto, CreateTripDto } from './dto/create-trip.dto';
 import { GetUser } from 'src/common/decorators/user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 //import { CancelTripDto } from './dto/trip-request.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { TripListRequestDto, TripListResponseDto } from './dto/trip-list-request.dto';
 import { get } from 'http';
+import { VehicleRecommendService } from './vehicleRecommend.service';
 
 @ApiTags('trips')
 @Controller('trips')
 @UsePipes(new ValidationPipe({ transform: true }))
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY)
+@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
 @ApiBearerAuth()
 export class TripsController {
-  constructor(private readonly tripsService: TripsService) {}
+  constructor(
+    private readonly tripsService: TripsService,
+    private readonly vehicleRecommendService: VehicleRecommendService,
+  ) {}
 
   @Post('available-vehicles')
   @ApiOperation({ summary: 'Get available vehicles for trip' })
@@ -43,6 +50,25 @@ export class TripsController {
   @ApiResponse({ status: 200, description: 'Available vehicles retrieved successfully', type: AvailableVehiclesResponseDto })
   async getAvailableVehicles(@Body() requestDto: AvailableVehiclesRequestDto) {
     return this.tripsService.getAvailableVehicles(requestDto);
+  }
+
+  @Post('available-vehicles-review')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Get available vehicles for trip review with pagination' })
+  @ApiResponse({ status: 200, description: 'Available vehicles retrieved successfully', type: AvailableVehiclesResponseDto })
+  async getReviewAvailableVehicles(
+    @Query('tripId') tripId: string,
+    @Query('page') page: number = 0,
+    @Query('pageSize') pageSize: number = 10,
+    @Query('search') search?: string,
+  ) {
+    const requestDto = { 
+      tripId, 
+      page: Number(page), 
+      pageSize: Number(pageSize), 
+      search 
+    };
+    return this.vehicleRecommendService.getReviewAvailableVehicles(requestDto);
   }
 
   @Post('create')
@@ -58,8 +84,52 @@ export class TripsController {
     return this.tripsService.createTrip(createTripDto, user.userId);
   }
 
+  @Post('create-as-draft')
+  @ApiOperation({ summary: 'FR-04.1: Create a trip' })
+  @ApiBody({ type: CreateTripDto })
+  @ApiResponse({ status: 201, description: 'Trip created successfully', type: TripResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Vehicle not found' })
+  async createTripAsDraft(
+    @Body() createTripDto: CreateTripDto, 
+    @GetUser() user: any
+  ) {
+    return this.tripsService.createTripAsDraft(createTripDto, user.userId);
+  }
+
+  @Post('assign-trip-vehicle')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'FR-04.1: Add vehicle to trip' })
+  @ApiResponse({ status: 201, description: 'Trip created successfully', type: TripResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Vehicle not found' })
+  async assignVehicle(
+    @GetUser() user: any,
+    @Body() assignVehicleDto: AssignVehicleToTripDto, 
+  ) {
+    return this.tripsService.assignVehicleToTrip(
+      assignVehicleDto.tripId,
+      assignVehicleDto.vehicleId,
+      user.userId
+    );
+  }
+
+  @Post('confirm-review/:tripId')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'FR-XX.X: Confirm trip review completion' })
+  @ApiParam({ name: 'tripId', description: 'ID of the trip to confirm review', type: Number })
+  async confirmReviewTrip(
+    @GetUser() user: any,
+    @Param('tripId', ParseIntPipe) tripId: number,
+  ) {
+    return this.tripsService.confirmReviewTrip(
+      tripId,
+      user.userId
+    );
+  }
+
   @Get('get-by-id/:id')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get trip by ID' })
   @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
   @ApiResponse({
@@ -138,7 +208,7 @@ export class TripsController {
     return this.tripsService.getCombinedTripForDriver(id);
   }
 
-  @Delete('cancel/:id')
+  @Post('cancel/:id')
   @ApiOperation({ summary: 'Cancel a trip' })
   @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
   async cancelTrip(
@@ -156,7 +226,7 @@ export class TripsController {
       }
     }
     
-    return this.tripsService.cancelTrip(tripId, user.userId, reason);
+    return this.tripsService.cancelTrip(tripId, user, reason);
   }
 
   @Get('cancelable')
@@ -227,12 +297,33 @@ export class TripsController {
     if (!user || !user.userId) {
       throw new ForbiddenException('User not authenticated');
     }
+
+    return this.tripsService.getUserTrips(user, tripListRequest);
+  }
+
+  @Post('supervisor-trips')
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Get user trips with filters' })
+  @ApiBody({ type: TripListRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'User trips retrieved successfully',
+    type: TripListResponseDto,
+  })
+  async getSupervisorTrips(
+    @GetUser() user: any,
+    @Body() tripListRequest: TripListRequestDto,
+  ) {
+
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
     
-    return this.tripsService.getUserTrips(user.userId, tripListRequest);
+    return this.tripsService.getSupervisorTrips(user, tripListRequest);
   }
 
   @Post('pending-approvals')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get trips pending user approvals' })
   @ApiResponse({
     status: 200,
@@ -247,7 +338,7 @@ export class TripsController {
   }
 
   @Post('approve/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Approve a trip' })
   @ApiResponse({ status: 200, description: 'Trip approved successfully' })
   async approveTrip(
@@ -263,7 +354,7 @@ export class TripsController {
   }
 
   @Post('reject/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE)
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Reject a trip' })
   @ApiResponse({ status: 200, description: 'Trip rejected successfully' })
   async rejectTrip(
@@ -307,7 +398,7 @@ export class TripsController {
   }
 
   @Post('mid-trip-approval/:tripId')
-  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Handle mid-trip approval scenario' })
   @ApiResponse({ status: 200, description: 'Mid-trip approval handled successfully' })
   async handleMidTripApproval(
@@ -330,7 +421,7 @@ export class TripsController {
 
 
 @Post('driver-assigned')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'Get driver assigned trips' })
 @ApiResponse({ status: 200, description: 'Driver trips retrieved successfully' })
 async getDriverAssignedTrips(
@@ -343,7 +434,7 @@ async getDriverAssignedTrips(
 
 
 @Post('start/:id')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'Start a trip' })
 @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
 @ApiResponse({ 
@@ -378,7 +469,7 @@ async startTrip(
 }
 
 @Post('end/:id')
-@Roles(UserRole.DRIVER, UserRole.SYSADMIN)
+@Roles(UserRole.DRIVER, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @ApiOperation({ summary: 'End a trip' })
 @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
 @ApiResponse({ 
@@ -408,9 +499,191 @@ async startTrip(
 @ApiResponse({ status: 404, description: 'Trip not found' })
 async endTrip(
   @Param('id', ParseIntPipe) tripId: number,
+  @GetUser() user: any,
+  @Body() body: {passengerCount: number},
+) {
+  return await this.tripsService.endTrip(tripId, user.userId, body.passengerCount);
+}
+
+
+// Add to your TripsController
+
+@Post('approve-scheduled/:masterTripId')
+@Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.SUPERVISOR)
+@ApiOperation({ summary: 'Approve a scheduled trip and all its instances' })
+@ApiParam({ name: 'masterTripId', description: 'Master Trip ID', type: Number })
+@ApiResponse({ status: 200, description: 'Scheduled trip approved successfully' })
+async approveScheduledTrip(
+  @Param('masterTripId', ParseIntPipe) masterTripId: number,
+  @Body() approveDto: { comment?: string },
   @GetUser() user: any
 ) {
-  return await this.tripsService.endTrip(tripId, user.userId);
+  return await this.tripsService.approveScheduledTrip(
+    masterTripId, 
+    user.userId, 
+    approveDto.comment
+  );
+}
+
+// Add to your TripsController
+
+@Get('with-instances/:id')
+@ApiOperation({ summary: 'Get trip with its instances (for scheduled trips)' })
+@ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+@ApiResponse({ status: 200, description: 'Trip with instances retrieved successfully' })
+async getTripWithInstances(@Param('id', ParseIntPipe) id: number) {
+  return await this.tripsService.getTripWithInstances(id);
+}
+
+  // Add to TripsController class
+@Post('report/download')
+@Roles(UserRole.SYSADMIN, UserRole.HR)
+@ApiOperation({ summary: 'Download trip report in PDF/Excel format' })
+@ApiBody({
+  schema: {
+    type: 'object',
+    properties: {
+      fromDate: { type: 'string', format: 'date', example: '2024-01-01' },
+      toDate: { type: 'string', format: 'date', example: '2024-01-31' },
+      format: { type: 'string', enum: ['pdf', 'excel'], example: 'pdf' }
+    },
+    required: ['fromDate', 'toDate', 'format']
+  }
+})
+@ApiResponse({ 
+  status: 200, 
+  description: 'Report downloaded successfully',
+  content: {
+    'application/pdf': {
+      schema: { type: 'string', format: 'binary' }
+    },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+      schema: { type: 'string', format: 'binary' }
+    }
+  }
+})
+@ApiResponse({ status: 400, description: 'Invalid date range' })
+async downloadTripReport(
+  @Body() reportRequest: { fromDate: string; toDate: string; format: 'pdf' | 'excel' },
+  @Res() res: any,
+) {
+  const { fromDate, toDate, format } = reportRequest;
+  
+  console.log(`📋 Report request received: fromDate=${fromDate}, toDate=${toDate}, format=${format}`);
+  
+  try {
+    // Validate request body
+    if (!fromDate || !toDate || !format) {
+      throw new BadRequestException('Missing required parameters: fromDate, toDate, or format');
+    }
+    
+    // Validate format
+    if (!['pdf', 'excel'].includes(format.toLowerCase())) {
+      throw new BadRequestException('Invalid format. Must be either "pdf" or "excel"');
+    }
+    
+    // Parse and validate dates
+    const startDate = new Date(fromDate + 'T00:00:00');
+    const endDate = new Date(toDate + 'T23:59:59');
+    
+    if (isNaN(startDate.getTime())) {
+      throw new BadRequestException(`Invalid fromDate: ${fromDate}. Use YYYY-MM-DD format.`);
+    }
+    
+    if (isNaN(endDate.getTime())) {
+      throw new BadRequestException(`Invalid toDate: ${toDate}. Use YYYY-MM-DD format.`);
+    }
+    
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date must be before or equal to end date');
+    }
+    
+    // Validate date range (e.g., don't allow requests for more than 1 year)
+    const maxDays = 365;
+    const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDifference > maxDays) {
+      throw new BadRequestException(`Date range cannot exceed ${maxDays} days`);
+    }
+    
+    console.log(`📋 Validated dates: start=${startDate.toISOString()}, end=${endDate.toISOString()}, days=${daysDifference}`);
+    
+    // Generate report
+    console.log(`🔄 Generating ${format.toUpperCase()} report...`);
+    const reportData = await this.tripsService.generateTripReport(
+      startDate,
+      endDate,
+      format,
+    );
+    
+    if (!reportData || reportData.length === 0) {
+      throw new NotFoundException('No data available for the selected date range');
+    }
+    
+    console.log(`✅ Report generated successfully. Size: ${reportData.length} bytes`);
+    
+    // Set response headers
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `trip-report-${fromDate}-to-${toDate}-${timestamp}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+    
+    const headers = {
+      'Content-Type': format === 'pdf' 
+        ? 'application/pdf' 
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': reportData.length.toString(),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    };
+    
+    Object.entries(headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    
+    // Send binary data
+    res.send(reportData);
+    
+  } catch (error) {
+    console.error('❌ Error in downloadTripReport:', error);
+    
+    // Map specific errors to appropriate HTTP status codes
+    if (error instanceof BadRequestException || 
+        error instanceof NotFoundException) {
+      throw error;
+    }
+    
+    // Handle module not found errors
+    if (error.message && 
+        (error.message.includes('Cannot find module') || 
+         error.message.includes('require is not defined'))) {
+      console.error('⚠️ Missing required dependencies. Please install: npm install pdfkit exceljs');
+      throw new InternalServerErrorException({
+        message: 'Report generation module not configured properly',
+        code: 'MODULE_NOT_FOUND',
+        details: 'Please install required packages: pdfkit and exceljs'
+      });
+    }
+    
+    // Handle PDF/Excel generation errors
+    if (error.message && 
+        (error.message.includes('PDF') || 
+         error.message.includes('Excel') || 
+         error.message.includes('worksheet') ||
+         error.message.includes('font'))) {
+      throw new InternalServerErrorException({
+        message: 'Failed to generate report file',
+        code: 'REPORT_GENERATION_ERROR',
+        details: error.message
+      });
+    }
+    
+    // Generic error
+    throw new InternalServerErrorException({
+      message: 'An unexpected error occurred while generating the report',
+      code: 'INTERNAL_SERVER_ERROR',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 }
 
 }

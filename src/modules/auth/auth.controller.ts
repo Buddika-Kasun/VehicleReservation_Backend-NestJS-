@@ -1,5 +1,4 @@
 import { Body, Controller, Post, UseGuards, Request, HttpStatus, Get } from '@nestjs/common';
-import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UsersService } from '../users/users.service';
@@ -7,10 +6,11 @@ import { ApiBearerAuth, ApiInternalServerErrorResponse, ApiOperation, ApiRespons
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/user.decorator';
-import { User } from 'src/database/entities/user.entity';
+import { User } from 'src/infra/database/entities/user.entity';
 import { LoginResponseDto, LogoutResponseDto, RegisterResponseDto } from './dto/authResponse.dto';
 import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
 import { Public } from 'src/common/decorators/public.decorator';
+import { AuthService } from './services/auth.service';
 
 @Controller('auth')
 @ApiTags('Auth API')

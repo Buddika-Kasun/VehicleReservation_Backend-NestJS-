@@ -11,7 +11,7 @@ import { ValidationService } from "./validation.service";
 import { JwtAuthGuard } from "src/common/guards/jwt-auth.guard";
 import { RolesGuard } from "src/common/guards/roles.guard";
 import { Roles } from "src/common/decorators/roles.decorator";
-import { UserRole } from "src/database/entities/user.entity";
+import { UserRole } from "src/infra/database/entities/user.entity";
 
 @Controller('validate')
 @ApiTags('Validate API')

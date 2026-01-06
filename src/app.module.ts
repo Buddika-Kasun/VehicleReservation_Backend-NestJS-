@@ -21,15 +21,38 @@ import { ApprovalConfigModule } from './modules/approval/approvalConfig.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { RoutesModule } from './modules/routes/routes.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
+import websocketConfig from './config/websocket.config';
+import redisConfig from './config/redis.config';
+import { RedisModule } from './infra/redis/redis.module';
+import { FirebaseModule } from './infra/firebase/firebase.module';
+import { WsModule } from './ws/ws.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
     // ✅ Global Configuration
     ConfigModule.forRoot({ 
-      load: [ appConfig, jwtConfig],
+      load: [ appConfig, jwtConfig, websocketConfig, redisConfig ],
       isGlobal: true, // Makes configuration available across all modules
       cache: true, // Caches the configuration for better performance
     }),
+
+    RedisModule, // Move infrastructure to the top
+    FirebaseModule,
+    WsModule,
+
+    // ✅ Event Emitter for internal events
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+      maxListeners: 50,
+    }),
+
+    // ✅ Scheduled Tasks (for notification cleanup)
+    ScheduleModule.forRoot(),
 
     // ✅ Database Configuration (Async to use ConfigService if needed)
     TypeOrmModule.forRootAsync({
@@ -61,6 +84,8 @@ import { HealthModule } from './modules/health/health.module';
     LocationsModule,
     RoutesModule,
     HealthModule,
+    NotificationsModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

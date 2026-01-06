@@ -1,6 +1,7 @@
-import { IsEnum, IsNumber, IsString, IsOptional, IsBoolean, IsDateString, IsArray, ValidateNested, IsObject } from 'class-validator';
+import { IsEnum, IsNumber, IsString, IsOptional, IsBoolean, IsDateString, IsArray, ValidateNested, IsObject, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PassengerType, RepetitionType, TripStatus } from 'src/database/entities/trip.entity';
+import { PassengerType, RepetitionType, TripStatus, TripType } from 'src/infra/database/entities/trip.entity';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class SelectedGroupUserDto {
   @IsNumber()
@@ -45,6 +46,12 @@ export class LocationDataDto {
       coordinates: number[];
     };
   };
+
+  @IsNumber()
+  totalDistance: number;
+
+  @IsNumber()
+  totalDuration: number;
 
   /*
   @IsObject()
@@ -134,6 +141,19 @@ export class PassengerDataDto {
   };
 }
 
+export class TripTypeDataDto {
+  @IsEnum(TripType)
+  tripType: TripType;
+
+  @IsString()
+  @IsOptional()
+  fixedRate?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
 export class CreateTripDto {
   @ValidateNested()
   @Type(() => LocationDataDto)
@@ -146,6 +166,10 @@ export class CreateTripDto {
   @ValidateNested()
   @Type(() => PassengerDataDto)
   passengerData: PassengerDataDto;
+
+  @ValidateNested()
+  @Type(() => TripTypeDataDto)
+  tripTypeData: TripTypeDataDto;
 
   @IsNumber()
   @IsOptional()
@@ -180,4 +204,43 @@ export class AvailableVehiclesRequestDto {
   @ValidateNested()
   @Type(() => PassengerDataDto)
   passengerData: PassengerDataDto;
+
+  @ValidateNested()
+  @Type(() => TripTypeDataDto)
+  @IsOptional()
+  tripTypeData?: TripTypeDataDto; // Optional for vehicle availability check
+}
+
+export class ReviewAvailableVehiclesRequest {
+  @Type(() => String)
+  tripId: string;
+
+  @Type(() => Number)
+  page: number;
+
+  @Type(() => Number)
+  pageSize: number;
+
+  @Type(() => String)
+  search?: string;
+}
+
+export class AssignVehicleToTripDto {
+  @ApiProperty({ 
+    description: 'ID of the trip to assign vehicle to',
+    example: 188 
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
+  tripId: number;
+
+  @ApiProperty({ 
+    description: 'ID of the vehicle to assign',
+    example: 9 
+  })
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
+  vehicleId: number;
 }

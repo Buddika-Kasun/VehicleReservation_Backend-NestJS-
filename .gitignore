@@ -1,7 +1,10 @@
 node_modules
 dist
 .env
+.env.example
+.env.production
 npm-debug.log
+logs
 
 # Ignore compiled migrations (they're built during deployment)
 dist/database/migrations/*.js

@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Company } from 'src/database/entities/company.entity';
-import { CostCenter } from 'src/database/entities/cost-center.entity';
-import { Department } from 'src/database/entities/department.entity';
-import { User, UserRole } from 'src/database/entities/user.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
+import { Department } from 'src/infra/database/entities/department.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
@@ -103,8 +103,8 @@ export class DepartmentService {
     );
   }
 
-  async findAll(page = 1, limit = 10, search?: string, companyId?: number, costCenterId?: number) {
-    const skip = (page - 1) * limit;
+  async findAll(page = 1, limit?: number, search?: string, companyId?: number, costCenterId?: number) {
+    const skip = (page - 1) * (limit || 0);
     const query = this.departmentRepository
       .createQueryBuilder('department')
       .leftJoinAndSelect('department.company', 'company')
@@ -123,11 +123,18 @@ export class DepartmentService {
       query.andWhere('department.costCenterId = :costCenterId', { costCenterId });
     }
 
-    const [departments, total] = await query
-      .skip(skip)
-      .take(limit)
-      .orderBy('department.createdAt', 'DESC')
-      .getManyAndCount();
+    // If limit is provided, use pagination
+    if (limit) {
+      query
+        .skip(skip)
+        .take(limit)
+        .orderBy('department.createdAt', 'DESC');
+    } else {
+      // If no limit, just order the results
+      query.orderBy('department.createdAt', 'DESC');
+    }
+
+    const [departments, total] = await query.getManyAndCount();
 
     return this.responseService.success(
       'Departments retrieved successfully',
@@ -135,9 +142,9 @@ export class DepartmentService {
         departments,
         pagination: {
           page,
-          limit,
+          limit: limit || total, // If no limit, show total as limit
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: limit ? Math.ceil(total / limit) : 1,
         },
       }
     );

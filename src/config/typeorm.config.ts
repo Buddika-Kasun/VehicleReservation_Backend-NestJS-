@@ -23,9 +23,14 @@ export default new DataSource({
       }),
 
   // *** IMPORTANT: SAME PATHS AS NEST APP ***
-  entities: [path.join(__dirname, '..', '**', '*.entity.{ts,js}')],
-  migrations: [path.join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+  entities: [
+    path.join(__dirname, '..', '**', '*.entity.{ts,js}'),
+  ],
+  migrations: [
+    path.join(__dirname, '..', 'infra', 'database', 'migrations', '*.{ts,js}')
+  ],
 
   migrationsTableName: 'migrations',
+  migrationsRun: false,
   synchronize: false,
 });

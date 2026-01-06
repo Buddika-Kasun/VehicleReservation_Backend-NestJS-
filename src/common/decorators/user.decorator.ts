@@ -10,7 +10,7 @@ export const GetUser = createParamDecorator(
 */
 
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { User } from 'src/database/entities/user.entity';
+import { User } from 'src/infra/database/entities/user.entity';
 
 export const GetUser = createParamDecorator(
   (data: keyof User | undefined, ctx: ExecutionContext): User | any => {

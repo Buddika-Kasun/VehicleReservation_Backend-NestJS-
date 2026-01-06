@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/database/entities/user.entity';
 import { Repository } from 'typeorm';
 import { CreateApprovalConfigDto, UpdateApprovalConfigDto } from './dto/approval-config-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
-import { ApprovalConfig } from 'src/database/entities/approval-configuration.entity';
+import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { User } from 'src/infra/database/entities/user.entity';
 
 @Injectable()
 export class ApprovalConfigService {
@@ -67,6 +68,30 @@ export class ApprovalConfigService {
       'Menu approval retrieved successfully',
       responseData
     );
+  }
+
+  async findMenuApprovalForAuth(id: number) {
+    // Find the latest active approval configuration
+    const approvalConfig = await this.approvalConfigRepo.findOne({
+      where: { isActive: true },
+      relations: ['secondaryUser', 'safetyUser'],
+      order: { createdAt: 'DESC' }
+    });
+
+    // Get user with department head
+    const user = await this.userRepo.findOne({ 
+      where: { id },
+      relations: ['department', 'department.head']
+    });
+
+    // Extract IDs for the response
+    const responseData = {
+      secondaryUserId: approvalConfig?.secondaryUser?.id || null,
+      safetyUserId: approvalConfig?.safetyUser?.id || null,
+      hodId: user?.department?.head?.id || null
+    };
+
+    return responseData;
   }
 
   async findAll() {

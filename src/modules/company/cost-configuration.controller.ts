@@ -16,7 +16,7 @@ import { CreateCostConfigurationDto, UpdateCostConfigurationDto } from './dto/co
 import { CostConfigurationResponseDto, CostConfigurationListResponseDto } from './dto/cost-configuration-response.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from 'src/database/entities/user.entity';
+import { UserRole } from 'src/infra/database/entities/user.entity';
 import { ErrorResponseDto } from 'src/common/dto/errorResponse.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 

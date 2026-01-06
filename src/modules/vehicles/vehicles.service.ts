@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Vehicle } from '../../database/entities/vehicle.entity';
-import { Company } from '../../database/entities/company.entity';
-import { User } from '../../database/entities/user.entity';
-import { ResponseService } from '../../common/services/response.service';
+import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
+import { Company } from 'src/infra/database/entities/company.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
+import { ResponseService } from 'src/common/services/response.service';
 import { AssignDriverDto, CreateVehicleDto, UpdateVehicleDto } from './dto/vehicle-request.dto';
-import { CostConfiguration } from 'src/database/entities/cost-configuration.entity';
+import { CostConfiguration } from 'src/infra/database/entities/cost-configuration.entity';
 import * as QRCode from 'qrcode';
-import { OdometerLog } from 'src/database/entities/odometer-log.entity';
+import { OdometerLog } from 'src/infra/database/entities/odometer-log.entity';
 
 @Injectable()
 export class VehicleService {
@@ -167,6 +167,8 @@ Scan Date: ${new Date().toLocaleDateString()}
     //savedVehicle.qrCodeData = qrCodeData;
 
     const savedVehicleQr = await this.vehicleRepository.save(savedVehicle);
+
+    // TODO publish event
 
     return this.responseService.created(
       'Vehicle created successfully.',
@@ -330,8 +332,18 @@ Scan Date: ${new Date().toLocaleDateString()}
       }
     }
 
+    const oldPrimaryDriverId = vehicle.assignedDriverPrimary?.id;
+    const oldSecondaryDriverId = vehicle.assignedDriverSecondary?.id;
+
     Object.assign(vehicle, updateVehicleDto);
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
+
+    // Notify drivers
+    try {
+      // TODO publish event
+    } catch (e) {
+      console.error('Failed to send vehicle update notification', e);
+    }
 
     return this.responseService.success(
       'Vehicle updated successfully.',
@@ -345,7 +357,7 @@ Scan Date: ${new Date().toLocaleDateString()}
   async deleteVehicle(id: number) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id },
-      relations: ['trips']
+      relations: ['trips', 'assignedDriverPrimary', 'assignedDriverSecondary']
     });
 
     if (!vehicle) {
@@ -368,6 +380,14 @@ Scan Date: ${new Date().toLocaleDateString()}
     }
 
     await this.vehicleRepository.remove(vehicle);
+
+    // Notify drivers
+    try {
+      
+      //TODO publish event
+    } catch (e) {
+      console.error('Failed to send vehicle deletion notification', e);
+    }
 
     return this.responseService.success(
       'Vehicle deleted successfully.',
@@ -433,7 +453,18 @@ Scan Date: ${new Date().toLocaleDateString()}
       }
     }
 
+    const oldPrimaryDriverId = vehicle.assignedDriverPrimary?.id;
+    const oldSecondaryDriverId = vehicle.assignedDriverSecondary?.id;
+
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
+
+    // Notify drivers
+    try {
+            //TODO publish event
+
+    } catch (e) {
+      console.error('Failed to send driver assignment notification', e);
+    }
 
     return this.responseService.success(
       'Drivers assigned successfully.',
@@ -550,7 +581,32 @@ Scan Date: ${new Date().toLocaleDateString()}
   }
 
   // Get vehicles by driver
-  async getDriverVehicles(driverId: number) {
+  async getDriverVehicles(driverId: number, currentUser: any) {
+
+    // If current user is sysadmin, return all vehicles
+    if (currentUser?.role == UserRole.SYSADMIN) {
+      const allVehicles = await this.vehicleRepository.find({
+        relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary'],
+        order: { regNo: 'ASC' }
+      });
+
+      // Filter for the specific driver if needed
+      const primaryVehicles = allVehicles;
+
+      const secondaryVehicles = [];
+
+      return this.responseService.success(
+        'All vehicles retrieved for sysadmin.',
+        {
+          primaryVehicles,
+          secondaryVehicles,
+          total: allVehicles.length,
+          primaryTotal: primaryVehicles.length,
+          secondaryTotal: secondaryVehicles.length
+        }
+      );
+    }
+
     const vehicles = await this.vehicleRepository.find({
       where: [
         { assignedDriverPrimary: { id: driverId } },

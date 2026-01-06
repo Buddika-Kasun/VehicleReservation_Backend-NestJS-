@@ -11,7 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/config/multer.config';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { User, UserRole } from 'src/database/entities/user.entity';
+import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 
 @Controller('user')
@@ -88,9 +88,10 @@ export class UsersController {
   @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   async approve(
     @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
     @Body() dto: ApproveUserDto
   ) {
-    return this.usersService.approveUser(id, dto);
+    return this.usersService.approveUser(id, dto, reqUser);
   }
 
   @Put('reject/:id')
@@ -189,6 +190,21 @@ export class UsersController {
     return this.usersService.findAllByApproval();
   }
 
+  @Get('can-create-trip')
+  @ApiOperation({ summary: 'Check if user can create a new trip' })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip creation eligibility check completed.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User not authorized to create trips.',
+  })
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE, UserRole.HR)
+  async checkTripCreationEligibility(@GetUser() user: any) {
+    return this.usersService.checkTripCreationEligibility(user.userId);
+  }
+
   @Get('search-approval')
   @ApiOperation({ summary: 'Search users' })
   @ApiResponse({
@@ -210,9 +226,10 @@ export class UsersController {
   })
   async setApproveUser(
     @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
     @Body('state') state: boolean,
   ) {
-    return this.usersService.setUserApprove(id, state);
+    return this.usersService.setUserApprove(id, state, reqUser);
   }
 
 

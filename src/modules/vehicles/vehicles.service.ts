@@ -582,27 +582,53 @@ Scan Date: ${new Date().toLocaleDateString()}
 
   // Get vehicles by driver
   async getDriverVehicles(driverId: number, currentUser: any) {
-
-    // If current user is sysadmin, return all vehicles
+    
+    const today = new Date().toISOString().split('T')[0];
+    
     if (currentUser?.role == UserRole.SYSADMIN) {
       const allVehicles = await this.vehicleRepository.find({
-        relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary'],
+        relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'checklists'],
         order: { regNo: 'ASC' }
       });
 
-      // Filter for the specific driver if needed
-      const primaryVehicles = allVehicles;
-
-      const secondaryVehicles = [];
+      const vehiclesWithCheck = allVehicles.map(v => {
+        // Check if today's checklist exists BEFORE removing checklists
+        const todayChecked = v.checklists?.some(c => {
+          if (!c.checklistDate) return false;
+          return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+        }) || false;
+        
+        // Create response object WITHOUT checklists
+        const vehicleResponse = {
+          id: v.id,
+          regNo: v.regNo,
+          model: v.model,
+          fuelType: v.fuelType,
+          seatingCapacity: v.seatingCapacity,
+          seatingAvailability: v.seatingAvailability,
+          odometerLastReading: v.odometerLastReading,
+          vehicleImage: v.vehicleImage,
+          qrCode: v.qrCode,
+          isActive: v.isActive,
+          createdAt: v.createdAt,
+          updatedAt: v.updatedAt,
+          company: v.company,
+          assignedDriverPrimary: v.assignedDriverPrimary,
+          assignedDriverSecondary: v.assignedDriverSecondary,
+          todayChecked: todayChecked // Add this flag
+        };
+        
+        return vehicleResponse;
+      });
 
       return this.responseService.success(
         'All vehicles retrieved for sysadmin.',
         {
-          primaryVehicles,
-          secondaryVehicles,
+          primaryVehicles: vehiclesWithCheck,
+          secondaryVehicles: [],
           total: allVehicles.length,
-          primaryTotal: primaryVehicles.length,
-          secondaryTotal: secondaryVehicles.length
+          primaryTotal: vehiclesWithCheck.length,
+          secondaryTotal: 0
         }
       );
     }
@@ -612,17 +638,46 @@ Scan Date: ${new Date().toLocaleDateString()}
         { assignedDriverPrimary: { id: driverId } },
         { assignedDriverSecondary: { id: driverId } }
       ],
-      relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary'],
+      relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'checklists'],
       order: { regNo: 'ASC' }
     });
 
-    // Separate primary and secondary vehicles
-    const primaryVehicles = vehicles.filter(vehicle => 
-      vehicle.assignedDriverPrimary?.id === driverId
+    const vehiclesWithCheck = vehicles.map(v => {
+      // Check if today's checklist exists BEFORE removing checklists
+      const todayChecked = v.checklists?.some(c => {
+        if (!c.checklistDate) return false;
+        return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+      }) || false;
+      
+      // Create response object WITHOUT checklists
+      const vehicleResponse = {
+        id: v.id,
+        regNo: v.regNo,
+        model: v.model,
+        fuelType: v.fuelType,
+        seatingCapacity: v.seatingCapacity,
+        seatingAvailability: v.seatingAvailability,
+        odometerLastReading: v.odometerLastReading,
+        vehicleImage: v.vehicleImage,
+        qrCode: v.qrCode,
+        isActive: v.isActive,
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
+        company: v.company,
+        assignedDriverPrimary: v.assignedDriverPrimary,
+        assignedDriverSecondary: v.assignedDriverSecondary,
+        todayChecked: todayChecked // Add this flag
+      };
+      
+      return vehicleResponse;
+    });
+
+    const primaryVehicles = vehiclesWithCheck.filter(v => 
+      v.assignedDriverPrimary?.id === driverId
     );
 
-    const secondaryVehicles = vehicles.filter(vehicle => 
-      vehicle.assignedDriverSecondary?.id === driverId
+    const secondaryVehicles = vehiclesWithCheck.filter(v => 
+      v.assignedDriverSecondary?.id === driverId
     );
 
     return this.responseService.success(

@@ -520,7 +520,8 @@ export class VehicleRecommendService {
       .createQueryBuilder("vehicle")
       .leftJoinAndSelect("vehicle.vehicleType", "vehicleType")
       .leftJoinAndSelect("vehicle.assignedDriverPrimary", "assignedDriverPrimary")
-      .where("vehicle.isActive = true");
+      .where("vehicle.isActive = true")
+      .andWhere("vehicle.assignedDriverPrimary IS NOT NULL");
 
     if (search) {
       qb.andWhere(

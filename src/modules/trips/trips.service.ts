@@ -5872,16 +5872,25 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   //console.log('Now timestamp:', now.getTime());
   //console.log('Now is valid Date?', !isNaN(now.getTime()));
 
-  const tripDateTime = this.getTripDateTime(trip.startDate, trip.startTime);
+  //const tripDateTime = this.getTripDateTime(trip.startDate, trip.startTime);
   
   // Calculate time difference in minutes
-  const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
+  //const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
   //console.log('Time difference in minutes:', timeDiffMinutes);
   
   // If more than 15 minutes early or late
+
+  const nowSL = moment().tz('Asia/Colombo');
+  const tripDateTime = moment.tz(
+    `${trip.startDate} ${trip.startTime}`, 
+    'Asia/Colombo'
+  );
+
+  // Use moment methods
+  const timeDiffMinutes = Math.abs(nowSL.diff(tripDateTime, 'minutes'));
   
   if (timeDiffMinutes > 15) {
-    const isEarly = now < tripDateTime;
+    const isEarly = nowSL < tripDateTime;
     const minutesAway = Math.abs(timeDiffMinutes);
     
     return new BadRequestException(

@@ -585,7 +585,7 @@ Scan Date: ${new Date().toLocaleDateString()}
     
     const today = new Date().toISOString().split('T')[0];
     
-    if (currentUser?.role == UserRole.SYSADMIN) {
+    if (currentUser?.role == UserRole.SYSADMIN || driverId == -1) {
       const allVehicles = await this.vehicleRepository.find({
         relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'checklists'],
         order: { regNo: 'ASC' }

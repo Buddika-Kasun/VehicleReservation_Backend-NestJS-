@@ -19,6 +19,7 @@ import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 import * as ExcelJS from 'exceljs';
 import { Buffer } from 'buffer';
 import * as PDFDocument from 'pdfkit';
+import moment from 'moment-timezone';
 
 @Injectable()
 export class TripsService {
@@ -5864,14 +5865,15 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   }
 
   // NEW: Check if current time is within 15 minutes window of scheduled start time
-  const now = new Date();
+  //const now = new Date();
+  const now = moment().tz('Asia/Colombo').toDate();
   const tripDateTime = this.getTripDateTime(trip.startDate, trip.startTime);
   
   // Calculate time difference in minutes
   const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
   
   // If more than 15 minutes early or late
-  /*
+  
   if (timeDiffMinutes > 15) {
     const isEarly = now < tripDateTime;
     const minutesAway = Math.abs(timeDiffMinutes);
@@ -5884,8 +5886,8 @@ async startTrip(tripId: number, userId: number): Promise<any> {
       )
     );
   }
-  */
- 
+  
+
   // Start the main trip
   trip.status = TripStatus.ONGOING;
   trip.updatedAt = now;

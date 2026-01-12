@@ -5871,6 +5871,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   const timeDiffMinutes = Math.abs(now.getTime() - tripDateTime.getTime()) / (1000 * 60);
   
   // If more than 15 minutes early or late
+  /*
   if (timeDiffMinutes > 15) {
     const isEarly = now < tripDateTime;
     const minutesAway = Math.abs(timeDiffMinutes);
@@ -5883,7 +5884,8 @@ async startTrip(tripId: number, userId: number): Promise<any> {
       )
     );
   }
-
+  */
+ 
   // Start the main trip
   trip.status = TripStatus.ONGOING;
   trip.updatedAt = now;

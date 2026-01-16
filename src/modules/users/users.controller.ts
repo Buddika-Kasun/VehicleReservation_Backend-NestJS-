@@ -153,6 +153,19 @@ export class UsersController {
     return this.usersService.findAllByDepartment(depId);
   }
 
+  @Get('get-all-hod')
+  @ApiOperation({ summary: 'Get all users by department' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 
+    `
+      Users retrieved successfully.
+    `
+  })
+  async getAllHodUsers() {
+    return this.usersService.findAllHodUsers();
+  }
+
   @Get('get-all-by-role/:role')
   @ApiOperation({ summary: 'Get all users by department' })
   @ApiResponse({ 

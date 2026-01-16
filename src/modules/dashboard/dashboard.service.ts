@@ -8,6 +8,7 @@ import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
 import { AdminDashboardStatsDto } from './dto/admin-dashboard-stats.dto';
 import { startOfMonth, endOfMonth, subMonths, startOfDay, endOfDay } from 'date-fns';
 import { Department } from 'src/infra/database/entities/department.entity';
+import * as moment from 'moment-timezone';
 
 @Injectable()
 export class DashboardService {
@@ -51,7 +52,9 @@ export class DashboardService {
    */
   async getAdminDashboardStats(userId: number): Promise<AdminDashboardStatsDto> {
     // Get current date and calculate date ranges
-    const now = new Date();
+    //const now = new Date();
+    const now = moment().tz('Asia/Colombo').toDate();
+    
     const currentMonthStart = startOfMonth(now);
     const currentMonthEnd = endOfMonth(now);
     const previousMonthStart = startOfMonth(subMonths(now, 1));

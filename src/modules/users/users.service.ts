@@ -391,6 +391,29 @@ async isApprover(userId: number): Promise<boolean> {
     );
   }
 
+  async findAllHodUsers() {
+    const whereCondition = { role: UserRole.ADMIN, isApproved: Status.APPROVED };
+
+    const users = await this.userRepo.find({
+      where: whereCondition,
+      relations: ['company', 'department'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const minimalUsers = users.map(user => ({
+      id: user.id,
+      displayname: user.displayname,
+    }));
+
+    return this.responseService.success(
+      'Users retrieved successfully',
+      {
+        users: minimalUsers,
+        total: minimalUsers.length,
+      },
+    );
+  }
+
   async findAllByRole(roleName?: string) {
     // Create where condition properly
     const whereCondition: any = { isApproved: Status.APPROVED };

@@ -9,6 +9,7 @@ import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-reque
 import { DepartmentListResponseDto, DepartmentResponseDto } from './dto/department-response.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Public } from 'src/common/decorators/public.decorator';
+import { GetUser } from 'src/common/decorators/user.decorator';
 
 @ApiTags('Departments API')
 @Controller('department')
@@ -48,6 +49,25 @@ export class DepartmentController {
     const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
     const costCenterIdNumber = costCenterId ? parseInt(costCenterId, 10) : undefined;
     return await this.departmentService.findAll(pageNumber, limitNumber, search, companyIdNumber, costCenterIdNumber);
+  }
+
+  @Get('get-user-all')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @ApiOperation({ summary: 'Get all departments' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: Number })
+  @ApiQuery({ name: 'costCenterId', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Departments retrieved successfully', type: DepartmentListResponseDto })
+  async findUserAll(
+    @GetUser() user: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : undefined;
+    return await this.departmentService.findUserAll(pageNumber, limitNumber, user);
   }
 
   @Get('get/:id')

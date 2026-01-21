@@ -1,5 +1,5 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -24,26 +24,43 @@ export class DashboardController {
   }
 
   @Get('admin/stats')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
-  @ApiOperation({ 
-    summary: 'Get admin dashboard statistics',
-    description: 'Returns comprehensive statistics for admin dashboard including rides, users, and budget information'
-  })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Dashboard statistics retrieved successfully', 
-    type: AdminDashboardStatsDto 
-  })
-  @ApiResponse({ 
-    status: 401, 
-    description: 'Unauthorized' 
-  })
-  @ApiResponse({ 
-    status: 403, 
-    description: 'Forbidden - insufficient permissions' 
-  })
-  async getDashboardStats(@GetUser() user: any): Promise<AdminDashboardStatsDto> {
-    return await this.dashboardService.getAdminDashboardStats(user.userId as number);
-  }
+@Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+@ApiOperation({ 
+  summary: 'Get admin dashboard statistics',
+  description: 'Returns comprehensive statistics for admin dashboard including rides, users, and budget information. Optionally filter by department.'
+})
+@ApiResponse({ 
+  status: 200, 
+  description: 'Dashboard statistics retrieved successfully', 
+  type: AdminDashboardStatsDto 
+})
+@ApiResponse({ 
+  status: 400, 
+  description: 'Invalid department ID' 
+})
+@ApiResponse({ 
+  status: 401, 
+  description: 'Unauthorized' 
+})
+@ApiResponse({ 
+  status: 403, 
+  description: 'Forbidden - insufficient permissions' 
+})
+@ApiQuery({
+  name: 'departmentId',
+  required: false,
+  description: 'Optional department ID to filter statistics. If not provided, shows all departments for sysadmin/HR or user\'s department for others.',
+  type: Number,
+  example: 1
+})
+async getDashboardStats(
+  @GetUser() user: any,
+  @Query('departmentId') departmentId?: number,
+): Promise<AdminDashboardStatsDto> {
+  return await this.dashboardService.getAdminDashboardStats(
+    user.userId as number,
+    departmentId,
+  );
+}
 
 }

@@ -443,12 +443,12 @@ private async getTotalApprovedUsers(
   // For sysadmin viewing all departments (no filter), exclude sysadmin users from count
   if (!departmentId && !departmentsArray && userRole === UserRole.SYSADMIN) {
     query.andWhere('user.role NOT IN (:...excludedRoles)', {
-      excludedRoles: [UserRole.SYSADMIN, UserRole.HR]
+      excludedRoles: [UserRole.SYSADMIN]
     });
   } else {
     // For filtered views, exclude SYSADMIN and HR from counts as they are not department-based
     query.andWhere('user.role NOT IN (:...excludedRoles)', {
-      excludedRoles: [UserRole.SYSADMIN, UserRole.HR]
+      excludedRoles: [UserRole.SYSADMIN]
     });
   }
 

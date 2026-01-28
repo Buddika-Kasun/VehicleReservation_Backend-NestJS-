@@ -4,7 +4,7 @@ import { Company } from 'src/infra/database/entities/company.entity';
 import { CostCenter } from 'src/infra/database/entities/cost-center.entity';
 import { Department } from 'src/infra/database/entities/department.entity';
 import { User, UserRole } from 'src/infra/database/entities/user.entity';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department-request.dto';
 import { ResponseService } from 'src/common/services/response.service';
 
@@ -121,6 +121,77 @@ export class DepartmentService {
 
     if (costCenterId) {
       query.andWhere('department.costCenterId = :costCenterId', { costCenterId });
+    }
+
+    // If limit is provided, use pagination
+    if (limit) {
+      query
+        .skip(skip)
+        .take(limit)
+        .orderBy('department.createdAt', 'DESC');
+    } else {
+      // If no limit, just order the results
+      query.orderBy('department.createdAt', 'DESC');
+    }
+
+    const [departments, total] = await query.getManyAndCount();
+
+    return this.responseService.success(
+      'Departments retrieved successfully',
+      {
+        departments,
+        pagination: {
+          page,
+          limit: limit || total, // If no limit, show total as limit
+          total,
+          totalPages: limit ? Math.ceil(total / limit) : 1,
+        },
+      }
+    );
+  }
+
+  async findUserAll(page = 1, limit?: number, user?: any) { 
+    
+    const userData = await this.userRepository.findOne({
+      where: { id: user.userId },
+      relations: ['company', 'department']
+    });
+    
+    const skip = (page - 1) * (limit || 0);
+    
+    // Create base query
+    const query = this.departmentRepository
+      .createQueryBuilder('department')
+      .leftJoinAndSelect('department.company', 'company')
+      .leftJoinAndSelect('department.costCenter', 'costCenter')
+      .leftJoinAndSelect('department.head', 'head');
+
+    // Filter based on user role and department
+    if (userData) {
+      const userRole = userData.role;
+      const userDepartmentId = userData.department?.id;
+      const userId = userData.id;
+
+      switch (userRole) {
+        case UserRole.SYSADMIN:
+        case UserRole.HR:
+          // Sysadmin and HR can see all departments
+          // Optionally filter by company if multi-tenant
+          // if (user.company?.id) {
+          //   query.andWhere('company.id = :companyId', { companyId: user.company.id });
+          // }
+          break;
+        default: 
+          // user is head of department OR belongs to department
+          query.andWhere(new Brackets(qb => {
+            qb.where('head.id = :userId', { userId: userId }) // User is head
+              .orWhere('department.id = :userDepartmentId', { userDepartmentId: userDepartmentId }); // User belongs to
+          }));
+          break;
+      }
+    } else {
+      // If no user provided (public API), return empty or handle as needed
+      query.andWhere('1 = 0');
     }
 
     // If limit is provided, use pagination

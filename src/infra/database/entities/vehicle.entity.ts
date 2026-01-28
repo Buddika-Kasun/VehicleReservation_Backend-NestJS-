@@ -7,6 +7,7 @@ import { User } from './user.entity';
 import { Trip } from './trip.entity';
 import { OdometerLog } from './odometer-log.entity';
 import { CostConfiguration } from './cost-configuration.entity';
+import { Checklist } from './checklist.entity';
 
 @Entity()
 export class Vehicle {
@@ -58,6 +59,9 @@ export class Vehicle {
 
   @OneToMany(() => OdometerLog, o => o.vehicle)
   odometerLogs: OdometerLog[];
+
+  @OneToMany(() => Checklist, c => c.vehicle)
+  checklists: Checklist[];
 
   @CreateDateColumn()
   createdAt: Date;

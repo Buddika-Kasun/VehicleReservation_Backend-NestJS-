@@ -681,6 +681,38 @@ async isApprover(userId: number): Promise<boolean> {
     );
   }
 
+  async findByUsernameAndMobile(username: string, mobile: string) {
+    const user = await this.userRepo.findOne({ where: { 
+      username: username, 
+      phone: mobile 
+    } });
+
+    return user;
+  }
+
+  async updatePassword(userId: number, newPasswordHash: string) {
+    const result = await this.userRepo.update(
+      { id: userId },
+      { 
+        passwordHash: newPasswordHash,
+        updatedAt: new Date() 
+      }
+    );
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        this.responseService.error(
+          'User not found', 
+          404
+        )
+      );
+    }
+
+    return this.responseService.success(
+      'Password updated successfully'
+    );
+  }
+
   async findAuthByUsername(username: string) {
     const user = await this.userRepo.findOne({ where: { username }, relations: ['company', 'department'] });
 

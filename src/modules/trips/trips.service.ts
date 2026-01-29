@@ -139,7 +139,7 @@ export class TripsService {
     } else if (durationInHours <= 8) {
         // For trips between 3-8 hours: 15 minutes per 2 hours
         // Calculate how many 2-hour segments
-        const twoHourSegments = Math.floor((durationInHours - 3) / 2);
+        const twoHourSegments = Math.floor(durationInHours / 2);
         restingMinutes = twoHourSegments * 15;
     } else {        
         restingMinutes = 4 * 60;

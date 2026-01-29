@@ -5,7 +5,7 @@ import { ResponseService } from 'src/common/services/response.service';
 import { sanitizeUser } from 'src/common/utils/sanitize-user.util';
 import { Status, UserRole } from 'src/infra/database/entities/user.entity';
 import { UsersService } from 'src/modules/users/users.service';
-import { compare } from 'src/common/utils/hash.util';
+import { compare, hash } from 'src/common/utils/hash.util';
 import { LoginDto } from '../dto/login.dto';
 import { LoginResponseDto, LogoutResponseDto, UserData } from '../dto/authResponse.dto';
 import { ApprovalConfigService } from 'src/modules/approval/approvalConfig.service';
@@ -103,6 +103,147 @@ export class AuthService {
       }
     );
 
+  }
+
+  async verifyPasswordReset(data: any) {
+    try {
+      const { username, mobile } = data;
+
+      if (!username || !mobile) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'Username and mobile number are required',
+            400
+          )
+        );
+      }
+
+      // Find user by username and mobile
+      const user = await this.usersService.findByUsernameAndMobile(username, mobile);
+
+      if (!user) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'Username and mobile number do not match any user',
+            400
+          )
+        );
+      }
+
+      // Check if user is approved
+      if (user.isApproved !== Status.APPROVED) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'Your account is pending approval. Please contact administrator.',
+            400
+          )
+        );
+      }
+
+      // Return success without any token
+      return this.responseService.success(
+        'Verification successful. You can now reset your password.',
+        {
+          userId: user.id,
+          username: user.username,
+          mobile: user.phone,
+          displayName: user.displayname
+        }
+      );
+
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        this.responseService.error(
+          'Failed to verify user',
+          400
+        )
+      );
+    }
+  }
+
+  async resetPassword(data: any) {
+    try {
+      const { username, mobile, newPassword, confirmPassword } = data;
+
+      if (!username || !mobile || !newPassword || !confirmPassword) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'All fields are required',
+            400
+          )
+        );
+      }
+
+      // Find user
+      const user = await this.usersService.findByUsernameAndMobile(username, mobile);
+
+      if (!user) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'User not found',
+            400
+          )
+        );
+      }
+
+      // Check if passwords match
+      if (newPassword !== confirmPassword) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'Passwords do not match',
+            400
+          )
+        );
+      }
+
+      // Check password length
+      if (newPassword.length < 6) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'Password must be at least 6 characters',
+            400
+          )
+        );
+      }
+
+      // Check if new password is same as old password
+      const isSamePassword = await compare(newPassword, user.passwordHash);
+      if (isSamePassword) {
+        throw new BadRequestException(
+          this.responseService.error(
+            'New password cannot be the same as old password',
+            400
+          )
+        );
+      }
+
+      // Hash new password
+      const hashedPassword = await hash(newPassword);
+
+      // Update user password
+      await this.usersService.updatePassword(user.id, hashedPassword);
+
+      // Revoke all existing refresh tokens for this user
+      this.refreshTokens.delete(user.id);
+
+      return this.responseService.success(
+        'Password reset successful. You can now login with your new password.'
+      );
+
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        this.responseService.error(
+          'Failed to reset password',
+          400
+        )
+      );
+    }
   }
 
   private async canTripApprove(user: any): Promise<boolean> {

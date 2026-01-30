@@ -13,10 +13,11 @@ import { ApprovalConfig } from 'src/infra/database/entities/approval-configurati
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 import { VehicleRecommendService } from './vehicleRecommend.service';
+import { Department } from 'src/infra/database/entities/department.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig, Schedule]),
+    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig, Schedule, Department]),
     NotificationsModule,
   ],
   controllers: [TripsController],

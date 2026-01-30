@@ -9,6 +9,7 @@ import { OdometerLog } from './odometer-log.entity';
 import { Feedback } from './feedback.entity';
 import { TripLocation } from './trip-location.entity';
 import { Schedule } from './trip-schedule.entity';
+import { Department } from './department.entity';
 
 export enum TripStatus {
   DRAFT = 'draft',
@@ -50,6 +51,9 @@ export class Trip {
 
   @ManyToOne(() => User, user => user.trips)
   requester: User;
+
+  @ManyToOne(() => Department, { nullable: true })
+  department?: Department;
 
   @ManyToOne(() => Vehicle, vehicle => vehicle.trips, { nullable: true })
   vehicle?: Vehicle;

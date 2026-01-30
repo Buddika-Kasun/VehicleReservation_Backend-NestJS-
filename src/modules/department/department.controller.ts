@@ -52,7 +52,7 @@ export class DepartmentController {
   }
 
   @Get('get-user-all')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.SECURITY)
   @ApiOperation({ summary: 'Get all departments' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })

@@ -152,6 +152,10 @@ export class TripTypeDataDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
+
+  @IsOptional()
+  @IsNumber()
+  departmentId?: number;
 }
 
 export class CreateTripDto {

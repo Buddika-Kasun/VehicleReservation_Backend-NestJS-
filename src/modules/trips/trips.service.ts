@@ -3863,7 +3863,7 @@ export class TripsService {
 
     // Check authorization
     let isAuthorized = false;
-    let approverType: ApproverType | null = null;
+    let approverTypes: ApproverType[] = [];
 
     if (isSysAdmin) {
       // SYSADMIN can approve any trip regardless of current step
@@ -3874,19 +3874,19 @@ export class TripsService {
       //if (approval.currentStep === ApproverType.HOD && approval.approver1?.id === userId) {
       if (approval.approver1?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.HOD;
+        approverTypes.push(ApproverType.HOD);
       }
       //} else if (approval.currentStep === ApproverType.SECONDARY && approval.approver2?.id === userId) {
       //} else if (approval.approver2?.id === userId) {
       if (approval.approver2?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SECONDARY;
+        approverTypes.push(ApproverType.SECONDARY);
       }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
       //} else if (approval.safetyApprover?.id === userId) {
       if (approval.safetyApprover?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SAFETY;
+        approverTypes.push(ApproverType.SAFETY);
       }
     }
     // todo change
@@ -3900,21 +3900,7 @@ export class TripsService {
     // Process approval
     const now = new Date();
     
-    // Update approval based on approver type
-    if (approverType === ApproverType.HOD) {
-      approval.approver1Status = StatusApproval.APPROVED;
-      approval.approver1ApprovedAt = now;
-      approval.approver1Comments = comment;
-    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-      approval.approver2Status = StatusApproval.APPROVED;
-      approval.approver2ApprovedAt = now;
-      approval.approver2Comments = comment;
-    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-      approval.safetyApproverStatus = StatusApproval.APPROVED;
-      approval.safetyApproverApprovedAt = now;
-      approval.safetyApproverComments = comment;
-    }
-    else if (isSysAdmin) {
+    if (isSysAdmin) {
       approval.approver1Status = StatusApproval.APPROVED;
       approval.approver1ApprovedAt = now;
       approval.approver1Comments = `Approved by SYSADMIN: ${comment || 'No comment'}`;
@@ -3926,6 +3912,24 @@ export class TripsService {
       approval.safetyApproverStatus = StatusApproval.APPROVED;
       approval.safetyApproverApprovedAt = now;
       approval.safetyApproverComments = `Approved by SYSADMIN: ${comment || 'No comment'}`;
+    }
+    else {
+      // Update approval based on approver type
+      for (const approverType of approverTypes) {
+        if (approverType === ApproverType.HOD) {
+          approval.approver1Status = StatusApproval.APPROVED;
+          approval.approver1ApprovedAt = now;
+          approval.approver1Comments = comment;
+        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+          approval.approver2Status = StatusApproval.APPROVED;
+          approval.approver2ApprovedAt = now;
+          approval.approver2Comments = comment;
+        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          approval.safetyApproverStatus = StatusApproval.APPROVED;
+          approval.safetyApproverApprovedAt = now;
+          approval.safetyApproverComments = comment;
+        }
+      }
     }
 
     // Update overall status and move to next step
@@ -3950,7 +3954,7 @@ export class TripsService {
 
     return {
       success: true,
-      message: `Trip ${approverType} approval submitted successfully`,
+      message: `Trip ${approverTypes} approval submitted successfully`,
       data: {
         tripId: trip.id,
         approvalStatus: approval.overallStatus,
@@ -4007,7 +4011,7 @@ export class TripsService {
 
     // Check authorization
     let isAuthorized = false;
-    let approverType: ApproverType | null = null;
+    let approverTypes: ApproverType[] = [];
 
     if (isSysAdmin) {
       // SYSADMIN can reject any trip regardless of current step
@@ -4017,13 +4021,15 @@ export class TripsService {
       // Regular users can only reject on their assigned step
       if (approval.approver1?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.HOD;
-      } else if (approval.approver2?.id === userId) {
+        approverTypes.push(ApproverType.HOD);
+      } 
+      if (approval.approver2?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SECONDARY;
-      } else if (approval.safetyApprover?.id === userId) {
+        approverTypes.push(ApproverType.SECONDARY);
+      }
+      if (approval.safetyApprover?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SAFETY;
+        approverTypes.push(ApproverType.SAFETY);
       }
     }
 
@@ -4035,24 +4041,29 @@ export class TripsService {
 
     // Process rejection
     const now = new Date();
-    
-    // Update rejection based on approver type
-    if (approverType === ApproverType.HOD) {
-      approval.approver1Status = StatusApproval.REJECTED;
-      approval.approver1Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-      approval.approver2Status = StatusApproval.REJECTED;
-      approval.approver2Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-      approval.safetyApproverStatus = StatusApproval.REJECTED;
-      approval.safetyApproverComments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (isSysAdmin) {
+
+    if (isSysAdmin) {
       approval.approver1Status = StatusApproval.REJECTED;
       approval.approver1Comments = `Rejected by SYSADMIN: ${rejectionReason}`;
       approval.approver2Status = StatusApproval.REJECTED;
       approval.approver2Comments = `Rejected by SYSADMIN: ${rejectionReason}`;
       approval.safetyApproverStatus = StatusApproval.REJECTED;
       approval.safetyApproverComments = `Rejected by SYSADMIN: ${rejectionReason}`;
+    }
+    else {
+      // Update approval based on approver type
+      for (const approverType of approverTypes) {
+        if (approverType === ApproverType.HOD) {
+          approval.approver1Status = StatusApproval.REJECTED;
+          approval.approver1Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+          approval.approver2Status = StatusApproval.REJECTED;
+          approval.approver2Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          approval.safetyApproverStatus = StatusApproval.REJECTED;
+          approval.safetyApproverComments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } 
+      }
     }
 
     // Set overall status to REJECTED immediately

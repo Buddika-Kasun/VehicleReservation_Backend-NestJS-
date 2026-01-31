@@ -20,6 +20,7 @@ import * as ExcelJS from 'exceljs';
 import { Buffer } from 'buffer';
 import * as PDFDocument from 'pdfkit';
 import * as moment from 'moment-timezone';
+import { Department } from 'src/infra/database/entities/department.entity';
 
 @Injectable()
 export class TripsService {
@@ -43,6 +44,8 @@ export class TripsService {
     private readonly approvalConfigRepo: Repository<ApprovalConfig>,
     @InjectRepository(Schedule)
     private readonly scheduleRepo: Repository<Schedule>,
+    @InjectRepository(Department)
+    private readonly departmentRepo: Repository<Department>,
     private readonly responseService: ResponseService,
   ) {}
 
@@ -1400,6 +1403,7 @@ export class TripsService {
       where: { id: requesterId },
       relations: ['department', 'department.head'] 
     }); 
+
     if (!requester) {
       throw new NotFoundException(this.responseService.error('Requester not found', 404));
     }
@@ -1415,6 +1419,22 @@ export class TripsService {
       throw new BadRequestException(
         this.responseService.error('Reason is required for the trip', 400)
       );
+    }
+
+    let department: Department | undefined;
+    if (createTripDto.tripTypeData.departmentId) {
+      department = await this.departmentRepo.findOne({
+        where: { id: createTripDto.tripTypeData.departmentId }
+      });
+      
+      if (!department) {
+        throw new NotFoundException(
+          this.responseService.error(`Department with ID ${createTripDto.tripTypeData.departmentId} not found`, 404)
+        );
+      }
+    }
+    else {
+      department = requester.department;
     }
 
     // Parse fixed rate if provided
@@ -1579,6 +1599,7 @@ export class TripsService {
       fixedRate: parsedFixedRate,
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
+      department: department,
     });
 
     const savedTrip = await this.tripRepo.save(trip);
@@ -1690,6 +1711,7 @@ export class TripsService {
         tripType: masterTrip.tripType,
         fixedRate: masterTrip.fixedRate,
         reason: masterTrip.reason,
+        department: masterTrip.department,
         primaryDriver: masterTrip.primaryDriver,
         secondaryDriver: masterTrip.secondaryDriver,
       });

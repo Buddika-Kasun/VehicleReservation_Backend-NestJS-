@@ -3875,12 +3875,16 @@ export class TripsService {
       if (approval.approver1?.id === userId) {
         isAuthorized = true;
         approverType = ApproverType.HOD;
+      }
       //} else if (approval.currentStep === ApproverType.SECONDARY && approval.approver2?.id === userId) {
-      } else if (approval.approver2?.id === userId) {
+      //} else if (approval.approver2?.id === userId) {
+      if (approval.approver2?.id === userId) {
         isAuthorized = true;
         approverType = ApproverType.SECONDARY;
+      }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
-      } else if (approval.safetyApprover?.id === userId) {
+      //} else if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId) {
         isAuthorized = true;
         approverType = ApproverType.SAFETY;
       }

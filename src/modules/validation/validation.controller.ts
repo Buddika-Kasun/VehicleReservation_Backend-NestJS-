@@ -30,7 +30,7 @@ export class ValidationController {
     status: 200, 
     description: 'Returns true if a company exists, false otherwise.'
   })
-  @Roles(UserRole.SYSADMIN)
+  @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
   async haveCompany() {
     return await this.validationService.haveCompany();
   }

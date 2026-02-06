@@ -257,6 +257,40 @@ async getApprovers(): Promise<User[]> {
   }
 }
 
+async getTransportSupervisors(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const supervisors = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SUPERVISOR})
+      .getMany();
+
+    return supervisors;
+  } catch (error) {
+    //this.logger.error('Error fetching supervisors:', error);
+    throw error;
+  }
+}
+
+async getSecurities(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const securities = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SECURITY})
+      .getMany();
+
+    return securities;
+  } catch (error) {
+    //this.logger.error('Error fetching securities:', error);
+    throw error;
+  }
+}
+
 // Also add this helper method to check if a user is an approver
 async isApprover(userId: number): Promise<boolean> {
   try {

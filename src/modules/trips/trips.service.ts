@@ -21,6 +21,8 @@ import { Buffer } from 'buffer';
 import * as PDFDocument from 'pdfkit';
 import * as moment from 'moment-timezone';
 import { Department } from 'src/infra/database/entities/department.entity';
+import { EventBusService } from 'src/infra/redis/event-bus.service';
+import { request } from 'http';
 
 @Injectable()
 export class TripsService {
@@ -47,6 +49,7 @@ export class TripsService {
     @InjectRepository(Department)
     private readonly departmentRepo: Repository<Department>,
     private readonly responseService: ResponseService,
+    private readonly eventBus: EventBusService,
   ) {}
 
   // Calculate distance using Haversine formula
@@ -1315,7 +1318,30 @@ export class TripsService {
       ]
     });
 
-    // TODO publish event
+    try {
+      // Send approvers as user objects, not just IDs
+      const approvers = [];
+      if (savedTrip.approval?.approver1) {
+        approvers.push(savedTrip.approval.approver1);
+      }
+      if (savedTrip.approval?.approver2) {
+        approvers.push(savedTrip.approval.approver2);
+      }
+      if (savedTrip.approval?.safetyApprover) {
+        approvers.push(savedTrip.approval.safetyApprover);
+      }
+
+      // Publish TRIP.CONFIRM event
+      await this.eventBus.publish('TRIP', 'CONFIRM', {
+        tripId: savedTrip.id,
+        userId: userId,
+        userRole: requester.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : requester.role ===UserRole.ADMIN ? 'HOD' : requester.role,
+        userName: requester.displayname,
+        approvers: approvers,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -1612,7 +1638,18 @@ export class TripsService {
         .of(savedTrip.id)
         .add(selectedGroupUserIds);
     }
-            // TODO publish event
+    
+    try {
+      // Publish TRIP.CREATE event
+      await this.eventBus.publish('TRIP', 'CREATE', {
+        tripId: savedTrip.id,
+        userId: requester.id,
+        userName: requester.displayname,
+        userRole: requester.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : requester.role ===UserRole.ADMIN ? 'HOD' : requester.role,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -2238,9 +2275,8 @@ export class TripsService {
     });
 
     const savedApproval = await this.approvalRepo.save(approval);
-
     // Send notifications to approvers
-    await this.sendApprovalNotifications(savedApproval);
+    //await this.sendApprovalNotifications(savedApproval);
 
     return savedApproval;
   }
@@ -2441,7 +2477,13 @@ export class TripsService {
       );
 
       try {
-        // TODO publish event
+        // Publish TRIP.CANCEL event
+        await this.eventBus.publish('TRIP', 'CANCEL', {
+          tripId: String(tripId), // Ensure tripId is a string
+          userId: String(user.userId), // Ensure userId is a string
+          userName: user.displayname,
+          requesterId: String(trip.requester.id), // Ensure requesterId is a string
+        });
       } catch (e) {
         console.error('Failed to send cancellation notification', e);
       }
@@ -3830,7 +3872,8 @@ export class TripsService {
         'approval.approver2', 
         'approval.safetyApprover', 
         'requester',
-        'vehicle'
+        'vehicle',
+        'primaryDriver'
       ]
     });
 
@@ -3940,17 +3983,34 @@ export class TripsService {
       approval.moveToNextStep();
     }
 
+    let eventData = {
+      isApproved: false,
+      requesterId: null,
+      driverId: null,
+    };
     // If fully approved, update trip status
     if (approval.overallStatus.toString() === 'approved') {
       trip.status = TripStatus.APPROVED;
+
+      eventData.isApproved = true;
+      eventData.requesterId = trip.requester?.id || null;
+      eventData.driverId = trip.primaryDriver?.id || trip.vehicle?.assignedDriverPrimary?.id || null;
     }
 
     // Save changes
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
-            // TODO publish event
-
+    try {
+      // Publish TRIP.APPROVE event
+      await this.eventBus.publish('TRIP', 'APPROVE', {
+        tripId: trip.id,
+        userId: userId,
+        eventData: eventData,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -4084,7 +4144,23 @@ export class TripsService {
       await this.restoreVehicleSeatsForRejection(trip);
     }
     */
-        // TODO publish event
+    
+    try {
+      // Publish TRIP.REJECT event
+      await this.eventBus.publish('TRIP', 'REJECT', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+        approver1Id: trip.approval?.approver1?.id || null,
+        approval2Id: trip.approval?.approver2?.id || null,
+        safetyApproverId: trip.approval?.safetyApprover?.id || null,
+        requesterId: trip.requester?.id || null,
+        rejectionReason: rejectionReason,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,

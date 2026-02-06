@@ -7,6 +7,7 @@ console.log('🚀 Initializing application for Railway...');
 // Create necessary directories
 const directories = [
   './uploads',
+  './uploads/apps',
   './tmp/uploads',
   './logs'
 ];

@@ -10,6 +10,7 @@ export default () => ({
 
 export default () => ({
   environment: process.env.NODE_ENV || 'development',
+  host: process.env.HOST || 'localhost',
   port: parseInt(process.env.PORT || '3000', 10),
 
   // Application info

@@ -68,15 +68,6 @@ export class UpdatesController {
     @Body() createUpdateDto: any,
     ) {
     try {
-        console.log('=== UPLOAD REQUEST START ===');
-        console.log('File received:', {
-        filename: file.filename,
-        originalname: file.originalname,
-        size: file.size,
-        mimetype: file.mimetype,
-        });
-        
-        console.log('Body received:', createUpdateDto);
         
         // Ensure all required fields are present
         const requiredFields = ['version', 'buildNumber', 'platform', 'updateTitle', 'updateDescription'];
@@ -101,15 +92,10 @@ export class UpdatesController {
         minSupportedVersion: createUpdateDto.minSupportedVersion,
         };
 
-        console.log('Parsed DTO:', parsedDto);
-        
         const result = await this.updatesService.createWithFile(parsedDto, file);
         
-        console.log('=== UPLOAD SUCCESS ===');
         return result;
     } catch (error) {
-        console.error('=== UPLOAD ERROR ===');
-        console.error('Error:', error);
         
         // If file was uploaded but there's an error, clean it up
         if (file?.path && existsSync(file.path)) {

@@ -382,7 +382,8 @@ private async getTotalCompletedRides(
   const query = this.tripRepository
     .createQueryBuilder('trip')
     .leftJoin('trip.requester', 'requester')
-    .leftJoin('requester.department', 'department')
+    //.leftJoin('requester.department', 'department')
+    .leftJoin('trip.department', 'department')
     .where('trip.status = :status', { status: TripStatus.COMPLETED });
 
   if (departmentId) {
@@ -407,7 +408,8 @@ private async getPendingSupervisorRides(
   const query = this.tripRepository
     .createQueryBuilder('trip')
     .leftJoin('trip.requester', 'requester')
-    .leftJoin('requester.department', 'department')
+    //.leftJoin('requester.department', 'department')
+    .leftJoin('trip.department', 'department')
     .where('trip.status = :status', { status: TripStatus.DRAFT });
 
   if (departmentId) {
@@ -443,12 +445,12 @@ private async getTotalApprovedUsers(
   // For sysadmin viewing all departments (no filter), exclude sysadmin users from count
   if (!departmentId && !departmentsArray && userRole === UserRole.SYSADMIN) {
     query.andWhere('user.role NOT IN (:...excludedRoles)', {
-      excludedRoles: [UserRole.SYSADMIN, UserRole.HR]
+      excludedRoles: [UserRole.SYSADMIN]
     });
   } else {
     // For filtered views, exclude SYSADMIN and HR from counts as they are not department-based
     query.andWhere('user.role NOT IN (:...excludedRoles)', {
-      excludedRoles: [UserRole.SYSADMIN, UserRole.HR]
+      excludedRoles: [UserRole.SYSADMIN]
     });
   }
 
@@ -490,7 +492,8 @@ private async getTodaysRides(
   const query = this.tripRepository
     .createQueryBuilder('trip')
     .leftJoin('trip.requester', 'requester')
-    .leftJoin('requester.department', 'department')
+    //.leftJoin('requester.department', 'department')
+    .leftJoin('trip.department', 'department')
     .where('trip.status NOT IN (:...excludedStatuses)', {
       excludedStatuses: [TripStatus.DRAFT, TripStatus.REJECTED, TripStatus.CANCELED]
     })
@@ -562,7 +565,8 @@ private async getCurrentMonthCost(
   const query = this.tripRepository
     .createQueryBuilder('trip')
     .leftJoin('trip.requester', 'requester')
-    .leftJoin('requester.department', 'department')
+    //.leftJoin('requester.department', 'department')
+    .leftJoin('trip.department', 'department')
     .select('COALESCE(SUM(trip.cost), 0)', 'totalCost')
     .where('trip.status = :status', { status: TripStatus.COMPLETED })
     .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
@@ -592,7 +596,8 @@ private async getPreviousMonthCost(
   const query = this.tripRepository
     .createQueryBuilder('trip')
     .leftJoin('trip.requester', 'requester')
-    .leftJoin('requester.department', 'department')
+    //.leftJoin('requester.department', 'department')
+    .leftJoin('trip.department', 'department')
     .select('COALESCE(SUM(trip.cost), 0)', 'totalCost')
     .where('trip.status = :status', { status: TripStatus.COMPLETED })
     .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {

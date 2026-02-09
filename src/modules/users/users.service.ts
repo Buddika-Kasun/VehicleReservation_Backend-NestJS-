@@ -257,6 +257,40 @@ async getApprovers(): Promise<User[]> {
   }
 }
 
+async getTransportSupervisors(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const supervisors = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SUPERVISOR})
+      .getMany();
+
+    return supervisors;
+  } catch (error) {
+    //this.logger.error('Error fetching supervisors:', error);
+    throw error;
+  }
+}
+
+async getSecurities(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const securities = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SECURITY})
+      .getMany();
+
+    return securities;
+  } catch (error) {
+    //this.logger.error('Error fetching securities:', error);
+    throw error;
+  }
+}
+
 // Also add this helper method to check if a user is an approver
 async isApprover(userId: number): Promise<boolean> {
   try {
@@ -701,6 +735,38 @@ async isApprover(userId: number): Promise<boolean> {
       {
         user: sanitizedUser,
       }
+    );
+  }
+
+  async findByUsernameAndMobile(username: string, mobile: string) {
+    const user = await this.userRepo.findOne({ where: { 
+      username: username, 
+      phone: mobile 
+    } });
+
+    return user;
+  }
+
+  async updatePassword(userId: number, newPasswordHash: string) {
+    const result = await this.userRepo.update(
+      { id: userId },
+      { 
+        passwordHash: newPasswordHash,
+        updatedAt: new Date() 
+      }
+    );
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        this.responseService.error(
+          'User not found', 
+          404
+        )
+      );
+    }
+
+    return this.responseService.success(
+      'Password updated successfully'
     );
   }
 

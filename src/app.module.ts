@@ -31,6 +31,7 @@ import { FirebaseModule } from './infra/firebase/firebase.module';
 import { WsModule } from './ws/ws.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ChecklistModule } from './modules/checklist/checklist.module';
+import { UpdatesModule } from './modules/updates/updates.module';
 
 @Module({
   imports: [
@@ -87,7 +88,8 @@ import { ChecklistModule } from './modules/checklist/checklist.module';
     HealthModule,
     NotificationsModule,
     DashboardModule,
-    ChecklistModule
+    ChecklistModule,
+    UpdatesModule,
   ],
 })
 export class AppModule {}

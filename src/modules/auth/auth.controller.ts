@@ -62,6 +62,18 @@ export class AuthController {
     return await this.authService.login(loginDto);
   }
 
+  @Post('verify-password-reset')
+  @Public()
+  async verifyPasswordReset(@Body() data: any) {
+    return await this.authService.verifyPasswordReset(data);
+  }
+
+  @Post('reset-password')
+  @Public()
+  async resetPassword(@Body() data: any){
+    return await this.authService.resetPassword(data);
+  }
+
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({ 

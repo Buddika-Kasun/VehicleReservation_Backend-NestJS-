@@ -20,6 +20,9 @@ import * as ExcelJS from 'exceljs';
 import { Buffer } from 'buffer';
 import * as PDFDocument from 'pdfkit';
 import * as moment from 'moment-timezone';
+import { Department } from 'src/infra/database/entities/department.entity';
+import { EventBusService } from 'src/infra/redis/event-bus.service';
+import { request } from 'http';
 
 @Injectable()
 export class TripsService {
@@ -43,7 +46,10 @@ export class TripsService {
     private readonly approvalConfigRepo: Repository<ApprovalConfig>,
     @InjectRepository(Schedule)
     private readonly scheduleRepo: Repository<Schedule>,
+    @InjectRepository(Department)
+    private readonly departmentRepo: Repository<Department>,
     private readonly responseService: ResponseService,
+    private readonly eventBus: EventBusService,
   ) {}
 
   // Calculate distance using Haversine formula
@@ -139,7 +145,7 @@ export class TripsService {
     } else if (durationInHours <= 8) {
         // For trips between 3-8 hours: 15 minutes per 2 hours
         // Calculate how many 2-hour segments
-        const twoHourSegments = Math.floor((durationInHours - 3) / 2);
+        const twoHourSegments = Math.floor(durationInHours / 2);
         restingMinutes = twoHourSegments * 15;
     } else {        
         restingMinutes = 4 * 60;
@@ -1312,7 +1318,30 @@ export class TripsService {
       ]
     });
 
-    // TODO publish event
+    try {
+      // Send approvers as user objects, not just IDs
+      const approvers = [];
+      if (savedTrip.approval?.approver1) {
+        approvers.push(savedTrip.approval.approver1);
+      }
+      if (savedTrip.approval?.approver2) {
+        approvers.push(savedTrip.approval.approver2);
+      }
+      if (savedTrip.approval?.safetyApprover) {
+        approvers.push(savedTrip.approval.safetyApprover);
+      }
+
+      // Publish TRIP.CONFIRM event
+      await this.eventBus.publish('TRIP', 'CONFIRM', {
+        tripId: savedTrip.id,
+        userId: userId,
+        userRole: requester.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : requester.role ===UserRole.ADMIN ? 'HOD' : requester.role,
+        userName: requester.displayname,
+        approvers: approvers,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -1400,6 +1429,7 @@ export class TripsService {
       where: { id: requesterId },
       relations: ['department', 'department.head'] 
     }); 
+
     if (!requester) {
       throw new NotFoundException(this.responseService.error('Requester not found', 404));
     }
@@ -1415,6 +1445,22 @@ export class TripsService {
       throw new BadRequestException(
         this.responseService.error('Reason is required for the trip', 400)
       );
+    }
+
+    let department: Department | undefined;
+    if (createTripDto.tripTypeData.departmentId) {
+      department = await this.departmentRepo.findOne({
+        where: { id: createTripDto.tripTypeData.departmentId }
+      });
+      
+      if (!department) {
+        throw new NotFoundException(
+          this.responseService.error(`Department with ID ${createTripDto.tripTypeData.departmentId} not found`, 404)
+        );
+      }
+    }
+    else {
+      department = requester.department;
     }
 
     // Parse fixed rate if provided
@@ -1579,6 +1625,7 @@ export class TripsService {
       fixedRate: parsedFixedRate,
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
+      department: department,
     });
 
     const savedTrip = await this.tripRepo.save(trip);
@@ -1591,7 +1638,21 @@ export class TripsService {
         .of(savedTrip.id)
         .add(selectedGroupUserIds);
     }
-            // TODO publish event
+    
+    try {
+      const passengers = await this.getPassengersByTripId(savedTrip.id);
+
+      // Publish TRIP.CREATE event
+      await this.eventBus.publish('TRIP', 'CREATE', {
+        tripId: savedTrip.id,
+        userId: requester.id,
+        userName: requester.displayname,
+        userRole: requester.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : requester.role ===UserRole.ADMIN ? 'HOD' : requester.role,
+        passengers: passengers || [],
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -1690,6 +1751,7 @@ export class TripsService {
         tripType: masterTrip.tripType,
         fixedRate: masterTrip.fixedRate,
         reason: masterTrip.reason,
+        department: masterTrip.department,
         primaryDriver: masterTrip.primaryDriver,
         secondaryDriver: masterTrip.secondaryDriver,
       });
@@ -2216,9 +2278,8 @@ export class TripsService {
     });
 
     const savedApproval = await this.approvalRepo.save(approval);
-
     // Send notifications to approvers
-    await this.sendApprovalNotifications(savedApproval);
+    //await this.sendApprovalNotifications(savedApproval);
 
     return savedApproval;
   }
@@ -2419,7 +2480,16 @@ export class TripsService {
       );
 
       try {
-        // TODO publish event
+        const passengers = await this.getPassengersByTripId(tripId);
+
+        // Publish TRIP.CANCEL event
+        await this.eventBus.publish('TRIP', 'CANCEL', {
+          tripId: String(tripId), // Ensure tripId is a string
+          userId: String(user.userId), // Ensure userId is a string
+          userName: user.displayname,
+          requesterId: String(trip.requester.id), // Ensure requesterId is a string
+          passengers: passengers || [],
+        });
       } catch (e) {
         console.error('Failed to send cancellation notification', e);
       }
@@ -3798,6 +3868,56 @@ export class TripsService {
     };
   }
 
+  async getPassengersByTripId(tripId: number): Promise<any[]> {
+    try {
+      // Get trip with necessary relations
+      const trip = await this.tripRepo
+        .createQueryBuilder('trip')
+        .leftJoinAndSelect('trip.requester', 'requester')
+        .leftJoinAndSelect('trip.selectedIndividual', 'selectedIndividual')
+        .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers')
+        .where('trip.id = :tripId', { tripId })
+        .getOne();
+
+      if (!trip) {
+        throw new Error('Trip not found');
+      }
+
+      const passengers: any[] = [];
+      const addedUserIds = new Set<number>();
+
+      // Helper function to add a user
+      const addUser = (user: User) => {
+        if (user && user.id !== trip.requester.id && !addedUserIds.has(user.id)) {
+          passengers.push({
+            id: user.id,
+          });
+          addedUserIds.add(user.id);
+        }
+      };
+
+      // Add users based on passenger type
+      switch (trip.passengerType) {
+        case PassengerType.OTHER_INDIVIDUAL:
+          if (trip.selectedIndividual) {
+            addUser(trip.selectedIndividual);
+          }
+          break;
+
+        case PassengerType.GROUP:
+          if (trip.selectedGroupUsers) {
+            trip.selectedGroupUsers.forEach(addUser);
+          }
+          break;
+      }
+
+      return passengers;
+    } catch (error) {
+      // this.logger.error('Error fetching passengers:', error);
+      throw error;
+    }
+  }
+
   async approveTrip(tripId: number, userId: number, comment?: string) {
     // Find trip with approval details
     const trip = await this.tripRepo.findOne({
@@ -3808,7 +3928,8 @@ export class TripsService {
         'approval.approver2', 
         'approval.safetyApprover', 
         'requester',
-        'vehicle'
+        'vehicle',
+        'primaryDriver'
       ]
     });
 
@@ -3841,7 +3962,7 @@ export class TripsService {
 
     // Check authorization
     let isAuthorized = false;
-    let approverType: ApproverType | null = null;
+    let approverTypes: ApproverType[] = [];
 
     if (isSysAdmin) {
       // SYSADMIN can approve any trip regardless of current step
@@ -3852,15 +3973,19 @@ export class TripsService {
       //if (approval.currentStep === ApproverType.HOD && approval.approver1?.id === userId) {
       if (approval.approver1?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.HOD;
+        approverTypes.push(ApproverType.HOD);
+      }
       //} else if (approval.currentStep === ApproverType.SECONDARY && approval.approver2?.id === userId) {
-      } else if (approval.approver2?.id === userId) {
+      //} else if (approval.approver2?.id === userId) {
+      if (approval.approver2?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SECONDARY;
+        approverTypes.push(ApproverType.SECONDARY);
+      }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
-      } else if (approval.safetyApprover?.id === userId) {
+      //} else if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SAFETY;
+        approverTypes.push(ApproverType.SAFETY);
       }
     }
     // todo change
@@ -3874,21 +3999,7 @@ export class TripsService {
     // Process approval
     const now = new Date();
     
-    // Update approval based on approver type
-    if (approverType === ApproverType.HOD) {
-      approval.approver1Status = StatusApproval.APPROVED;
-      approval.approver1ApprovedAt = now;
-      approval.approver1Comments = comment;
-    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-      approval.approver2Status = StatusApproval.APPROVED;
-      approval.approver2ApprovedAt = now;
-      approval.approver2Comments = comment;
-    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-      approval.safetyApproverStatus = StatusApproval.APPROVED;
-      approval.safetyApproverApprovedAt = now;
-      approval.safetyApproverComments = comment;
-    }
-    else if (isSysAdmin) {
+    if (isSysAdmin) {
       approval.approver1Status = StatusApproval.APPROVED;
       approval.approver1ApprovedAt = now;
       approval.approver1Comments = `Approved by SYSADMIN: ${comment || 'No comment'}`;
@@ -3901,6 +4012,24 @@ export class TripsService {
       approval.safetyApproverApprovedAt = now;
       approval.safetyApproverComments = `Approved by SYSADMIN: ${comment || 'No comment'}`;
     }
+    else {
+      // Update approval based on approver type
+      for (const approverType of approverTypes) {
+        if (approverType === ApproverType.HOD) {
+          approval.approver1Status = StatusApproval.APPROVED;
+          approval.approver1ApprovedAt = now;
+          approval.approver1Comments = comment;
+        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+          approval.approver2Status = StatusApproval.APPROVED;
+          approval.approver2ApprovedAt = now;
+          approval.approver2Comments = comment;
+        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          approval.safetyApproverStatus = StatusApproval.APPROVED;
+          approval.safetyApproverApprovedAt = now;
+          approval.safetyApproverComments = comment;
+        }
+      }
+    }
 
     // Update overall status and move to next step
     approval.updateOverallStatus();
@@ -3910,21 +4039,40 @@ export class TripsService {
       approval.moveToNextStep();
     }
 
+    let eventData = {
+      isApproved: false,
+      requesterId: null,
+      passengers: [],
+      driverId: null,
+    };
     // If fully approved, update trip status
     if (approval.overallStatus.toString() === 'approved') {
       trip.status = TripStatus.APPROVED;
+
+      eventData.isApproved = true;
+      eventData.requesterId = trip.requester?.id || null;
+      eventData.passengers = await this.getPassengersByTripId(trip.id);
+      eventData.driverId = trip.primaryDriver?.id || trip.vehicle?.assignedDriverPrimary?.id || null;
     }
 
     // Save changes
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
-            // TODO publish event
-
+    try {
+      // Publish TRIP.APPROVE event
+      await this.eventBus.publish('TRIP', 'APPROVE', {
+        tripId: trip.id,
+        userId: userId,
+        eventData: eventData,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
-      message: `Trip ${approverType} approval submitted successfully`,
+      message: `Trip ${approverTypes} approval submitted successfully`,
       data: {
         tripId: trip.id,
         approvalStatus: approval.overallStatus,
@@ -3981,7 +4129,7 @@ export class TripsService {
 
     // Check authorization
     let isAuthorized = false;
-    let approverType: ApproverType | null = null;
+    let approverTypes: ApproverType[] = [];
 
     if (isSysAdmin) {
       // SYSADMIN can reject any trip regardless of current step
@@ -3991,13 +4139,15 @@ export class TripsService {
       // Regular users can only reject on their assigned step
       if (approval.approver1?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.HOD;
-      } else if (approval.approver2?.id === userId) {
+        approverTypes.push(ApproverType.HOD);
+      } 
+      if (approval.approver2?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SECONDARY;
-      } else if (approval.safetyApprover?.id === userId) {
+        approverTypes.push(ApproverType.SECONDARY);
+      }
+      if (approval.safetyApprover?.id === userId) {
         isAuthorized = true;
-        approverType = ApproverType.SAFETY;
+        approverTypes.push(ApproverType.SAFETY);
       }
     }
 
@@ -4009,24 +4159,29 @@ export class TripsService {
 
     // Process rejection
     const now = new Date();
-    
-    // Update rejection based on approver type
-    if (approverType === ApproverType.HOD) {
-      approval.approver1Status = StatusApproval.REJECTED;
-      approval.approver1Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-      approval.approver2Status = StatusApproval.REJECTED;
-      approval.approver2Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-      approval.safetyApproverStatus = StatusApproval.REJECTED;
-      approval.safetyApproverComments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
-    } else if (isSysAdmin) {
+
+    if (isSysAdmin) {
       approval.approver1Status = StatusApproval.REJECTED;
       approval.approver1Comments = `Rejected by SYSADMIN: ${rejectionReason}`;
       approval.approver2Status = StatusApproval.REJECTED;
       approval.approver2Comments = `Rejected by SYSADMIN: ${rejectionReason}`;
       approval.safetyApproverStatus = StatusApproval.REJECTED;
       approval.safetyApproverComments = `Rejected by SYSADMIN: ${rejectionReason}`;
+    }
+    else {
+      // Update approval based on approver type
+      for (const approverType of approverTypes) {
+        if (approverType === ApproverType.HOD) {
+          approval.approver1Status = StatusApproval.REJECTED;
+          approval.approver1Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+          approval.approver2Status = StatusApproval.REJECTED;
+          approval.approver2Comments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          approval.safetyApproverStatus = StatusApproval.REJECTED;
+          approval.safetyApproverComments = isSysAdmin ? `Rejected by SYSADMIN: ${rejectionReason}` : rejectionReason;
+        } 
+      }
     }
 
     // Set overall status to REJECTED immediately
@@ -4047,7 +4202,26 @@ export class TripsService {
       await this.restoreVehicleSeatsForRejection(trip);
     }
     */
-        // TODO publish event
+    
+    try {
+      const passengers = await this.getPassengersByTripId(trip.id);
+
+      // Publish TRIP.REJECT event
+      await this.eventBus.publish('TRIP', 'REJECT', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+        approver1Id: trip.approval?.approver1?.id || null,
+        approval2Id: trip.approval?.approver2?.id || null,
+        safetyApproverId: trip.approval?.safetyApprover?.id || null,
+        requesterId: trip.requester?.id || null,
+        rejectionReason: rejectionReason,
+        passengers: passengers || [],
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
     return {
       success: true,
@@ -5055,7 +5229,7 @@ export class TripsService {
   // Find the trip with relations
   const trip = await this.tripRepo.findOne({
     where: { id: tripId },
-    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips']
+    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips', 'requester', 'primaryDriver']
   });
 
   if (!trip) {
@@ -5142,7 +5316,26 @@ export class TripsService {
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
       await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
     }
-  } else if (readingType === 'end') {
+
+    try {
+
+      const passengers = await this.getPassengersByTripId(trip.id);
+
+      // Publish TRIP.STARTREAD event
+      await this.eventBus.publish('TRIP', 'STARTREAD', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        requesterId: trip.requester?.id || null,
+        driverId: trip.primaryDriver?.id || null,
+        passengers: passengers || []
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+  } 
+  else if (readingType === 'end') {
     // Check if trip is in READ status (must have start reading recorded)
     if (trip.status !== TripStatus.FINISHED) {
       return new BadRequestException(
@@ -5213,7 +5406,23 @@ export class TripsService {
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
       await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
     }
-  } else {
+
+    try {
+
+      // Publish TRIP.COMPLETE event
+      await this.eventBus.publish('TRIP', 'COMPLETE', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        requesterId: trip.requester?.id || null,
+        driverId: trip.primaryDriver?.id || null,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+  } 
+  else {
     return new BadRequestException(
       this.responseService.error('Invalid reading type. Must be "start" or "end"', 400)
     );
@@ -5814,6 +6023,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
       'conflictingTrips',
       'conflictingTrips.vehicle',
       'conflictingTrips.odometerLog',
+      'requester'
     ]
   });
 
@@ -5936,12 +6146,21 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   // Save the main trip
   await this.tripRepo.save(trip);
 
-  // Notify relevant users
   try {
-    // TODO publish event
-  } catch (e) {
-    console.error('Failed to send trip start notification', e);
-  }
+      const passengers = await this.getPassengersByTripId(trip.id);
+
+      // Publish TRIP.START event
+      await this.eventBus.publish('TRIP', 'START', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+        requesterId: trip.requester?.id || null,
+        passengers: passengers || [],
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
   return {
     success: true,
@@ -5987,6 +6206,7 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
       'conflictingTrips',
       'conflictingTrips.vehicle',
       'conflictingTrips.odometerLog',
+      'requester',
     ]
   });
 
@@ -6061,11 +6281,19 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
   // Save the main trip
   await this.tripRepo.save(trip);
 
-  // Notify relevant users
   try {
-    // TODO publish event
+    const passengers = await this.getPassengersByTripId(trip.id);
+
+    // Publish TRIP.FINISH event
+    await this.eventBus.publish('TRIP', 'FINISH', {
+      tripId: trip.id,
+      userId: userId,
+      userName: user.displayname,
+      userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+      requesterId: trip.requester?.id || null,
+    });
   } catch (e) {
-    console.error('Failed to send trip end notification', e);
+    console.error('Failed to send notifications', e);
   }
 
   return {

@@ -1640,12 +1640,15 @@ export class TripsService {
     }
     
     try {
+      const passengers = await this.getPassengersByTripId(savedTrip.id);
+
       // Publish TRIP.CREATE event
       await this.eventBus.publish('TRIP', 'CREATE', {
         tripId: savedTrip.id,
         userId: requester.id,
         userName: requester.displayname,
         userRole: requester.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : requester.role ===UserRole.ADMIN ? 'HOD' : requester.role,
+        passengers: passengers || [],
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
@@ -2477,12 +2480,15 @@ export class TripsService {
       );
 
       try {
+        const passengers = await this.getPassengersByTripId(tripId);
+
         // Publish TRIP.CANCEL event
         await this.eventBus.publish('TRIP', 'CANCEL', {
           tripId: String(tripId), // Ensure tripId is a string
           userId: String(user.userId), // Ensure userId is a string
           userName: user.displayname,
           requesterId: String(trip.requester.id), // Ensure requesterId is a string
+          passengers: passengers || [],
         });
       } catch (e) {
         console.error('Failed to send cancellation notification', e);
@@ -3862,6 +3868,56 @@ export class TripsService {
     };
   }
 
+  async getPassengersByTripId(tripId: number): Promise<any[]> {
+    try {
+      // Get trip with necessary relations
+      const trip = await this.tripRepo
+        .createQueryBuilder('trip')
+        .leftJoinAndSelect('trip.requester', 'requester')
+        .leftJoinAndSelect('trip.selectedIndividual', 'selectedIndividual')
+        .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers')
+        .where('trip.id = :tripId', { tripId })
+        .getOne();
+
+      if (!trip) {
+        throw new Error('Trip not found');
+      }
+
+      const passengers: any[] = [];
+      const addedUserIds = new Set<number>();
+
+      // Helper function to add a user
+      const addUser = (user: User) => {
+        if (user && user.id !== trip.requester.id && !addedUserIds.has(user.id)) {
+          passengers.push({
+            id: user.id,
+          });
+          addedUserIds.add(user.id);
+        }
+      };
+
+      // Add users based on passenger type
+      switch (trip.passengerType) {
+        case PassengerType.OTHER_INDIVIDUAL:
+          if (trip.selectedIndividual) {
+            addUser(trip.selectedIndividual);
+          }
+          break;
+
+        case PassengerType.GROUP:
+          if (trip.selectedGroupUsers) {
+            trip.selectedGroupUsers.forEach(addUser);
+          }
+          break;
+      }
+
+      return passengers;
+    } catch (error) {
+      // this.logger.error('Error fetching passengers:', error);
+      throw error;
+    }
+  }
+
   async approveTrip(tripId: number, userId: number, comment?: string) {
     // Find trip with approval details
     const trip = await this.tripRepo.findOne({
@@ -3986,6 +4042,7 @@ export class TripsService {
     let eventData = {
       isApproved: false,
       requesterId: null,
+      passengers: [],
       driverId: null,
     };
     // If fully approved, update trip status
@@ -3994,6 +4051,7 @@ export class TripsService {
 
       eventData.isApproved = true;
       eventData.requesterId = trip.requester?.id || null;
+      eventData.passengers = await this.getPassengersByTripId(trip.id);
       eventData.driverId = trip.primaryDriver?.id || trip.vehicle?.assignedDriverPrimary?.id || null;
     }
 
@@ -4146,6 +4204,8 @@ export class TripsService {
     */
     
     try {
+      const passengers = await this.getPassengersByTripId(trip.id);
+
       // Publish TRIP.REJECT event
       await this.eventBus.publish('TRIP', 'REJECT', {
         tripId: trip.id,
@@ -4157,6 +4217,7 @@ export class TripsService {
         safetyApproverId: trip.approval?.safetyApprover?.id || null,
         requesterId: trip.requester?.id || null,
         rejectionReason: rejectionReason,
+        passengers: passengers || [],
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
@@ -5168,7 +5229,7 @@ export class TripsService {
   // Find the trip with relations
   const trip = await this.tripRepo.findOne({
     where: { id: tripId },
-    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips']
+    relations: ['vehicle', 'vehicle.vehicleType', 'odometerLog', 'conflictingTrips', 'requester', 'primaryDriver']
   });
 
   if (!trip) {
@@ -5255,7 +5316,26 @@ export class TripsService {
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
       await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
     }
-  } else if (readingType === 'end') {
+
+    try {
+
+      const passengers = await this.getPassengersByTripId(trip.id);
+
+      // Publish TRIP.STARTREAD event
+      await this.eventBus.publish('TRIP', 'STARTREAD', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        requesterId: trip.requester?.id || null,
+        driverId: trip.primaryDriver?.id || null,
+        passengers: passengers || []
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+  } 
+  else if (readingType === 'end') {
     // Check if trip is in READ status (must have start reading recorded)
     if (trip.status !== TripStatus.FINISHED) {
       return new BadRequestException(
@@ -5326,7 +5406,23 @@ export class TripsService {
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
       await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
     }
-  } else {
+
+    try {
+
+      // Publish TRIP.COMPLETE event
+      await this.eventBus.publish('TRIP', 'COMPLETE', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        requesterId: trip.requester?.id || null,
+        driverId: trip.primaryDriver?.id || null,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+  } 
+  else {
     return new BadRequestException(
       this.responseService.error('Invalid reading type. Must be "start" or "end"', 400)
     );
@@ -5927,6 +6023,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
       'conflictingTrips',
       'conflictingTrips.vehicle',
       'conflictingTrips.odometerLog',
+      'requester'
     ]
   });
 
@@ -6049,12 +6146,21 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   // Save the main trip
   await this.tripRepo.save(trip);
 
-  // Notify relevant users
   try {
-    // TODO publish event
-  } catch (e) {
-    console.error('Failed to send trip start notification', e);
-  }
+      const passengers = await this.getPassengersByTripId(trip.id);
+
+      // Publish TRIP.START event
+      await this.eventBus.publish('TRIP', 'START', {
+        tripId: trip.id,
+        userId: userId,
+        userName: user.displayname,
+        userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+        requesterId: trip.requester?.id || null,
+        passengers: passengers || [],
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
 
   return {
     success: true,
@@ -6100,6 +6206,7 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
       'conflictingTrips',
       'conflictingTrips.vehicle',
       'conflictingTrips.odometerLog',
+      'requester',
     ]
   });
 
@@ -6174,11 +6281,19 @@ async endTrip(tripId: number, userId: number, endPassengerCount: number): Promis
   // Save the main trip
   await this.tripRepo.save(trip);
 
-  // Notify relevant users
   try {
-    // TODO publish event
+    const passengers = await this.getPassengersByTripId(trip.id);
+
+    // Publish TRIP.FINISH event
+    await this.eventBus.publish('TRIP', 'FINISH', {
+      tripId: trip.id,
+      userId: userId,
+      userName: user.displayname,
+      userRole: user.role === UserRole.SUPERVISOR ? 'TRANSPORT SUPERVISOR' : user.role ===UserRole.ADMIN ? 'HOD' : user.role,
+      requesterId: trip.requester?.id || null,
+    });
   } catch (e) {
-    console.error('Failed to send trip end notification', e);
+    console.error('Failed to send notifications', e);
   }
 
   return {

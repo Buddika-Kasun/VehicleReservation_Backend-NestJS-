@@ -182,10 +182,16 @@ export class UsersService {
     const sanitizedUser = sanitizeUser(approvedUser);
 
     try {
-      //await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
-      // If user has auth level 3, might want to notify them differently or just generic approval
+      // Publish USER.APPROVE event
+      await this.eventBus.publish('USER', 'APPROVE', {
+        userId: approvedUser.id,
+        userName: approvedUser.displayname,
+        role: approvedUser.role,
+        department: approvedUser.department?.name,
+        approvedUser: reqUser,
+      });
     } catch (e) {
-      console.error('Failed to send approval notification', e);
+      console.error('Failed to send notifications', e);
     }
 
     return this.responseService.success(
@@ -310,7 +316,7 @@ async isApprover(userId: number): Promise<boolean> {
   }
 }
 
-  async disapproveUser(id: number) {
+  async disapproveUser(id: number, reqUser: User) {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException(
@@ -328,9 +334,16 @@ async isApprover(userId: number): Promise<boolean> {
     const sanitizedUser = sanitizeUser(disapprovedUser);
 
     try {
-      //await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
+      // Publish USER.REJECTED event
+      await this.eventBus.publish('USER', 'REJECTED', {
+        userId: disapprovedUser.id,
+        userName: disapprovedUser.displayname,
+        role: disapprovedUser.role,
+        department: disapprovedUser.department?.name,
+        approvedUser: reqUser,
+      });
     } catch (e) {
-      console.error('Failed to send rejection notification', e);
+      console.error('Failed to send notifications', e);
     }
 
     return this.responseService.success(

@@ -38,14 +38,14 @@ export class NotificationsService {
     // Send push notification
     if (savedNotification.userId) {
       await this.sendPushNotification(savedNotification);
+      
+      // Publish event for gateway
+      await this.eventBus.publish('NOTIFICATION', 'CREATE', {
+        notificationId: savedNotification.id,
+        userId: savedNotification.userId,
+        type: savedNotification.type,
+      });
     }
-
-    // Publish event for gateway
-    await this.eventBus.publish('NOTIFICATION', 'CREATE', {
-      notificationId: savedNotification.id,
-      userId: savedNotification.userId,
-      type: savedNotification.type,
-    });
 
     return savedNotification;
   }
@@ -173,4 +173,107 @@ export class NotificationsService {
       this.logger.error(`Failed to send push notification: ${error.message}`);
     }
   }
+
+  // src/modules/notifications/notifications.service.ts (additional methods)
+  // Add these methods to your existing NotificationsService class:
+
+  async sendBatchNotifications(
+    userIds: string[],
+    title: string,
+    message: string,
+    type?: NotificationType,
+    data?: any,
+  ): Promise<void> {
+    try {
+      // Get all active FCM tokens for these users
+      const users = await this.userRepository
+        .createQueryBuilder('user')
+        .where('user.id IN (:...userIds)', { userIds })
+        .andWhere('user.fcmToken IS NOT NULL')
+        .andWhere('user.isActive = :isActive', { isActive: true })
+        .getMany();
+
+      const tokens = users.map(user => user.fcmToken).filter(Boolean);
+      
+      if (tokens.length > 0) {
+        await this.firebaseService.sendMulticastNotification(
+          tokens,
+          title,
+          message,
+          { ...data, type: type || NotificationType.SYSTEM_ALERT }
+        );
+      }
+
+      // Also create notification records in DB
+      for (const userId of userIds) {
+        const notification = this.notificationRepository.create({
+          userId,
+          title,
+          message,
+          type: type || NotificationType.SYSTEM_ALERT,
+          priority: NotificationPriority.MEDIUM,
+          isActive: true,
+        });
+
+        await this.notificationRepository.save(notification);
+      }
+    } catch (error) {
+      this.logger.error(`Error sending batch notifications: ${error.message}`);
+    }
+  }
+
+  async updateUserFcmToken(userId: string, fcmToken: string): Promise<void> {
+    try {
+      await this.userRepository.update(
+        { id: Number(userId) },
+        { fcmToken, updatedAt: new Date() }
+      );
+      
+      this.logger.log(`Updated FCM token for user ${userId}`);
+    } catch (error) {
+      this.logger.error(`Error updating FCM token: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async sendToTopic(
+    topic: string,
+    title: string,
+    message: string,
+    type?: NotificationType,
+    data?: any,
+  ): Promise<void> {
+    try {
+      await this.firebaseService.sendToTopic(
+        topic,
+        title,
+        message,
+        { ...data, type: type || NotificationType.SYSTEM_ALERT }
+      );
+      
+      this.logger.log(`Notification sent to topic "${topic}"`);
+    } catch (error) {
+      this.logger.error(`Error sending to topic "${topic}": ${error.message}`);
+      throw error;
+    }
+  }
+
+  async subscribeUserToTopic(userId: string, topic: string): Promise<void> {
+    try {
+      const user = await this.userRepository.findOne({ 
+        where: { id: Number(userId) } 
+      });
+
+      if (!user || !user.fcmToken) {
+        throw new Error('User or FCM token not found');
+      }
+
+      await this.firebaseService.subscribeToTopic(user.fcmToken, topic);
+      this.logger.log(`User ${userId} subscribed to topic "${topic}"`);
+    } catch (error) {
+      this.logger.error(`Error subscribing to topic: ${error.message}`);
+      throw error;
+    }
+  }
+
 }

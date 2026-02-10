@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req, Put } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationPaginationDto } from './dto/notification-pagination.dto';
@@ -88,5 +88,63 @@ export class NotificationsController {
   ) {
     await this.notificationsService.delete(+id, user.userId);
     return this.responseService.success('Notification deleted successfully', null);
+  }
+
+  @Post('batch')
+  async sendBatchNotifications(
+    @Body() body: {
+      userIds: string[];
+      title: string;
+      message: string;
+      type?: string;
+      data?: any;
+    },
+  ) {
+    await this.notificationsService.sendBatchNotifications(
+      body.userIds,
+      body.title,
+      body.message,
+      body.type as any,
+      body.data,
+    );
+    return { success: true };
+  }
+
+  @Put('/update-fcm-token')
+  async updateFcmToken(
+    @GetUser() user: any,
+    @Body() body: { fcmToken: string },
+  ) {
+    await this.notificationsService.updateUserFcmToken(user.userId, body.fcmToken);
+    return { success: true };
+  }
+
+  @Post('topic')
+  async sendToTopic(
+    @Body() body: {
+      topic: string;
+      title: string;
+      message: string;
+      type?: string;
+      data?: any;
+    },
+  ) {
+    await this.notificationsService.sendToTopic(
+      body.topic,
+      body.title,
+      body.message,
+      body.type as any,
+      body.data,
+    );
+    return { success: true };
+  }
+
+  @Post(':userId/subscribe/:topic')
+  async subscribeToTopic(
+    @Param('userId') userId: string,
+    @Param('topic') topic: string,
+  ) {
+    await this.notificationsService.subscribeUserToTopic(userId, topic);
+    return { success: true };
   }
 }

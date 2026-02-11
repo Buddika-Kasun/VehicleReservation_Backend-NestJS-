@@ -67,8 +67,9 @@ export class UserNotificationHandler implements OnModuleInit {
     
     const { 
       userId, 
-      username, 
+      userName, 
       role,
+      department,
       approvedUser,
     } = data;
 
@@ -85,7 +86,7 @@ export class UserNotificationHandler implements OnModuleInit {
       type: NotificationType.USER_APPROVED,
       userId: String(approvedUser.id),
       title: 'User Approved',
-      message: `${username || 'Unknown'}(${role} in ${approvedUser.department?.name || 'Unknown'}) account has been approved by you.`,
+      message: `${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) account has been approved by you.`,
       data,
       priority: NotificationPriority.LOW,
     });
@@ -99,7 +100,7 @@ export class UserNotificationHandler implements OnModuleInit {
         type: NotificationType.USER_APPROVED,
         userId: String(approver.id),
         title: 'User Approved',
-        message: `User ${username || 'Unknown'}(${role} in ${approvedUser.department?.name || 'Unknown'}) has been approved by ${approvedUser.displayname}(${approvedUser.role}).`,
+        message: `User ${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) has been approved by ${approvedUser.displayname}(${approvedUser.role}).`,
         data,
         priority: NotificationPriority.MEDIUM,
       });
@@ -111,8 +112,9 @@ export class UserNotificationHandler implements OnModuleInit {
 
     const { 
       userId, 
-      username, 
+      userName, 
       role,
+      department,
       approvedUser,
     } = data;
 
@@ -129,7 +131,7 @@ export class UserNotificationHandler implements OnModuleInit {
       type: NotificationType.USER_REJECTED,
       userId: String(approvedUser.id),
       title: 'User Rejected',
-      message: `${username || 'Unknown'}(${role} in ${approvedUser.department?.name || 'Unknown'}) account has been rejected by you.`,
+      message: `${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) account has been rejected by you.`,
       data,
       priority: NotificationPriority.LOW,
     });
@@ -143,12 +145,12 @@ export class UserNotificationHandler implements OnModuleInit {
         type: NotificationType.USER_REJECTED,
         userId: String(approver.id),
         title: 'User Rejected',
-        message: `User ${username || 'Unknown'}(${role} in ${approvedUser.department?.name || 'Unknown'}) has been rejected by ${approvedUser.displayname}(${approvedUser.role}).`,
+        message: `User ${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) has been rejected by ${approvedUser.displayname}(${approvedUser.role}).`,
         data,
         priority: NotificationPriority.MEDIUM,
       });
     }
 
   }
-  
+
 }

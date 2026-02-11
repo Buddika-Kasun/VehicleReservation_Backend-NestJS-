@@ -90,10 +90,32 @@ export class NotificationsService {
       notification.read = true;
       const savedNotification = await this.notificationRepository.save(notification);
 
+      /*
       await this.eventBus.publish('NOTIFICATION', 'READ', {
         notificationId: savedNotification.id,
         userId: savedNotification.userId,
       });
+      */
+
+      return savedNotification;
+    }
+
+    return notification;
+  }
+
+  async markAsUnread(id: number, userId: string): Promise<Notification> {
+    const notification = await this.findOne(id, userId);
+
+    if (notification.read) {
+      notification.read = false;
+      const savedNotification = await this.notificationRepository.save(notification);
+
+      /*
+      await this.eventBus.publish('NOTIFICATION', 'READ', {
+        notificationId: savedNotification.id,
+        userId: savedNotification.userId,
+      });
+      */
 
       return savedNotification;
     }
@@ -107,7 +129,7 @@ export class NotificationsService {
       { read: true },
     );
 
-    await this.eventBus.publish('NOTIFICATION', 'READ_ALL', { userId });
+    //await this.eventBus.publish('NOTIFICATION', 'READ_ALL', { userId });
   }
 
   // DELETE
@@ -116,10 +138,26 @@ export class NotificationsService {
     notification.isActive = false;
     await this.notificationRepository.save(notification);
 
+    /*
     await this.eventBus.publish('NOTIFICATION', 'DELETE', {
       notificationId: notification.id,
       userId: notification.userId,
     });
+    */
+  }
+
+  async deleteAll(userId: string): Promise<void> {
+    await this.notificationRepository
+    .createQueryBuilder()
+    .update(Notification)
+    .set({ isActive: false })
+    .where('userId = :userId AND isActive = :isActive', { 
+      userId, 
+      isActive: true 
+    })
+    .execute();
+
+    //await this.eventBus.publish('NOTIFICATION', 'DELETE_ALL', { userId });
   }
 
   // UTILITIES
@@ -232,6 +270,20 @@ export class NotificationsService {
       this.logger.log(`Updated FCM token for user ${userId}`);
     } catch (error) {
       this.logger.error(`Error updating FCM token: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async deleteUserFcmToken(userId: string): Promise<void> {
+    try {
+      await this.userRepository.update(
+        { id: Number(userId) },
+        { fcmToken: null, updatedAt: new Date() }
+      );
+      
+      this.logger.log(`Deleted FCM token for user ${userId}`);
+    } catch (error) {
+      this.logger.error(`Error deleting FCM token: ${error.message}`);
       throw error;
     }
   }

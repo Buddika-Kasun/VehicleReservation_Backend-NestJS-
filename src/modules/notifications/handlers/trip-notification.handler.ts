@@ -65,7 +65,7 @@ export class TripNotificationHandler implements OnModuleInit {
     
     for (const supervisor of supervisors) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_CREATED,
+        type: NotificationType.TRIP_CREATED_AS_DRAFT,
         userId: String(supervisor.id),
         title: 'New Trip Created',
         message: `Trip #${tripId} has been created by ${userName}(${userRole}) and awaiting assignment of vehicle and confirmation.`,
@@ -108,7 +108,7 @@ export class TripNotificationHandler implements OnModuleInit {
       for (const approver of approvers) {
         if (approver && approver.id) {
           await this.notificationsService.create({
-            type: NotificationType.TRIP_CONFIRMED,
+            type: NotificationType.TRIP_CONFIRMED_FOR_APPROVAL,
             userId: String(approver.id),
             title: 'New Trip Approval',
             message: `Trip #${tripId} has been confirmed by ${userName}(TRANSPORT SUPERVISOR) and is awaiting approval.`,
@@ -124,16 +124,54 @@ export class TripNotificationHandler implements OnModuleInit {
   private async handleTripCancelled(data: any): Promise<void> {
     const { tripId, userId, userName, requesterId, passengers } = data;
     
-    await this.notificationsService.create({
-      type: NotificationType.TRIP_CANCELLED,
-      userId: String(userId),
-      title: 'Trip Cancelled',
-      message: `Trip #${tripId} has been cancelled by you.`,
-      data,
-      priority: NotificationPriority.LOW,
-    });
+    const supervisors = await this.userService.getTransportSupervisors();
+    
+    if (String(requesterId) === String(userId)) {
+      await this.notificationsService.create({
+        // If the requester is cancelling their own trip, no need to notify them againawait this.notificationsService.create({
+        type: NotificationType.TRIP_CANCELLED_REQUESTER,
+        userId: String(userId),
+        title: 'Trip Cancelled',
+        message: `Trip #${tripId} has been cancelled by you.`,
+        data,
+        priority: NotificationPriority.LOW,
+      });
 
-    if (String(requesterId) !== String(userId)) {
+    
+      for (const supervisor of supervisors) {
+        await this.notificationsService.create({
+          type: NotificationType.TRIP_CANCELLED_SUPERVISOR,
+          userId: String(supervisor.id),
+          title: 'Trip Cancelled',
+          message: `Trip #${tripId} has been cancelled by ${userName}(REQUESTER).`,
+          data,
+          priority: NotificationPriority.MEDIUM,
+        });
+      }
+
+    }
+    else {
+      await this.notificationsService.create({
+        type: NotificationType.TRIP_CANCELLED_SUPERVISOR,
+        userId: String(userId),
+        title: 'Trip Cancelled',
+        message: `Trip #${tripId} has been cancelled by you.`,
+        data,
+        priority: NotificationPriority.LOW,
+      });
+
+      for (const supervisor of supervisors) {
+        if (supervisor.id === userId) continue; // Skip if the supervisor is the one who cancelled
+        await this.notificationsService.create({
+          type: NotificationType.TRIP_CANCELLED_SUPERVISOR,
+          userId: String(supervisor.id),
+          title: 'Trip Cancelled',
+          message: `Trip #${tripId} has been cancelled by ${userName}(TRANSPORT SUPERVISOR).`,
+          data,
+          priority: NotificationPriority.MEDIUM,
+        });
+      }
+
       await this.notificationsService.create({
         type: NotificationType.TRIP_CANCELLED,
         userId: String(requesterId),
@@ -142,6 +180,7 @@ export class TripNotificationHandler implements OnModuleInit {
         data,
         priority: NotificationPriority.HIGH,
       });
+
     }
 
     if (passengers && Array.isArray(passengers)) {
@@ -163,7 +202,7 @@ export class TripNotificationHandler implements OnModuleInit {
     const { tripId, userId, eventData} = data;
     
     await this.notificationsService.create({
-      type: NotificationType.TRIP_APPROVED,
+      type: NotificationType.TRIP_APPROVED_BY_APPROVER,
       userId: String(userId),
       title: 'Trip Approved',
       message: `Trip #${tripId} has been approved by you.`,
@@ -198,9 +237,9 @@ export class TripNotificationHandler implements OnModuleInit {
 
     if (eventData.isApproved && eventData.driverId) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_APPROVED,
+        type: NotificationType.TRIP_APPROVED_FOR_DRIVER,
         userId: String(eventData.driverId),
-        title: 'Trip Approved',
+        title: 'New Trip Approved',
         message: `You have been assigned as driver for trip #${tripId}, which has been approved. Please be prepared for meter reading and commencement.`,
         data: { ...data, eventData },
         priority: NotificationPriority.HIGH,
@@ -212,7 +251,7 @@ export class TripNotificationHandler implements OnModuleInit {
     
       for (const security of securities) {
         await this.notificationsService.create({
-          type: NotificationType.TRIP_APPROVED,
+          type: NotificationType.TRIP_APPROVED_FOR_SECURITY,
           userId: String(security.id),
           title: 'New Trip Approved',
           message: `Trip #${tripId} has been approved and awaiting meter reading and commencement.`,
@@ -239,7 +278,7 @@ export class TripNotificationHandler implements OnModuleInit {
     } = data;
     
     await this.notificationsService.create({
-      type: NotificationType.TRIP_REJECTED,
+      type: NotificationType.TRIP_REJECTED_BY_APPROVER,
       userId: String(userId),
       title: 'Trip Rejected',
       message: `Trip #${tripId} has been rejected by you.`,
@@ -272,7 +311,7 @@ export class TripNotificationHandler implements OnModuleInit {
 
     if (userId !== approval1Id) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_REJECTED,
+        type: NotificationType.TRIP_REJECTED_BY_APPROVER,
         userId: String(approval1Id),
         title: 'Trip Rejected',
         message: `Trip #${tripId} has been rejected by ${userName}(${userRole}), Reason: ${rejectionReason}`,
@@ -283,7 +322,7 @@ export class TripNotificationHandler implements OnModuleInit {
 
     if (userId !== approval2Id) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_REJECTED,
+        type: NotificationType.TRIP_REJECTED_BY_APPROVER,
         userId: String(approval2Id),
         title: 'Trip Rejected',
         message: `Trip #${tripId} has been rejected by ${userName}(${userRole}), Reason: ${rejectionReason}`,
@@ -294,7 +333,7 @@ export class TripNotificationHandler implements OnModuleInit {
 
     if (userId !== safetyApproverId) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_REJECTED,
+        type: NotificationType.TRIP_REJECTED_BY_APPROVER,
         userId: String(safetyApproverId),
         title: 'Trip Rejected',
         message: `Trip #${tripId} has been rejected by ${userName}(${userRole}), Reason: ${rejectionReason}`,
@@ -338,7 +377,7 @@ export class TripNotificationHandler implements OnModuleInit {
     }
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_READING_START,
+      type: NotificationType.TRIP_READING_START_FOR_PASSENGER,
       userId: String(requesterId),
       title: 'Trip Ready to Start',
       message: `Your trip #${tripId} is ready to start. Start odometer meter reading has been taken by ${userName}(Security).`,
@@ -349,7 +388,7 @@ export class TripNotificationHandler implements OnModuleInit {
     if (passengers && Array.isArray(passengers)) {
       for (const passenger of passengers) {
         await this.notificationsService.create({
-          type: NotificationType.TRIP_READING_START,
+          type: NotificationType.TRIP_READING_START_FOR_PASSENGER,
           userId: String(passenger.id),
           title: 'Trip Ready to Start',
           message: `Trip #${tripId} who you are a passenger is ready to start. Please be prepared and go on time.`,
@@ -360,7 +399,7 @@ export class TripNotificationHandler implements OnModuleInit {
     }
 
       await this.notificationsService.create({
-        type: NotificationType.TRIP_READING_START,
+        type: NotificationType.TRIP_READING_START_FOR_DRIVER,
         userId: String(driverId),
         title: 'Trip Ready to Start',
         message: `You have been assigned as driver for trip #${tripId}, Start odometer meter reading has been taken by ${userName}(Security). Please be prepared for commencement.`,
@@ -390,7 +429,7 @@ export class TripNotificationHandler implements OnModuleInit {
     });
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_STARTED,
+      type: NotificationType.TRIP_STARTED_FOR_PASSENGER,
       userId: String(requesterId),
       title: 'Trip Started',
       message: `Your trip #${tripId} has been started by ${userName}(${userRole}).`,
@@ -401,7 +440,7 @@ export class TripNotificationHandler implements OnModuleInit {
     if (passengers && Array.isArray(passengers)) {
       for (const passenger of passengers) {
         await this.notificationsService.create({
-          type: NotificationType.TRIP_STARTED,
+          type: NotificationType.TRIP_STARTED_FOR_PASSENGER,
           userId: String(passenger.id),
           title: 'Trip Started',
           message: `Trip #${tripId} who you are a passenger is started by ${userName}(${userRole}).`,
@@ -416,7 +455,7 @@ export class TripNotificationHandler implements OnModuleInit {
     for (const supervisor of supervisors) {
       if (supervisor.id === userId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
-        type: NotificationType.TRIP_STARTED,
+        type: NotificationType.TRIP_STARTED_FOR_SUPERVISOR,
         userId: String(supervisor.id),
         title: 'Trip Started',
         message: `Trip #${tripId} has been started by ${userName}(${userRole}).`,
@@ -446,7 +485,7 @@ export class TripNotificationHandler implements OnModuleInit {
     });
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_STARTED,
+      type: NotificationType.TRIP_FINISHED_FOR_REQUESTER,
       userId: String(requesterId),
       title: 'Trip Ended',
       message: `Your trip #${tripId} has been ended by ${userName}(${userRole}).`,
@@ -458,7 +497,7 @@ export class TripNotificationHandler implements OnModuleInit {
     for (const supervisor of supervisors) {
       if (supervisor.id === userId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
-        type: NotificationType.TRIP_FINISHED,
+        type: NotificationType.TRIP_FINISHED_FOR_SUPERVISOR,
         userId: String(supervisor.id),
         title: 'Trip Ended',
         message: `Trip #${tripId} has been ended by ${userName}(${userRole}).`,
@@ -470,7 +509,7 @@ export class TripNotificationHandler implements OnModuleInit {
     const securities = await this.userService.getSecurities();
     for (const security of securities) {
       await this.notificationsService.create({
-        type: NotificationType.TRIP_FINISHED,
+        type: NotificationType.TRIP_FINISHED_FOR_SECURITY,
         userId: String(security.id),
         title: 'Trip Ended',
         message: `Trip #${tripId} has been ended by ${userName}(${userRole}). Please proceed to take the ending odometer meter reading.`,
@@ -494,7 +533,7 @@ export class TripNotificationHandler implements OnModuleInit {
       type: NotificationType.TRIP_COMPLETED,
       userId: String(userId),
       title: 'Trip Ended Odometer Meter Read',
-      message: `Trip #${tripId} end odometer read by you.`,
+      message: `Trip #${tripId} end odometer read by you and the trip is now completed.`,
       data,
       priority: NotificationPriority.LOW,
     });
@@ -506,26 +545,26 @@ export class TripNotificationHandler implements OnModuleInit {
         type: NotificationType.TRIP_COMPLETED,
         userId: String(security.id),
         title: 'Trip Ended Odometer Meter Read',
-        message: `Trip #${tripId} end odometer read by ${userName}(Security).`,
+        message: `Trip #${tripId} end odometer read by ${userName}(Security) and the trip is now completed.`,
         data,
         priority: NotificationPriority.MEDIUM,
       });
     }
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_COMPLETED,
+      type: NotificationType.TRIP_COMPLETED_FOR_REQUESTER,
       userId: String(requesterId),
       title: 'Trip Completed',
-      message: `Your trip #${tripId} is completed. End odometer meter reading has been taken by ${userName}(Security).`,
+      message: `Your trip #${tripId} is completed. End odometer meter reading has been taken by ${userName}(Security) and the trip is now completed.`,
       data,
       priority: NotificationPriority.HIGH,
     });
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_COMPLETED,
+      type: NotificationType.TRIP_COMPLETED_FOR_DRIVER,
       userId: String(driverId),
       title: 'Trip Completed',
-      message: `You have been assigned as driver for trip #${tripId}, End odometer meter reading has been taken by ${userName}(Security), and completed the trip.`,
+      message: `You have been assigned as driver for trip #${tripId}, End odometer meter reading has been taken by ${userName}(Security), and the trip is now completed.`,
       data,
       priority: NotificationPriority.HIGH,
     });
@@ -534,10 +573,10 @@ export class TripNotificationHandler implements OnModuleInit {
     for (const supervisor of supervisors) {
       if (supervisor.id === userId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
-        type: NotificationType.TRIP_COMPLETED,
+        type: NotificationType.TRIP_COMPLETED_FOR_SUPERVISOR,
         userId: String(supervisor.id),
         title: 'Trip Completed',
-        message: `Trip #${tripId} has been completed by ${userName}(Security) by taking the end odometer reading.`,
+        message: `Trip #${tripId} has been completed by ${userName}(Security) by taking the end odometer reading and the trip is now completed.`,
         data,
         priority: NotificationPriority.LOW,
       });

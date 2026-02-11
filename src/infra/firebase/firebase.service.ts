@@ -42,10 +42,20 @@ export class FirebaseService implements OnModuleInit {
       return;
     }
 
+    // Ensure we have all the necessary data for navigation
+    const notificationData = {
+      id: data?.id?.toString() || '',
+      type: data?.type?.toString() || '',
+      tripId: data?.tripId?.toString() || data?.id?.toString() || '', // Add tripId
+      userId: data?.userId?.toString() || '',
+      createdAt: data?.createdAt?.toString() || new Date().toISOString(),
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
     const message: admin.messaging.Message = {
       token,
       notification: { title, body },
-      data: data ? this.sanitizeData(data) : {},
+      data: this.sanitizeData(notificationData),
       android: {
         priority: 'high',
         notification: {
@@ -192,6 +202,11 @@ export class FirebaseService implements OnModuleInit {
       if (data[key] !== undefined && data[key] !== null) {
         sanitized[key] = String(data[key]);
       }
+    }
+
+    // Ensure tripId is set (fallback to id if not present)
+    if (!sanitized['tripId'] && sanitized['id']) {
+      sanitized['tripId'] = sanitized['id'];
     }
     
     // Add click action for Flutter

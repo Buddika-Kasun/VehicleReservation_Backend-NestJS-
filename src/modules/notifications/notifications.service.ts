@@ -205,7 +205,13 @@ export class NotificationsService {
         user.fcmToken,
         notification.title || 'New Notification',
         notification.message || 'You have a new notification',
-        { id: String(notification.id), type: notification.type }
+        { 
+          id: String(notification.id), 
+          type: notification.type,
+          tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
+          userId: String(notification.userId),
+          createdAt: notification.createdAt.toISOString(), 
+        }
       );
     } catch (error) {
       this.logger.error(`Failed to send push notification: ${error.message}`);

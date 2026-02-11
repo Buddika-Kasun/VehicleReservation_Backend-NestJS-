@@ -145,6 +145,9 @@ export class UsersService {
   }
 
   async approveUser(id: number, dto: ApproveUserDto, reqUser: User) {
+    
+    const approveUser = await this.userRepo.findOne({ where: { id: reqUser.id } });
+    
     const user = await this.userRepo.findOne({
       where: { id },
       relations: ['department'],
@@ -184,11 +187,11 @@ export class UsersService {
     try {
       // Publish USER.APPROVE event
       await this.eventBus.publish('USER', 'APPROVE', {
-        userId: approvedUser.id,
-        userName: approvedUser.displayname,
-        role: approvedUser.role,
-        department: approvedUser.department?.name,
-        approvedUser: reqUser,
+        userId: user.id,
+        userName: user.displayname,
+        role: user.role,
+        department: user.department?.name,
+        approvedUser: approveUser,
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
@@ -317,7 +320,10 @@ async isApprover(userId: number): Promise<boolean> {
 }
 
   async disapproveUser(id: number, reqUser: User) {
-    const user = await this.userRepo.findOne({ where: { id } });
+
+    const approveUser = await this.userRepo.findOne({ where: { id: reqUser.id } });
+
+    const user = await this.userRepo.findOne({ where: { id }, relations: ['department'] });
     if (!user) {
       throw new NotFoundException(
         this.responseService.error(
@@ -335,12 +341,12 @@ async isApprover(userId: number): Promise<boolean> {
 
     try {
       // Publish USER.REJECTED event
-      await this.eventBus.publish('USER', 'REJECTED', {
-        userId: disapprovedUser.id,
-        userName: disapprovedUser.displayname,
-        role: disapprovedUser.role,
-        department: disapprovedUser.department?.name,
-        approvedUser: reqUser,
+      await this.eventBus.publish('USER', 'REJECT', {
+        userId: user.id,
+        userName: user.displayname,
+        role: user.role,
+        department: user.department?.name,
+        approvedUser: approveUser,
       });
     } catch (e) {
       console.error('Failed to send notifications', e);

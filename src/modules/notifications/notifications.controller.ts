@@ -64,7 +64,7 @@ export class NotificationsController {
     return this.responseService.success('Notification retrieved successfully', { notification });
   }
 
-  @Patch('read-all')
+  @Put('mark-all-read')
   async markAllAsRead(
     @GetUser() user: any
   ) {
@@ -72,12 +72,21 @@ export class NotificationsController {
     return this.responseService.success('All notifications marked as read', null);
   }
 
-  @Patch('read/:id')
+  @Put('read/:id')
   async markAsRead(
     @Param('id') id: string, 
     @GetUser() user: any
   ) {
     const notification = await this.notificationsService.markAsRead(+id, user.userId);
+    return this.responseService.success('Notification marked as read', { notification });
+  }
+
+  @Put('unread/:id')
+  async markAsUnread(
+    @Param('id') id: string, 
+    @GetUser() user: any
+  ) {
+    const notification = await this.notificationsService.markAsUnread(+id, user.userId);
     return this.responseService.success('Notification marked as read', { notification });
   }
 
@@ -88,6 +97,14 @@ export class NotificationsController {
   ) {
     await this.notificationsService.delete(+id, user.userId);
     return this.responseService.success('Notification deleted successfully', null);
+  }
+
+  @Delete('delete-all')
+  async deleteAll(
+    @GetUser() user: any
+  ) {
+    await this.notificationsService.deleteAll(user.userId);
+    return this.responseService.success('All notifications deleted successfully', null);
   }
 
   @Post('batch')
@@ -116,6 +133,15 @@ export class NotificationsController {
     @Body() body: { fcmToken: string },
   ) {
     await this.notificationsService.updateUserFcmToken(user.userId, body.fcmToken);
+    return { success: true };
+  }
+
+  @Delete('/delete-fcm-token')
+  async deleteFcmToken(
+    @GetUser() user: any,
+    @Body() body: { fcmToken: string },
+  ) {
+    await this.notificationsService.deleteUserFcmToken(user.userId);
     return { success: true };
   }
 

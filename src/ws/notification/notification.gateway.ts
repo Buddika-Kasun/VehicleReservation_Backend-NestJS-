@@ -243,7 +243,13 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       if (userId) {
         // Send to specific user
         const userRoom = `user_${userId}`;
-        this.server.to(userRoom).emit('notification', payload);
+        
+        if (action.toUpperCase() === 'REFRESH') {
+          this.server.to(userRoom).emit('notification_refresh', payload);
+        }
+        else {
+          this.server.to(userRoom).emit('notification', payload);
+        }
         this.logger.debug(`Sent to ${userRoom} - Event: ${action}`);
         
         // Also send to specific device if deviceId is provided

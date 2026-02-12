@@ -5984,6 +5984,7 @@ private async formatDriverTrips(trips: Trip[], driverId: number): Promise<any[]>
 
     formattedTrips.push({
       id: trip.id,
+      requesterName: trip.requester?.displayname || 'Unknown',
       status: trip.status,
       startDate: trip.startDate,
       startTime: trip.startTime.substring(0, 5), // Format to HH:MM
@@ -6005,6 +6006,8 @@ private async formatDriverTrips(trips: Trip[], driverId: number): Promise<any[]>
       } : null,
       _connectedTripsCount: connectedTrips.length,
       _isMainTrip: true,
+      isScheduled: trip.isScheduled ?? false,
+      isInstance: trip.isInstance ?? false,
     });
   }
 

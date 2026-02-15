@@ -33,7 +33,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
   example: ErrorResponseDto.example('Internal server error.', HttpStatus.INTERNAL_SERVER_ERROR)
 })
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN)
+@Roles(UserRole.ADMIN, UserRole.HR, UserRole.SYSADMIN, UserRole.SUPERVISOR)
 @Controller('cost-configurations/')
 export class CostConfigurationController {
   constructor(private readonly companyService: CompanyService) {}

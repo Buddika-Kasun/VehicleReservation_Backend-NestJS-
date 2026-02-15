@@ -26,7 +26,7 @@ export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
 
   @Post('create')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Create a new vehicle' })
   @ApiBody({ type: CreateVehicleDto })
   @ApiResponse({ status: 201, description: 'Vehicle created successfully', type: VehicleResponseDto })

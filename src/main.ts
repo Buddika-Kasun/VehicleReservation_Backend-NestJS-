@@ -176,8 +176,8 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
     if (missing.length > 0) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
     
     // Firebase Notice
-    if (!process.env.FIREBASE_CREDENTIALS_PATH) {
-      console.log(yellow(`${ICONS.WARNING} FIREBASE_CREDENTIALS_PATH missing. Push notifications disabled.`));
+    if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PROJECT_ID) {
+      console.log(yellow(`${ICONS.WARNING} FIREBASE env variables missing. Push notifications disabled.`));
     }
 
     console.log(gray('└───────────────────────────────────────────┘'));

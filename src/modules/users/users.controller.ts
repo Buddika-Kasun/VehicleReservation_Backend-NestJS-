@@ -112,8 +112,8 @@ export class UsersController {
     `
   })
   @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
-  async disapprove(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.disapproveUser(id);
+  async disapprove(@Param('id', ParseIntPipe) id: number, @GetUser() reqUser: User,) {
+    return this.usersService.disapproveUser(id, reqUser);
   }
 
   @Get('get-all')

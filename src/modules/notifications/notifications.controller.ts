@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req, Put } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationPaginationDto } from './dto/notification-pagination.dto';
@@ -64,7 +64,7 @@ export class NotificationsController {
     return this.responseService.success('Notification retrieved successfully', { notification });
   }
 
-  @Patch('read-all')
+  @Put('mark-all-read')
   async markAllAsRead(
     @GetUser() user: any
   ) {
@@ -72,12 +72,21 @@ export class NotificationsController {
     return this.responseService.success('All notifications marked as read', null);
   }
 
-  @Patch('read/:id')
+  @Put('read/:id')
   async markAsRead(
     @Param('id') id: string, 
     @GetUser() user: any
   ) {
     const notification = await this.notificationsService.markAsRead(+id, user.userId);
+    return this.responseService.success('Notification marked as read', { notification });
+  }
+
+  @Put('unread/:id')
+  async markAsUnread(
+    @Param('id') id: string, 
+    @GetUser() user: any
+  ) {
+    const notification = await this.notificationsService.markAsUnread(+id, user.userId);
     return this.responseService.success('Notification marked as read', { notification });
   }
 
@@ -88,5 +97,80 @@ export class NotificationsController {
   ) {
     await this.notificationsService.delete(+id, user.userId);
     return this.responseService.success('Notification deleted successfully', null);
+  }
+
+  @Delete('delete-all')
+  async deleteAll(
+    @GetUser() user: any
+  ) {
+    await this.notificationsService.deleteAll(user.userId);
+    return this.responseService.success('All notifications deleted successfully', null);
+  }
+
+  @Post('batch')
+  async sendBatchNotifications(
+    @Body() body: {
+      userIds: string[];
+      title: string;
+      message: string;
+      type?: string;
+      data?: any;
+    },
+  ) {
+    await this.notificationsService.sendBatchNotifications(
+      body.userIds,
+      body.title,
+      body.message,
+      body.type as any,
+      body.data,
+    );
+    return { success: true };
+  }
+
+  @Put('/update-fcm-token')
+  async updateFcmToken(
+    @GetUser() user: any,
+    @Body() body: { fcmToken: string },
+  ) {
+    await this.notificationsService.updateUserFcmToken(user.userId, body.fcmToken);
+    return { success: true };
+  }
+
+  @Delete('/delete-fcm-token')
+  async deleteFcmToken(
+    @GetUser() user: any,
+    @Body() body: { fcmToken: string },
+  ) {
+    await this.notificationsService.deleteUserFcmToken(user.userId);
+    return { success: true };
+  }
+
+  @Post('topic')
+  async sendToTopic(
+    @Body() body: {
+      topic: string;
+      title: string;
+      message: string;
+      type?: string;
+      data?: any;
+    },
+  ) {
+    await this.notificationsService.sendToTopic(
+      body.topic,
+      body.title,
+      body.message,
+      body.type as any,
+      body.data,
+    );
+    return { success: true };
+  }
+
+  @Post(':userId/subscribe/:topic')
+  async subscribeToTopic(
+    @Param('userId') userId: string,
+    @Param('topic') topic: string,
+  ) {
+    await this.notificationsService.subscribeUserToTopic(userId, topic);
+    return { success: true };
   }
 }

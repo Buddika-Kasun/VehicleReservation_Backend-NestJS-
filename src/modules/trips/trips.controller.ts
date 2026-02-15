@@ -337,6 +337,21 @@ export class TripsController {
     return result;
   }
 
+  @Post('pending-approvals-new')
+  @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.HR, UserRole.SECURITY, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Get trips pending user approvals' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending approval trips retrieved successfully',
+  })
+  async getPendingApprovalTripsNew(
+    @Body() filterDto: any,
+    @GetUser() user: any,
+  ) {
+    const result = await this.tripsService.getPendingApprovalTripsNew(user.userId, filterDto);
+    return result;
+  }
+
   @Post('approve/:tripId')
   @Roles(UserRole.SYSADMIN, UserRole.ADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Approve a trip' })
@@ -378,6 +393,17 @@ export class TripsController {
     @GetUser() user: any
   ) {
     return await this.tripsService.getTripsForMeterReading(filterDto);
+  }
+
+  @Post('for-meter-reading-new')
+  @Roles(UserRole.SYSADMIN, UserRole.SECURITY)
+  @ApiOperation({ summary: 'Get trips that need meter reading' })
+  @ApiResponse({ status: 200, description: 'Trips retrieved successfully' })
+  async getTripsForMeterReadingNew(
+    @Body() filterDto: any,
+    @GetUser() user: any
+  ) {
+    return await this.tripsService.getTripsForMeterReadingNew(filterDto);
   }
 
   @Post('record-odometer/:tripId')

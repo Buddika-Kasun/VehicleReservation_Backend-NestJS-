@@ -1268,7 +1268,11 @@ export class TripsService {
         scheduleData: {
           startDate: currentTrip.startDate.toString(),
           startTime: currentTrip.startTime,
-          repetition: currentTrip.repetition
+          repetition: currentTrip.repetition,
+          returnDateTime: currentTrip.returnDateTime ?? '',
+        },
+        locationData: {
+          totalDuration: currentTrip.location.estimatedDuration || 0,
         },
         tripTypeData: {
           tripType: currentTrip.tripType,
@@ -1594,6 +1598,12 @@ export class TripsService {
       requiresApproval = false;
     }
 
+    // Parse returnDateTime if provided (NEW)
+    let returnDateTime: Date | undefined;
+    if (createTripDto.scheduleData.returnDateTime) {
+      returnDateTime = new Date(createTripDto.scheduleData.returnDateTime);
+    }
+
     // Create the master trip
     const trip = this.tripRepo.create({
       ...createTripDto.scheduleData,
@@ -1602,6 +1612,7 @@ export class TripsService {
       validTillDate: createTripDto.scheduleData.validTillDate 
         ? this.formatDateForDB(createTripDto.scheduleData.validTillDate)
         : null,
+      returnDateTime: returnDateTime, // NEW: Add return date-time
       location: savedLocation,
       mileage: routeDistance,
       passengerType: createTripDto.passengerData.passengerType,
@@ -2222,7 +2233,8 @@ export class TripsService {
   private async createApprovalRecord(tripId: number, requester: User, createTripDto: CreateTripDto, tripLocation: TripLocation, tripDistance: number): Promise<Approval> {
     
     // Get requester's department HOD (approver1)
-    const requesterHOD = await this.getRequesterHOD(requester);
+    //const departmentHOD = await this.getRequesterHOD(requester);
+    const departmentHOD = await this.getDepartmentHOD(tripId);
     
     // Get approval configuration
     const approvalConfig = await this.approvalConfigRepo.findOne({
@@ -2240,11 +2252,18 @@ export class TripsService {
     const requireApprover2 = approvalConfig?.distanceLimit 
       ? tripDistance > approvalConfig.distanceLimit 
       : false;
+
+    // NEW: Calculate end time for safety approval check
+    const endTime = this.calculateEndTimeNew(createTripDto);
+    console.log("Trip start time:", createTripDto.scheduleData.startTime);
+    console.log("Trip end time:", endTime);
+    console.log("Trip duration:", createTripDto.locationData?.totalDuration);
     
     // Check if safety approval is required (based on restricted hours)
     const requireSafetyApprover = isSafetyApprovalTrip || 
     (await this.isDuringRestrictedHours(
       createTripDto.scheduleData.startTime,
+      endTime,
       approvalConfig
     ));
 
@@ -2263,7 +2282,7 @@ export class TripsService {
     // Create approval record
     const approval = this.approvalRepo.create({
       trip: { id: tripId } as Trip,
-      approver1: requesterHOD,
+      approver1: departmentHOD,
       approver1Status: StatusApproval.PENDING,
       approver2: approver2,
       approver2Status: requireApprover2 ? StatusApproval.PENDING : undefined,
@@ -2284,6 +2303,38 @@ export class TripsService {
     return savedApproval;
   }
 
+  // Helper method to calculate end time
+private calculateEndTimeNew(createTripDto: CreateTripDto): string {
+  // If returnDateTime is provided, extract time from it
+  if (createTripDto.scheduleData.returnDateTime) {
+    const returnDate = new Date(createTripDto.scheduleData.returnDateTime);
+    const hours = returnDate.getHours().toString().padStart(2, '0');
+    const minutes = returnDate.getMinutes().toString().padStart(2, '0');
+    const seconds = returnDate.getSeconds().toString().padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+  
+  // Otherwise calculate from startTime + duration
+  const startTime = createTripDto.scheduleData.startTime;
+  const durationMinutes = createTripDto.locationData?.totalDuration || 0;
+  
+  if (durationMinutes > 0) {
+    const startParts = startTime.split(':').map(Number);
+    const startDate = new Date('2000-01-01');
+    startDate.setHours(startParts[0], startParts[1], startParts[2] || 0);
+    
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+    
+    const hours = endDate.getHours().toString().padStart(2, '0');
+    const minutes = endDate.getMinutes().toString().padStart(2, '0');
+    const seconds = endDate.getSeconds().toString().padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+  
+  // If no duration, just return start time
+  return startTime;
+}
+
   private async getRequesterHOD(requester: User): Promise<User | undefined> {
     // Implement logic to get requester's department HOD
     // This depends on your user structure
@@ -2299,7 +2350,88 @@ export class TripsService {
     return undefined;
   }
 
-  private async isDuringRestrictedHours(startTime: string, approvalConfig?: ApprovalConfig): Promise<boolean> {
+  private async getDepartmentHOD(tripId: number): Promise<User | undefined> {
+    const trip = await this.tripRepo.findOne({ 
+      where: { id: tripId },
+      relations: ['department.head'] 
+    }); 
+
+    if (trip?.department?.head) {
+      return trip.department.head;
+    }
+
+    return undefined;
+  }
+
+  private async isDuringRestrictedHours(
+  startTime: string, 
+  endTime?: string, // Optional end time
+  approvalConfig?: ApprovalConfig
+): Promise<boolean> {
+  if (!approvalConfig?.restrictedFrom || !approvalConfig?.restrictedTo) {
+    return false;
+  }
+
+  // Helper function to check if a single time is within restricted hours
+  const isTimeInRestrictedHours = (time: string): boolean => {
+    const formattedTime = this.formatTimeWithSeconds(time);
+    
+    // Parse times
+    const timeParts = formattedTime.split(':').map(Number);
+    const restrictedFromParts = approvalConfig.restrictedFrom.split(':').map(Number);
+    const restrictedToParts = approvalConfig.restrictedTo.split(':').map(Number);
+    
+    // Create Date objects for comparison (using same date)
+    const baseDate = new Date('2000-01-01');
+    
+    const checkDateTime = new Date(baseDate);
+    checkDateTime.setHours(timeParts[0], timeParts[1], timeParts[2] || 0);
+    
+    const restrictedFromDateTime = new Date(baseDate);
+    restrictedFromDateTime.setHours(restrictedFromParts[0], restrictedFromParts[1], restrictedFromParts[2] || 0);
+    
+    const restrictedToDateTime = new Date(baseDate);
+    restrictedToDateTime.setHours(restrictedToParts[0], restrictedToParts[1], restrictedToParts[2] || 0);
+    
+    console.log("Checking time:", checkDateTime.toTimeString().split(' ')[0]);
+    console.log("Restricted from:", restrictedFromDateTime.toTimeString().split(' ')[0]);
+    console.log("Restricted to:", restrictedToDateTime.toTimeString().split(' ')[0]);
+
+    // Check if restricted time crosses midnight
+    if (restrictedFromDateTime < restrictedToDateTime) {
+      // Normal range: from < to (doesn't cross midnight)
+      console.log("Normal range (doesn't cross midnight)");
+      return checkDateTime >= restrictedFromDateTime && checkDateTime <= restrictedToDateTime;
+    } else {
+      // Range crosses midnight: from > to
+      console.log("Range crosses midnight");
+      return checkDateTime >= restrictedFromDateTime || checkDateTime <= restrictedToDateTime;
+    }
+  };
+
+  // Check if start time is within restricted hours
+  const startTimeInRestricted = isTimeInRestrictedHours(startTime);
+  console.log("Start time in restricted hours:", startTimeInRestricted);
+  
+  if (startTimeInRestricted) {
+    return true;
+  }
+
+  // If end time is provided, check if it's within restricted hours
+  if (endTime) {
+    const endTimeInRestricted = isTimeInRestrictedHours(endTime);
+    console.log("End time in restricted hours:", endTimeInRestricted);
+    return endTimeInRestricted;
+  }
+
+  return false;
+}
+
+  /*
+  private async isDuringRestrictedHours(
+    startTime: string, 
+    approvalConfig?: ApprovalConfig
+  ): Promise<boolean> {
     if (!approvalConfig?.restrictedFrom || !approvalConfig?.restrictedTo) {
       return false;
     }
@@ -2338,6 +2470,7 @@ export class TripsService {
       return tripDateTime >= restrictedFromDateTime || tripDateTime <= restrictedToDateTime;
     }
   }
+  */
 
   private async sendApprovalNotifications(approval: Approval) {
     // Send notification to approver1 (HOD)
@@ -2463,21 +2596,33 @@ export class TripsService {
       // 2. Handle conflict trips
       await this.handleConflictTrips(trip, transactionalEntityManager);
 
-      // 3. Delete approval record if exists
-      if (trip.approval) {
-        await transactionalEntityManager.remove(Approval, trip.approval);
-      }
-      
-      // 4. Update trip status to CANCELED
+      // 3. Update trip status to CANCELED
       await transactionalEntityManager.update(
         Trip,
         { id: tripId },
         { 
           status: TripStatus.CANCELED,
+          //approval: null,
           // Add any other fields you want to update
           updatedAt: new Date()
         }
       );
+
+      // 4. Delete approval record if exists
+      if (trip.approval) {
+        //await transactionalEntityManager.remove(Approval, trip.approval);
+        await transactionalEntityManager.update(
+          Approval, 
+          { id: trip.approval.id },
+          {
+            overallStatus: StatusApproval.CANCELED,
+            approver1Status: StatusApproval.CANCELED,
+            approver2Status: StatusApproval.CANCELED,
+            safetyApproverStatus: StatusApproval.CANCELED,
+            updatedAt: new Date()
+          }
+        );
+      }
 
       try {
         const passengers = await this.getPassengersByTripId(tripId);
@@ -3640,7 +3785,12 @@ export class TripsService {
 
     // Apply status filter if provided
     if (filterDto.statusFilter) {
-      queryBuilder.andWhere('trip.status = :status', { status: filterDto.statusFilter });
+      if (filterDto.statusFilter == 'pendingForMe') {
+        queryBuilder.andWhere('trip.status = :status', { status: 'pending' });
+      }
+      else {
+        queryBuilder.andWhere('trip.status = :status', { status: filterDto.statusFilter });
+      }
     }
 
     // Get total count
@@ -3657,15 +3807,24 @@ export class TripsService {
     // For SYSADMIN: Show all approvals
     let filteredApprovals = approvals;
     
-    if (!isSysAdmin) {
+    if (!isSysAdmin && filterDto.statusFilter == 'pendingForMe') {
       filteredApprovals = approvals.filter(approval => {
-        if (approval.approver1?.id === userId) {
+        if (
+          approval.approver1?.id === userId 
+          && approval.approver1Status === StatusApproval.PENDING
+        ) {
           return true;
         }
-        if (approval.approver2?.id === userId) {
+        if (
+          approval.approver2?.id === userId
+          && approval.approver2Status === StatusApproval.PENDING
+        ) {
           return true;
         }
-        if (approval.safetyApprover?.id === userId) {
+        if (
+          approval.safetyApprover?.id === userId
+          && approval.safetyApproverStatus === StatusApproval.PENDING
+        ) {
           return true;
         }
         return false;
@@ -3729,6 +3888,7 @@ export class TripsService {
         endLocation: trip.location?.endAddress || '',
         startDate: trip.startDate,
         startTime: trip.startTime,
+        vehicleModel: trip.vehicle?.model,
         vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
         status: trip.status,
         requestedAt: trip.createdAt,
@@ -3920,7 +4080,9 @@ export class TripsService {
         'approval.safetyApprover',
         'approval.safetyApprover.department',
         'selectedGroupUsers',
+        'selectedGroupUsers.department',
         'selectedIndividual',
+        'selectedIndividual.department',
         'conflictingTrips',
         'conflictingTrips.requester',
         'conflictingTrips.location',
@@ -4487,7 +4649,7 @@ export class TripsService {
         name: trip.selectedIndividual.displayname,
         email: trip.selectedIndividual.email,
         phone: trip.selectedIndividual.phone,
-        department: trip.requester.department.name,
+        department: trip.selectedIndividual.department?.name,
         type: 'individual'
       });
     }
@@ -4500,7 +4662,7 @@ export class TripsService {
           name: user.displayname,
           email: user.email,
           phone: user.phone,
-          department: trip.requester.department.name,
+          department: user.department?.name,
           type: 'group'
         });
       });

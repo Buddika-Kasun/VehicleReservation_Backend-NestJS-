@@ -164,7 +164,7 @@ export class NotificationsController {
     return { success: true };
   }
 
-  @Delete('/delete-fcm-token-new')
+  @Put('/delete-fcm-token-new')
   async deleteFcmTokenNew(
     @GetUser() user: any,
     @Body() body: { deviceId: string },

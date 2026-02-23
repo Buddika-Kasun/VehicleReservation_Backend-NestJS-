@@ -73,6 +73,9 @@ export class Trip {
   @Column('time')
   startTime: string;
 
+  @Column('timestamp', { nullable: true })
+  returnDateTime?: Date;
+
   @Column({ type: 'enum', enum: RepetitionType, default: RepetitionType.ONCE })
   repetition: RepetitionType;
 

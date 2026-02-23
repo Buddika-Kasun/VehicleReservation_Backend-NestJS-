@@ -32,21 +32,27 @@ export class UpdatesService {
     try {
       const fileSizeMB = file.size / (1024 * 1024);
       
-      // Generate download URL
-      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
-      const downloadUrl = `${baseUrl}/uploads/apps/${file.filename}`;
-
+      // Create the update record first to get an ID
       const updateData = {
         ...createUpdateDto,
-        downloadUrl,
         fileName: file.filename,
         filePath: file.path,
         originalFileName: file.originalname,
         fileSize: parseFloat(fileSizeMB.toFixed(2)),
+        downloadUrl: '', // Temporary empty, will update after save
       };
 
       const update = this.updateRepository.create(updateData);
-      return await this.updateRepository.save(update);
+      const savedUpdate = await this.updateRepository.save(update);
+      
+      // Now that we have an ID, generate the correct download URL
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+      const downloadUrl = `${baseUrl}/api/v1/updates/${savedUpdate.id}/download`;
+      
+      // Update the record with the correct download URL
+      savedUpdate.downloadUrl = downloadUrl;
+      return await this.updateRepository.save(savedUpdate);
+      
     } catch (error) {
       // Clean up uploaded file if there's an error
       if (file?.path && existsSync(file.path)) {

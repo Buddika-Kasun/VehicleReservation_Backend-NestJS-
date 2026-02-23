@@ -11,6 +11,7 @@ import { NotificationPaginationDto } from './dto/notification-pagination.dto';
 import { FirebaseService } from '../../infra/firebase/firebase.service';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { EVENTS } from 'src/common/constants/events.constants';
+import { access } from 'fs';
 
 @Injectable()
 export class NotificationsService {
@@ -90,12 +91,13 @@ export class NotificationsService {
       notification.read = true;
       const savedNotification = await this.notificationRepository.save(notification);
 
-      /*
-      await this.eventBus.publish('NOTIFICATION', 'READ', {
+      
+      await this.eventBus.publish('NOTIFICATION', 'REFRESH', {
         notificationId: savedNotification.id,
         userId: savedNotification.userId,
+        action: 'refresh',
       });
-      */
+      
 
       return savedNotification;
     }
@@ -110,12 +112,11 @@ export class NotificationsService {
       notification.read = false;
       const savedNotification = await this.notificationRepository.save(notification);
 
-      /*
-      await this.eventBus.publish('NOTIFICATION', 'READ', {
+      await this.eventBus.publish('NOTIFICATION', 'REFRESH', {
         notificationId: savedNotification.id,
         userId: savedNotification.userId,
+        action: 'refresh',
       });
-      */
 
       return savedNotification;
     }
@@ -129,7 +130,7 @@ export class NotificationsService {
       { read: true },
     );
 
-    //await this.eventBus.publish('NOTIFICATION', 'READ_ALL', { userId });
+    await this.eventBus.publish('NOTIFICATION', 'REFRESH', { userId });
   }
 
   // DELETE
@@ -138,12 +139,12 @@ export class NotificationsService {
     notification.isActive = false;
     await this.notificationRepository.save(notification);
 
-    /*
-    await this.eventBus.publish('NOTIFICATION', 'DELETE', {
+    await this.eventBus.publish('NOTIFICATION', 'REFRESH', {
       notificationId: notification.id,
       userId: notification.userId,
+      access: 'refresh',
     });
-    */
+
   }
 
   async deleteAll(userId: string): Promise<void> {

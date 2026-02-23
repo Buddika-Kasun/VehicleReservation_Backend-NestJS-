@@ -12,7 +12,7 @@ export class UserFcmToken {
   @Column({ unique: true }) // Make deviceId unique
   deviceId: string;
 
-  @Column()
+  @Column({ nullable: true })
   fcmToken: string;
 
   @Column({ nullable: true })

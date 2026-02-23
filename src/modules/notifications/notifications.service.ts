@@ -1,7 +1,7 @@
 // src/modules/notifications/notifications.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Notification, NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
@@ -12,6 +12,7 @@ import { FirebaseService } from '../../infra/firebase/firebase.service';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { EVENTS } from 'src/common/constants/events.constants';
 import { access } from 'fs';
+import { UserFcmToken } from 'src/infra/database/entities/user-fcm-token.entity';
 
 @Injectable()
 export class NotificationsService {
@@ -20,6 +21,8 @@ export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(UserFcmToken)
+    private readonly fcmTokenRepository: Repository<UserFcmToken>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
@@ -214,6 +217,26 @@ export class NotificationsService {
           createdAt: notification.createdAt.toISOString(), 
         }
       );
+
+      // NEW UPDATE
+      const tokens = await this.getUserFcmTokens(notification.userId);
+  
+      // Send to all tokens
+      for (const token of tokens) {
+        await this.firebaseService.sendPushNotification(
+          token,
+          notification.title || 'New Notification',
+          notification.message || 'You have a new notification',
+          { 
+            id: String(notification.id), 
+            type: notification.type,
+            tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
+            userId: String(notification.userId),
+            createdAt: notification.createdAt.toISOString(), 
+          }
+        );
+      }
+
     } catch (error) {
       this.logger.error(`Failed to send push notification: ${error.message}`);
     }
@@ -281,6 +304,75 @@ export class NotificationsService {
     }
   }
 
+  async updateUserFcmTokenNew(
+    userId: string, 
+    fcmToken: string, 
+    deviceId: string,
+    deviceInfo?: { name?: string; type?: string }
+  ): Promise<void> {
+    try {
+      // Check if device already exists for this user
+      const existingDevice = await this.fcmTokenRepository.findOne({
+        where: { 
+          userId: Number(userId), 
+          deviceId: deviceId 
+        }
+      });
+
+      if (existingDevice) {
+        // Update existing device's token and timestamp
+        await this.fcmTokenRepository.update(
+          { id: existingDevice.id },
+          { 
+            fcmToken, // Update token in case it changed
+            isActive: true,
+            lastUsedAt: new Date(),
+            ...(deviceInfo?.name && { deviceName: deviceInfo.name }),
+            ...(deviceInfo?.type && { deviceType: deviceInfo.type })
+          }
+        );
+        
+        this.logger.log(`Updated FCM token for device ${deviceId} of user ${userId}`);
+      } else {
+        // Check if this token is used by another device (optional cleanup)
+        await this.cleanupDuplicateTokens(fcmToken, userId, deviceId);
+        
+        // Create new device entry
+        await this.fcmTokenRepository.save({
+          userId: Number(userId),
+          deviceId,
+          fcmToken,
+          deviceName: deviceInfo?.name,
+          deviceType: deviceInfo?.type,
+          isActive: true,
+          lastUsedAt: new Date()
+        });
+        
+        this.logger.log(`Registered new device ${deviceId} for user ${userId}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error updating FCM token: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // Optional: Clean up if same token is used by different device
+  private async cleanupDuplicateTokens(
+    fcmToken: string, 
+    userId: string, 
+    currentDeviceId: string
+  ): Promise<void> {
+    // If this token exists for another device, mark it as inactive
+    await this.fcmTokenRepository.update(
+      { 
+        fcmToken, 
+        deviceId: Not(currentDeviceId),
+        isActive: true 
+      },
+      { isActive: false }
+    );
+  }
+
   async deleteUserFcmToken(userId: string): Promise<void> {
     try {
       await this.userRepository.update(
@@ -293,6 +385,50 @@ export class NotificationsService {
       this.logger.error(`Error deleting FCM token: ${error.message}`);
       throw error;
     }
+  }
+
+  async deleteUserFcmTokenNew(userId: string, deviceId: string): Promise<void> {
+    try {
+      // Delete or mark as inactive based on device ID
+      await this.fcmTokenRepository.update(
+        { 
+          userId: Number(userId), 
+          deviceId: deviceId 
+        },
+        { 
+          isActive: false,
+          // Optional: clear token for security
+          fcmToken: null 
+        }
+      );
+      
+      this.logger.log(`Deleted FCM token for user ${userId} device ${deviceId}`);
+    } catch (error) {
+      this.logger.error(`Error deleting FCM token: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getUserFcmTokens(userId: string): Promise<string[]> {
+    const tokens = await this.fcmTokenRepository.find({
+      where: { 
+        userId: Number(userId), 
+        isActive: true,
+        // Ensure token exists
+        fcmToken: Not(IsNull())
+      },
+      order: { lastUsedAt: 'DESC' }
+    });
+    
+    return tokens.map(t => t.fcmToken);
+  }
+
+  async getUserDevices(userId: string): Promise<any[]> {
+    return this.fcmTokenRepository.find({
+      where: { userId: Number(userId), isActive: true },
+      select: ['deviceId', 'deviceName', 'deviceType', 'lastUsedAt'],
+      order: { lastUsedAt: 'DESC' }
+    });
   }
 
   async sendToTopic(

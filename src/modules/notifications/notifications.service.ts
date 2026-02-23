@@ -199,6 +199,7 @@ export class NotificationsService {
     try {
       if (!notification.userId) return;
 
+      /*
       const user = await this.userRepository.findOne({ 
         where: { id: Number(notification.userId) } 
       });
@@ -217,7 +218,8 @@ export class NotificationsService {
           createdAt: notification.createdAt.toISOString(), 
         }
       );
-
+      */
+     
       // NEW UPDATE
       const tokens = await this.getUserFcmTokens(notification.userId);
   

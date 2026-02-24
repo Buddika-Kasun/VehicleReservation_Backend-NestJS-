@@ -145,6 +145,9 @@ export class UsersService {
   }
 
   async approveUser(id: number, dto: ApproveUserDto, reqUser: User) {
+    
+    const approveUser = await this.userRepo.findOne({ where: { id: reqUser.id } });
+    
     const user = await this.userRepo.findOne({
       where: { id },
       relations: ['department'],
@@ -182,10 +185,16 @@ export class UsersService {
     const sanitizedUser = sanitizeUser(approvedUser);
 
     try {
-      //await this.notificationsService.notifyUserStatus(approvedUser, 'approved');
-      // If user has auth level 3, might want to notify them differently or just generic approval
+      // Publish USER.APPROVE event
+      await this.eventBus.publish('USER', 'APPROVE', {
+        userId: user.id,
+        userName: user.displayname,
+        role: user.role,
+        department: user.department?.name,
+        approvedUser: approveUser,
+      });
     } catch (e) {
-      console.error('Failed to send approval notification', e);
+      console.error('Failed to send notifications', e);
     }
 
     return this.responseService.success(
@@ -257,6 +266,40 @@ async getApprovers(): Promise<User[]> {
   }
 }
 
+async getTransportSupervisors(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const supervisors = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SUPERVISOR})
+      .getMany();
+
+    return supervisors;
+  } catch (error) {
+    //this.logger.error('Error fetching supervisors:', error);
+    throw error;
+  }
+}
+
+async getSecurities(): Promise<User[]> {
+  try {
+    // Get users SUPERVISOR role
+    const securities = await this.userRepo
+      .createQueryBuilder('user')
+      .where('user.isActive = :isActive', { isActive: true })
+      .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+      .andWhere('(user.role = :role)', { role: UserRole.SECURITY})
+      .getMany();
+
+    return securities;
+  } catch (error) {
+    //this.logger.error('Error fetching securities:', error);
+    throw error;
+  }
+}
+
 // Also add this helper method to check if a user is an approver
 async isApprover(userId: number): Promise<boolean> {
   try {
@@ -276,8 +319,11 @@ async isApprover(userId: number): Promise<boolean> {
   }
 }
 
-  async disapproveUser(id: number) {
-    const user = await this.userRepo.findOne({ where: { id } });
+  async disapproveUser(id: number, reqUser: User) {
+
+    const approveUser = await this.userRepo.findOne({ where: { id: reqUser.id } });
+
+    const user = await this.userRepo.findOne({ where: { id }, relations: ['department'] });
     if (!user) {
       throw new NotFoundException(
         this.responseService.error(
@@ -294,9 +340,16 @@ async isApprover(userId: number): Promise<boolean> {
     const sanitizedUser = sanitizeUser(disapprovedUser);
 
     try {
-      //await this.notificationsService.notifyUserStatus(disapprovedUser, 'rejected');
+      // Publish USER.REJECTED event
+      await this.eventBus.publish('USER', 'REJECT', {
+        userId: user.id,
+        userName: user.displayname,
+        role: user.role,
+        department: user.department?.name,
+        approvedUser: approveUser,
+      });
     } catch (e) {
-      console.error('Failed to send rejection notification', e);
+      console.error('Failed to send notifications', e);
     }
 
     return this.responseService.success(

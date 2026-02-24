@@ -33,8 +33,9 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
 
     migrationsRun: false,
     synchronize: false,
-    logging: !isProd,
-
+    //logging: !isProd,
+    logging: false,
+    
     extra: {
       max: 20,
       connectionTimeoutMillis: 10000,

@@ -64,10 +64,93 @@ export class UserNotificationHandler implements OnModuleInit {
   }
 
   private async handleUserApproved(data: any): Promise<void> {
-    await this.handleUserStatusChanged({ ...data, status: 'approved' });
+    
+    const { 
+      userId, 
+      userName, 
+      role,
+      department,
+      approvedUser,
+    } = data;
+
+    await this.notificationsService.create({
+      type: NotificationType.USER_APPROVED,
+      userId: String(userId),
+      title: 'User Approved',
+      message: `Your account has been approved by ${approvedUser.displayname}(${approvedUser.role}).`,
+      data,
+      priority: NotificationPriority.HIGH,
+    });
+
+    await this.notificationsService.create({
+      type: NotificationType.USER_APPROVED,
+      userId: String(approvedUser.id),
+      title: 'User Approved',
+      message: `${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) account has been approved by you.`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+    
+    //const approvers = await this.notificationsService.getApprovers();
+    const approvers = await this.userService.getApprovers();
+    
+    for (const approver of approvers) {
+      if (approver.id === approvedUser.id) continue; // Skip the approver who approved the user
+      await this.notificationsService.create({
+        type: NotificationType.USER_APPROVED,
+        userId: String(approver.id),
+        title: 'User Approved',
+        message: `User ${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) has been approved by ${approvedUser.displayname}(${approvedUser.role}).`,
+        data,
+        priority: NotificationPriority.MEDIUM,
+      });
+    }
+
   }
 
   private async handleUserRejected(data: any): Promise<void> {
-    await this.handleUserStatusChanged({ ...data, status: 'rejected' });
+
+    const { 
+      userId, 
+      userName, 
+      role,
+      department,
+      approvedUser,
+    } = data;
+
+    await this.notificationsService.create({
+      type: NotificationType.USER_REJECTED,
+      userId: String(userId),
+      title: 'User Rejected',
+      message: `Your account has been rejected by ${approvedUser.displayname}(${approvedUser.role}).`,
+      data,
+      priority: NotificationPriority.HIGH,
+    });
+
+    await this.notificationsService.create({
+      type: NotificationType.USER_REJECTED,
+      userId: String(approvedUser.id),
+      title: 'User Rejected',
+      message: `${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) account has been rejected by you.`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+    
+    //const approvers = await this.notificationsService.getApprovers();
+    const approvers = await this.userService.getApprovers();
+    
+    for (const approver of approvers) {
+      if (approver.id === approvedUser.id) continue; // Skip the approver who approved the user
+      await this.notificationsService.create({
+        type: NotificationType.USER_REJECTED,
+        userId: String(approver.id),
+        title: 'User Rejected',
+        message: `User ${userName || 'Unknown'}(${role} in ${department || 'Unknown'}) has been rejected by ${approvedUser.displayname}(${approvedUser.role}).`,
+        data,
+        priority: NotificationPriority.MEDIUM,
+      });
+    }
+
   }
+
 }

@@ -136,12 +136,43 @@ export class NotificationsController {
     return { success: true };
   }
 
+  @Put('/update-fcm-token-new')
+  async updateFcmTokenNew(
+    @GetUser() user: any,
+    @Body() body: { 
+      fcmToken: string; 
+      deviceId: string;
+      deviceName?: string;
+      deviceType?: string;
+    },
+  ) {
+    await this.notificationsService.updateUserFcmTokenNew(
+      user.userId, 
+      body.fcmToken, 
+      body.deviceId,
+      { name: body.deviceName, type: body.deviceType }
+    );
+    return { success: true };
+  }
+
   @Delete('/delete-fcm-token')
   async deleteFcmToken(
     @GetUser() user: any,
     @Body() body: { fcmToken: string },
   ) {
     await this.notificationsService.deleteUserFcmToken(user.userId);
+    return { success: true };
+  }
+
+  @Put('/delete-fcm-token-new')
+  async deleteFcmTokenNew(
+    @GetUser() user: any,
+    @Body() body: { deviceId: string },
+  ) {
+    await this.notificationsService.deleteUserFcmTokenNew(
+      user.userId, 
+      body.deviceId
+    );
     return { success: true };
   }
 

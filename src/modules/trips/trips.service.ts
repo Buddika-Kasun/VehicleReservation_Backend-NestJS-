@@ -1696,11 +1696,12 @@ export class TripsService {
   private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
     const startDate = new Date(scheduleData.startDate);
     const today = new Date();
+    today.setDate(today.getDate() + 1);
 
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
     
-    if (startDate < today) {
+    if (startDate < today ) {
       throw new BadRequestException(
         this.responseService.error('Start date cannot be in the past', 400)
       );

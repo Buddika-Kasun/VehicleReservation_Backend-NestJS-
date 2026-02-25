@@ -1161,7 +1161,7 @@ export class TripsService {
         includeWeekends: currentTrip.schedule.includeWeekends,
         repeatAfterDays: currentTrip.schedule.repeatAfterDays
       };
-      await this.validateScheduleData(scheduleData);
+      //await this.validateScheduleData(scheduleData);
     }
 
     // Get passenger count from existing trip

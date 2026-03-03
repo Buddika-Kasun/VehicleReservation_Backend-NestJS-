@@ -2813,12 +2813,168 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
       .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
-    if(user.role != 'sysadmin' 
-      //&& user.role != 'supervisor'
-    ) {
+      
+    //if(user.role != 'sysadmin' 
+    //  && user.role != 'supervisor'
+    //) {
       queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    //}
+    
+
+    // Apply time filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    switch (requestDto.timeFilter) {
+      case 'today':
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
+        break;
+      case 'week':
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        break;
+      case 'month':
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      case 'all':
+      default:
+        // No date filter
+        break;
     }
 
+    // Apply status filter if provided
+    if (requestDto.statusFilter) {
+      queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+    }
+
+    // Calculate pagination
+    const skip = (requestDto.page - 1) * requestDto.limit;
+    
+    // Get total count
+    const total = await queryBuilder.getCount();
+    
+    // Get paginated results
+    const trips = await queryBuilder
+      .orderBy('trip.startDate', 'DESC')
+      .addOrderBy('trip.startTime', 'DESC')
+      .skip(skip)
+      .take(requestDto.limit)
+      .getMany();
+
+    // Transform trips to TripCardDto format
+    const tripCards = await Promise.all(
+      trips.map(async (trip) => {
+        const tripType = await this.determineTripType(trip, user.userId);
+        
+
+        let instanceCount = 0;
+        let instanceIds: number[] | null = null;
+
+        // If this is a master scheduled trip (not an instance itself), fetch its instances
+        if (trip.isScheduled && !trip.isInstance) {
+          // Fetch all instances for this master trip
+          const instances = await this.tripRepo.find({
+            where: {
+              masterTripId: trip.id,
+              isInstance: true
+            },
+            select: ['id'] // Only need IDs
+          });
+          
+          instanceCount = instances.length;
+          instanceIds = instances.map(instance => instance.id);
+        } 
+        // If this is an instance trip, we might want to find its master and other instances
+        else if (trip.isInstance && trip.masterTripId) {
+          // Get the master trip and all its instances
+          const masterTripId = trip.masterTripId;
+          
+          // Get all instances including this one
+          const allInstances = await this.tripRepo.find({
+            where: {
+              masterTripId: masterTripId,
+              isInstance: true
+            },
+            select: ['id']
+          });
+          
+          instanceCount = allInstances.length;
+          instanceIds = allInstances.map(instance => instance.id);
+          
+          // Also get the master trip ID for reference
+          const masterTrip = await this.tripRepo.findOne({
+            where: { id: masterTripId },
+            select: ['id', 'isScheduled']
+          });
+        }
+
+        return {
+          id: trip.id,
+          requesterName: trip.requester?.displayname,
+          vehicleModel: trip.vehicle?.model || 'Unknown',
+          vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+          status: trip.status,
+          date: this.formatDateForDB(trip.startDate.toString()),
+          time: trip.startTime.substring(0, 5), // Format to HH:MM
+          tripUserType: tripType,
+          driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+          startLocation: trip.location?.startAddress,
+          endLocation: trip.location?.endAddress,
+
+          // Scheduled trip fields from entity
+          isScheduled: trip.isScheduled ?? false,
+          isInstance: trip.isInstance ?? false,
+          masterTripId: trip.masterTripId,
+          instanceDate: trip.instanceDate,
+          
+          // Calculated instance data
+          instanceCount: instanceCount,
+          instanceIds: instanceIds,
+          
+          // Other schedule fields
+          repetition: trip.repetition,
+          validTillDate: trip.validTillDate,
+          includeWeekends: trip.includeWeekends ?? false,
+          repeatAfterDays: trip.repeatAfterDays
+        };
+      })
+    );
+
+    const hasMore = skip + trips.length < total;
+
+    return {
+      success: true,
+      data: {
+        trips: tripCards,
+        total,
+        page: requestDto.page,
+        limit: requestDto.limit,
+        hasMore,
+      },
+      statusCode: 200,
+    };
+  }
+
+  async getAllTrips(user: any, requestDto: TripListRequestDto) {
+
+    // Create base query builder
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.requester', 'requester')
+      .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+      .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
     // Apply time filter
     const now = new Date();

@@ -15,6 +15,7 @@ export enum StatusApproval {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+  CANCELED = 'canceled',
 }
 
 export enum ApproverType {

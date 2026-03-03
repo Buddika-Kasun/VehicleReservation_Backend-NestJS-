@@ -92,6 +92,10 @@ export class ScheduleDataDto {
   @IsString()
   startTime: string;
 
+  @IsDateString()
+  @IsOptional()
+  returnDateTime?: string;
+
   @IsEnum(RepetitionType)
   repetition: RepetitionType;
 

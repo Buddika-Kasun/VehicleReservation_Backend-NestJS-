@@ -10,10 +10,11 @@ import { UserNotificationHandler } from './handlers/user-notification.handler';
 import { TripNotificationHandler } from './handlers/trip-notification.handler';
 import { UsersService } from '../users/users.service';
 import { UsersModule } from '../users/users.module';
+import { UserFcmToken } from 'src/infra/database/entities/user-fcm-token.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, User]),
+    TypeOrmModule.forFeature([Notification, User, UserFcmToken]),
     RedisModule,
     FirebaseModule,
     forwardRef(() => UsersModule)

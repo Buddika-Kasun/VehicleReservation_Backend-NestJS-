@@ -199,9 +199,13 @@ export class Trip {
   @ManyToOne(() => User, { nullable: true })
   secondaryDriver?: User;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ 
+    type: 'timestamptz'
+  })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ 
+    type: 'timestamptz'
+  })
   updatedAt: Date;
 }

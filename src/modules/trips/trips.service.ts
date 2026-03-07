@@ -3008,7 +3008,17 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
 
     // Apply status filter if provided
     if (requestDto.statusFilter) {
-      queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+      if (requestDto.statusFilter === 'scheduled') {
+        queryBuilder.andWhere(
+          '(trip.isScheduled = :isScheduled OR trip.isInstance = :isInstance)', 
+          { 
+            isScheduled: true,
+            isInstance: true 
+          }
+        );
+      } else {
+        queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+      }
     }
 
     // Calculate pagination

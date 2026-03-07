@@ -9,6 +9,9 @@ export enum TimeFilter {
   ALL = 'all',
 }
 
+// Define a type that combines enum values with additional string literals
+export type TripStatusFilter = TripStatus | 'scheduled';
+
 export class TripListRequestDto {
   @ApiProperty({
     description: 'Time filter for trips',
@@ -18,15 +21,15 @@ export class TripListRequestDto {
   @IsEnum(TimeFilter)
   timeFilter: TimeFilter;
 
-  @ApiProperty({
-    description: 'Status filter for trips (optional)',
-    enum: TripStatus,
-    required: false,
-    example: TripStatus.PENDING,
-  })
-  @IsOptional()
-  @IsEnum(TripStatus)
-  statusFilter?: TripStatus;
+ 
+@ApiProperty({
+  description: 'Status filter for trips (optional)',
+  enum: [...Object.values(TripStatus), 'scheduled'],
+  required: false,
+  example: TripStatus.PENDING,
+})
+@IsOptional()
+statusFilter?: TripStatusFilter;
 
   @ApiProperty({
     description: 'Page number for pagination',

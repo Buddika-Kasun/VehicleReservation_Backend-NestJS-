@@ -10,7 +10,7 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
 
   return {
     type: 'postgres',
-
+    
     ...(process.env.DATABASE_URL
       ? { url: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
       : {
@@ -39,6 +39,8 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
     extra: {
       max: 20,
       connectionTimeoutMillis: 10000,
+      // ✅ Add timezone here - this passes through to PostgreSQL driver
+      timezone: 'Asia/Colombo', // or '+05:30' for Sri Lanka
     },
   };
 };

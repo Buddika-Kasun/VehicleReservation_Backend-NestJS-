@@ -301,6 +301,26 @@ export class TripsController {
     return this.tripsService.getUserTrips(user, tripListRequest);
   }
 
+  @Post('all-trips')
+  @ApiOperation({ summary: 'Get all trips with filters' })
+  @ApiBody({ type: TripListRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: 'All trips retrieved successfully',
+    type: TripListResponseDto,
+  })
+  async getAllTrips(
+    @GetUser() user: any,
+    @Body() tripListRequest: TripListRequestDto,
+  ) {
+
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+
+    return this.tripsService.getAllTrips(user, tripListRequest);
+  }
+
   @Post('supervisor-trips')
   @Roles(UserRole.SYSADMIN, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get user trips with filters' })

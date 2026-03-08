@@ -9,6 +9,19 @@ export enum TimeFilter {
   ALL = 'all',
 }
 
+export enum SortField {
+  ID = 'id',
+  START_TIME = 'startTime',
+}
+
+export enum SortOrder {
+  ASC = 'asc',
+  DESC = 'desc',
+}
+
+// Define a type that combines enum values with additional string literals
+export type TripStatusFilter = TripStatus | 'scheduled';
+
 export class TripListRequestDto {
   @ApiProperty({
     description: 'Time filter for trips',
@@ -18,15 +31,46 @@ export class TripListRequestDto {
   @IsEnum(TimeFilter)
   timeFilter: TimeFilter;
 
+ 
   @ApiProperty({
     description: 'Status filter for trips (optional)',
-    enum: TripStatus,
+    enum: [...Object.values(TripStatus), 'scheduled'],
     required: false,
     example: TripStatus.PENDING,
   })
   @IsOptional()
-  @IsEnum(TripStatus)
-  statusFilter?: TripStatus;
+  statusFilter?: TripStatusFilter;
+
+  @ApiProperty({
+    description: 'Search query for trips - search by ID, date, time, requester name, etc.',
+    required: false,
+    example: 'John',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+  
+  @ApiProperty({
+    description: 'Field to sort by',
+    enum: SortField,
+    required: false,
+    default: SortField.START_TIME,
+    example: SortField.START_TIME,
+  })
+  @IsOptional()
+  @IsEnum(SortField)
+  sortField?: SortField = SortField.START_TIME;
+
+  @ApiProperty({
+    description: 'Sort order',
+    enum: SortOrder,
+    required: false,
+    default: SortOrder.DESC,
+    example: SortOrder.DESC,
+  })
+  @IsOptional()
+  @IsEnum(SortOrder)
+  sortOrder?: SortOrder = SortOrder.DESC;
 
   @ApiProperty({
     description: 'Page number for pagination',

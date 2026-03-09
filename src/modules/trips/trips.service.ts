@@ -3832,6 +3832,14 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
                 isInstance: true 
               }
             );
+          } else if (requestDto.statusFilter === 'normal') {
+            queryBuilder.andWhere(
+              '(trip.isScheduled = :isScheduled AND trip.isInstance = :isInstance)', 
+              { 
+                isScheduled: false,
+                isInstance: false 
+              }
+            );
           } else {
             queryBuilder.andWhere('trip.status = :status', { 
               status: requestDto.statusFilter 

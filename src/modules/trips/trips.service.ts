@@ -1071,6 +1071,7 @@ export class TripsService {
         */
         
         // 2. Delete approval record if exists
+        /*
         if (trip.approval) {
           const approvalId = trip.approval.id;
 
@@ -1080,9 +1081,10 @@ export class TripsService {
 
           await transactionalEntityManager.delete(Approval, { id: approvalId });
         }
+        */
       }
       
-      trip.status = TripStatus.DRAFT;
+      //trip.status = TripStatus.DRAFT;
         
       // Update trip with vehicle
       trip.vehicle = vehicle;
@@ -1205,8 +1207,10 @@ export class TripsService {
     }
 
     // Determine status and if approval is needed
-    let tripStatus = TripStatus.PENDING;
-    let requiresApproval = true;
+    //let tripStatus = TripStatus.PENDING;
+    //let requiresApproval = true;
+    let tripStatus = currentTrip.status === TripStatus.DRAFT ? TripStatus.PENDING : currentTrip.status;
+    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? true : false;
 
     // Update trip status
     currentTrip.status = tripStatus;
@@ -4070,7 +4074,8 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     switch (requestDto.timeFilter) {
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
-        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+        //queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
+        queryBuilder.andWhere('DATE(trip.createdAt) <= DATE(:today)', { 
           today: this.formatDateForDB(now.toISOString()) 
         });
         break;
@@ -6309,8 +6314,8 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
               qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
                 .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
                 .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
-                .orWhere('requester.displayname LIKE :searchTerm')
-                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                //.orWhere('requester.displayname LIKE :searchTerm')
+                //.orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
                 .orWhere('vehicle.regNo LIKE :searchTerm')
                 .orWhere('vehicle.model LIKE :searchTerm');
             })
@@ -6323,8 +6328,8 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
             qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
               .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
               .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
-              .orWhere('requester.displayname LIKE :searchTerm')
-              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              //.orWhere('requester.displayname LIKE :searchTerm')
+              //.orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
               .orWhere('vehicle.regNo LIKE :searchTerm')
               .orWhere('vehicle.model LIKE :searchTerm');
           })

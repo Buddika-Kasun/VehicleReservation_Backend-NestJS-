@@ -6650,8 +6650,8 @@ private async formatTripsForMeterReadingWithConnections(
             
             // Connected trips information
             connectedTripIds: connectedTripIds.length > 0 ? connectedTripIds : undefined,
-            connectedTripsCount: connectedTripIds.length,
-            connectedTripsStatus: connectedTripsStatus,
+            //connectedTripsCount: connectedTripIds.length,
+            //connectedTripsStatus: connectedTripsStatus,
             
             // Odometer information for main trip
             odometerReading: trip.odometerLog ? {
@@ -8331,19 +8331,29 @@ async startTrip(tripId: number, userId: number): Promise<any> {
   // Use moment methods
   const timeDiffMinutes = Math.abs(nowSL.diff(tripDateTime, 'minutes'));
   
-  if (timeDiffMinutes > 15) {
-    const isEarly = nowSL < tripDateTime;
+  const isEarly = nowSL < tripDateTime;
+
+  if (isEarly && timeDiffMinutes > 15) {
     const minutesAway = Math.abs(timeDiffMinutes);
     
     return new BadRequestException(
       this.responseService.error(
-        `Cannot start trip. You are ${minutesAway.toFixed(0)} minutes ${isEarly ? 'before' : 'after'} the scheduled start time. ` +
+        `Cannot start trip. You are ${minutesAway.toFixed(0)} minutes before the scheduled start time. ` +
         'Trip can only be started within 15 minutes of the scheduled time.',
         400
       )
     );
+  } else if (!isEarly && timeDiffMinutes > 60) {
+    const minutesLate = Math.abs(timeDiffMinutes);
+
+    return new BadRequestException(
+      this.responseService.error(
+        `Cannot start trip. You are ${minutesLate.toFixed(0)} minutes after the scheduled start time. ` +
+        'Trip can only be started within 60 minutes of the scheduled time.',
+        400
+      )
+    );
   }
-  
 
   // Start the main trip
   trip.status = TripStatus.ONGOING;

@@ -229,6 +229,39 @@ export class TripsController {
     return this.tripsService.cancelTrip(tripId, user, reason);
   }
 
+  @Post('join/:id')
+  @ApiOperation({ summary: 'Join a trip' })
+  @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+  async joinTrip(
+    @GetUser() user: any,
+    @Param('id', ParseIntPipe) tripId: number
+  ) {
+    return this.tripsService.joinTrip(tripId, user);
+  }
+
+  @Post('add-multiple-passengers/:id')
+  @ApiOperation({ summary: 'Add multiple passengers to a trip' })
+  @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+  async addMultiplePassengers(
+    @GetUser() user: any,
+    @Param('id', ParseIntPipe) tripId: number,
+    @Body() body: { passengerIds: (string | number)[] }
+  ) {
+    // Extract passengerIds from body
+    const passengerIds = body.passengerIds;
+    
+    // Convert all IDs to numbers
+    const numericIds = passengerIds.map(id => {
+      if (typeof id === 'string') {
+        const parsed = parseInt(id, 10);
+        return parsed;
+      }
+      return id;
+    });
+    
+    return this.tripsService.addMultiplePassengers(tripId, user, numericIds);
+  }
+
   @Get('cancelable')
   @ApiOperation({ summary: 'Get list of cancelable trips for current user' })
   @ApiResponse({ 

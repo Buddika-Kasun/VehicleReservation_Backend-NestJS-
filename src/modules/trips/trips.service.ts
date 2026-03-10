@@ -10,7 +10,7 @@ import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
 import { Repository, In, Between, MoreThanOrEqual, LessThanOrEqual, Brackets, Not } from 'typeorm';
 import { AvailableVehiclesResponseDto, AvailableVehicleDto, TripResponseDto } from './dto/trip-response.dto';
 import { AvailableVehiclesRequestDto, CreateTripDto, ReviewAvailableVehiclesRequest, ScheduleDataDto } from './dto/create-trip.dto';
-import { TripListRequestDto } from './dto/trip-list-request.dto';
+import { SortField, SortOrder, TripListRequestDto } from './dto/trip-list-request.dto';
 import { ApproverType } from 'src/infra/database/entities/approval.entity';
 import { ApprovalConfig } from 'src/infra/database/entities/approval-configuration.entity';
 import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
@@ -2653,6 +2653,593 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     });
   }
 
+  // Add this method to your TripsService class
+
+  async joinTrip(tripId: number, user: any): Promise<any> {
+    // Find the trip with necessary relations
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'selectedGroupUsers',
+        'selectedIndividual',
+        'requester',
+        'vehicle',
+        'location'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(
+        this.responseService.error('Trip not found', 404)
+      );
+    }
+
+    // Check if trip is joinable based on status
+    const joinableStatuses = [
+      TripStatus.PENDING,
+      TripStatus.APPROVED,
+      TripStatus.READ,
+    ];
+
+    if (!joinableStatuses.includes(trip.status)) {
+      throw new BadRequestException(
+        this.responseService.error(
+          `Cannot join trip with status: ${trip.status}. Trip must be in PENDING, APPROVED, or READ status.`,
+          400
+        )
+      );
+    }
+
+    // Check if user is already in the trip
+    const isUserAlreadyInTrip = await this.isUserInTrip(trip, user.userId);
+    
+    if (isUserAlreadyInTrip) {
+      throw new BadRequestException(
+        this.responseService.error('You are already a passenger on this trip', 400)
+      );
+    }
+
+    // Check if user is the requester
+    /*
+    if (trip.requester && trip.requester.id === user.userId) {
+      throw new BadRequestException(
+        this.responseService.error('You are the requester of this trip and are already included', 400)
+      );
+    }
+    */
+
+    // Check vehicle capacity if vehicle is assigned
+    if (trip.vehicle) {
+      const currentPassengerCount = await this.getCurrentPassengerCount(trip);
+      
+      // Vehicle seating capacity (driver seat is separate)
+      const vehicleCapacity = trip.vehicle.seatingCapacity || 0;
+      
+      // Available seats = capacity - current passengers
+      const availableSeats = vehicleCapacity - currentPassengerCount - 1;
+      
+      if (availableSeats <= 0) {
+        throw new BadRequestException(
+          this.responseService.error('No available seats on this trip', 400)
+        );
+      }
+    }
+
+    // Get the full user entity
+    const userEntity = await this.userRepo.findOne({
+      where: { id: user.userId },
+      relations: ['department']
+    });
+
+    if (!userEntity) {
+      throw new NotFoundException(
+        this.responseService.error('User not found', 404)
+      );
+    }
+
+    // Start transaction to handle conversion to GROUP type if needed
+    return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      
+      // Store original passenger type as string for comparison
+      const originalPassengerTypeValue = trip.passengerType;
+      const isCurrentlyGroup = trip.passengerType === PassengerType.GROUP;
+      
+      // Handle conversion based on current passenger type
+      if (!isCurrentlyGroup) {
+        // Convert to GROUP type
+        trip.passengerType = PassengerType.GROUP;
+        
+        // Initialize selectedGroupUsers array
+        if (!trip.selectedGroupUsers) {
+          trip.selectedGroupUsers = [];
+        }
+        
+        // Move existing passengers to selectedGroupUsers
+        
+        // 1. Add requester if includeMeInGroup is true or if it was OWN type
+        // Check if it was OWN type by comparing with the enum value
+        if (trip.requester) {
+          // For OWN type, always include requester
+          // For OTHER_INDIVIDUAL type, include if includeMeInGroup is true
+          const shouldIncludeRequester = 
+            originalPassengerTypeValue === PassengerType.OWN || 
+            trip.includeMeInGroup === true;
+          
+          if (shouldIncludeRequester) {
+            // Check if requester not already in group
+            const requesterInGroup = trip.selectedGroupUsers.some(
+              u => u && u.id === trip.requester.id
+            );
+            if (!requesterInGroup) {
+              trip.selectedGroupUsers.push(trip.requester);
+            }
+          }
+        }
+        
+        // 2. Add selectedIndividual if exists (for OTHER_INDIVIDUAL type)
+        if (trip.selectedIndividual && originalPassengerTypeValue === PassengerType.OTHER_INDIVIDUAL) {
+          const individualInGroup = trip.selectedGroupUsers.some(
+            u => u && u.id === trip.selectedIndividual.id
+          );
+          if (!individualInGroup) {
+            trip.selectedGroupUsers.push(trip.selectedIndividual);
+          }
+          // Clear selectedIndividual as we're now GROUP type
+          trip.selectedIndividual = null;
+        }
+        
+        // 3. For GROUP type that already had some group users, they remain
+        // For OWN/OTHER_INDIVIDUAL, selectedGroupUsers was likely empty
+        
+        // Update passenger count to reflect all current passengers
+        let newPassengerCount = 0;
+        
+        // Count all users in selectedGroupUsers
+        if (trip.selectedGroupUsers) {
+          newPassengerCount += trip.selectedGroupUsers.filter(u => u && u.id).length;
+        }
+        
+        // Count selected others (external contacts)
+        if (trip.selectedOthers) {
+          newPassengerCount += trip.selectedOthers.filter(o => o && o.id).length;
+        }
+        
+        trip.passengerCount = newPassengerCount;
+      }
+      
+      // Ensure selectedGroupUsers is initialized
+      if (!trip.selectedGroupUsers) {
+        trip.selectedGroupUsers = [];
+      }
+      
+      // Add the new user to selectedGroupUsers
+      trip.selectedGroupUsers.push(userEntity);
+      
+      // Increment passenger count
+      trip.passengerCount = (trip.passengerCount || 0) + 1;
+      
+      // Save the trip
+      const updatedTrip = await transactionalEntityManager.save(Trip, trip);
+      
+      // Get all passengers for notification
+      const passengers = await this.getPassengersByTripId(trip.id);
+      
+      // Get the updated trip with relations for response
+      const savedTrip = await transactionalEntityManager.findOne(Trip, {
+        where: { id: trip.id },
+        relations: [
+          'selectedGroupUsers',
+          'requester',
+          'vehicle',
+          'location'
+        ]
+      });
+
+      // Publish TRIP.JOIN event
+      try {
+        await this.eventBus.publish('TRIP', 'JOIN', {
+          tripId: trip.id,
+          userId: user.userId,
+          userName: user.displayname,
+          userRole: user.role,
+          requesterId: trip.requester?.id || null,
+        });
+      } catch (e) {
+        console.error('Failed to send join notification', e);
+      }        
+
+      // Prepare response data
+      const responseData = {
+        tripId: trip.id,
+        userId: user.userId,
+        userName: userEntity.displayname,
+        joinedAt: new Date().toISOString(),
+        passengerCount: trip.passengerCount,
+        passengerType: trip.passengerType,
+        wasConverted: !isCurrentlyGroup,
+        originalPassengerType: originalPassengerTypeValue,
+        allPassengers: passengers.map(p => ({
+          id: p.id,
+          name: p.displayName || p.displayname,
+          type: p.type || 'registered'
+        })),
+        vehicle: savedTrip?.vehicle ? {
+          model: savedTrip.vehicle.model,
+          regNo: savedTrip.vehicle.regNo,
+          seatingCapacity: savedTrip.vehicle.seatingCapacity
+        } : null,
+        startLocation: savedTrip?.location?.startAddress,
+        endLocation: savedTrip?.location?.endAddress,
+        startDate: savedTrip?.startDate,
+        startTime: savedTrip?.startTime
+      };
+
+      return this.responseService.success(
+        !isCurrentlyGroup 
+          ? `Successfully joined the trip. Trip was converted from ${originalPassengerTypeValue} to GROUP.`
+          : 'Successfully joined the trip',
+        responseData,
+        200
+      );       
+    });
+  }
+
+  async addMultiplePassengers(tripId: number, user: any, passengerIds: number[]): Promise<any> {
+    
+    const userEntity = await this.userRepo.findOne({ where: { id: user.userId } });
+    
+    // Find the trip with necessary relations
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: [
+        'selectedGroupUsers',
+        'selectedIndividual',
+        'requester',
+        'vehicle',
+        'location'
+      ]
+    });
+
+    if (!trip) {
+      throw new NotFoundException(
+        this.responseService.error('Trip not found', 404)
+      );
+    }
+
+    // Check if user has permission (sysadmin or supervisor)
+    const isPermissionUser = user.role === 'sysadmin' || user.role === 'supervisor';
+    
+    if (!isPermissionUser) {
+      throw new ForbiddenException(
+        this.responseService.error('Only supervisors or sysadmins can add multiple passengers', 403)
+      );
+    }
+
+    // Check if trip is joinable based on status
+    const joinableStatuses = [
+      TripStatus.PENDING,
+      TripStatus.APPROVED,
+      TripStatus.READ,
+    ];
+
+    if (!joinableStatuses.includes(trip.status)) {
+      throw new BadRequestException(
+        this.responseService.error(
+          `Cannot add passengers to trip with status: ${trip.status}. Trip must be in PENDING, APPROVED, or READ status.`,
+          400
+        )
+      );
+    }
+
+    // Check if passengerIds array is valid
+    if (!passengerIds || passengerIds.length === 0) {
+      throw new BadRequestException(
+        this.responseService.error('No passenger IDs provided', 400)
+      );
+    }
+
+    // Get current passenger count
+    const currentPassengerCount = await this.getCurrentPassengerCount(trip);
+    
+    // Check vehicle capacity if vehicle is assigned
+    if (trip.vehicle) {
+      // Vehicle seating capacity (driver seat is separate)
+      const vehicleCapacity = trip.vehicle.seatingCapacity || 0;
+      
+      // Available seats = capacity - current passengers - 1 (for driver)
+      const availableSeats = vehicleCapacity - currentPassengerCount - 1;
+      
+      if (availableSeats <= 0) {
+        throw new BadRequestException(
+          this.responseService.error(`No available seats on this trip. Current passengers: ${currentPassengerCount}, Vehicle capacity: ${vehicleCapacity}`, 400)
+        );
+      }
+
+      // Check if trying to add more passengers than available seats
+      if (passengerIds.length > availableSeats) {
+        throw new BadRequestException(
+          this.responseService.error(`Cannot add ${passengerIds.length} passengers. Only ${availableSeats} seat(s) available.`, 400)
+        );
+      }
+    }
+
+    // Get all user entities
+    const userEntities = await this.userRepo.find({
+      where: { id: In(passengerIds) },
+      relations: ['department']
+    });
+
+    if (userEntities.length !== passengerIds.length) {
+      const foundIds = userEntities.map(u => u.id);
+      const missingIds = passengerIds.filter(id => !foundIds.includes(id));
+      
+      throw new NotFoundException(
+        this.responseService.error(`Users not found with IDs: ${missingIds.join(', ')}`, 404)
+      );
+    }
+
+    // Check which users are already in the trip
+    const usersAlreadyInTrip: number[] = [];
+    const newUsers: User[] = [];
+
+    for (const userEntity of userEntities) {
+      const isInTrip = await this.isUserInTrip(trip, userEntity.id);
+      if (isInTrip) {
+        usersAlreadyInTrip.push(userEntity.id);
+      } else {
+        newUsers.push(userEntity);
+      }
+    }
+
+    if (newUsers.length === 0) {
+      throw new BadRequestException(
+        this.responseService.error('All selected users are already passengers on this trip', 400)
+      );
+    }
+
+    // Start transaction
+    return await this.tripRepo.manager.transaction(async (transactionalEntityManager) => {
+      
+      // Store original passenger type
+      const originalPassengerTypeValue = trip.passengerType;
+      const isCurrentlyGroup = trip.passengerType === PassengerType.GROUP;
+      
+      // Handle conversion based on current passenger type
+      if (!isCurrentlyGroup) {
+        // Convert to GROUP type
+        trip.passengerType = PassengerType.GROUP;
+        
+        // Initialize selectedGroupUsers array
+        if (!trip.selectedGroupUsers) {
+          trip.selectedGroupUsers = [];
+        }
+        
+        // Move existing passengers to selectedGroupUsers
+        
+        // 1. Add requester if includeMeInGroup is true or if it was OWN type
+        if (trip.requester) {
+          const shouldIncludeRequester = 
+            originalPassengerTypeValue === PassengerType.OWN || 
+            trip.includeMeInGroup === true;
+          
+          if (shouldIncludeRequester) {
+            const requesterInGroup = trip.selectedGroupUsers.some(
+              u => u && u.id === trip.requester.id
+            );
+            if (!requesterInGroup) {
+              trip.selectedGroupUsers.push(trip.requester);
+            }
+          }
+        }
+        
+        // 2. Add selectedIndividual if exists (for OTHER_INDIVIDUAL type)
+        if (trip.selectedIndividual && originalPassengerTypeValue === PassengerType.OTHER_INDIVIDUAL) {
+          const individualInGroup = trip.selectedGroupUsers.some(
+            u => u && u.id === trip.selectedIndividual.id
+          );
+          if (!individualInGroup) {
+            trip.selectedGroupUsers.push(trip.selectedIndividual);
+          }
+          trip.selectedIndividual = null;
+        }
+        
+        // Update passenger count to reflect all current passengers
+        let newPassengerCount = 0;
+        
+        if (trip.selectedGroupUsers) {
+          newPassengerCount += trip.selectedGroupUsers.filter(u => u && u.id).length;
+        }
+        
+        if (trip.selectedOthers) {
+          newPassengerCount += trip.selectedOthers.filter(o => o && o.id).length;
+        }
+        
+        trip.passengerCount = newPassengerCount;
+      }
+      
+      // Ensure selectedGroupUsers is initialized
+      if (!trip.selectedGroupUsers) {
+        trip.selectedGroupUsers = [];
+      }
+      
+      // Add all new users to selectedGroupUsers
+      trip.selectedGroupUsers.push(...newUsers);
+      
+      // Increment passenger count
+      trip.passengerCount = (trip.passengerCount || 0) + newUsers.length;
+      
+      // Save the trip
+      const updatedTrip = await transactionalEntityManager.save(Trip, trip);
+      
+      try {
+        // Get all passengers for notification
+        const passengers = await this.getPassengersByTripId(trip.id);
+        
+        // Get the updated trip with relations for response
+        const savedTrip = await transactionalEntityManager.findOne(Trip, {
+          where: { id: trip.id },
+          relations: [
+            'selectedGroupUsers',
+            'requester',
+            'vehicle',
+            'location'
+          ]
+        });
+
+        // Publish TRIP.PASSENGERS_ADDED event
+        try {
+          await this.eventBus.publish('TRIP', 'PASSENGERS_ADDED', {
+            tripId: trip.id,
+            userId: user.userId,
+            userName: userEntity.displayname,
+            userRole: user.role,
+            requesterId: trip.requester?.id || null,
+            addedCount: newUsers.length,
+            skippedCount: usersAlreadyInTrip.length,
+            newPassengers: newUsers || [],
+          });
+        } catch (e) {
+          console.error('Failed to send passengers added notification', e);
+        }
+
+        // Prepare response data
+        const responseData = {
+          tripId: trip.id,
+          addedCount: newUsers.length,
+          skippedCount: usersAlreadyInTrip.length,
+          skippedUserIds: usersAlreadyInTrip,
+          addedUsers: newUsers.map(u => ({
+            id: u.id,
+            name: u.displayname,
+            department: u.department?.name
+          })),
+          updatedPassengerCount: trip.passengerCount,
+          passengerType: trip.passengerType,
+          wasConverted: !isCurrentlyGroup,
+          originalPassengerType: originalPassengerTypeValue,
+          availableSeats: trip.vehicle ? 
+            (trip.vehicle.seatingCapacity - trip.passengerCount - 1) : 
+            null,
+          allPassengers: passengers.map(p => ({
+            id: p.id,
+            name: p.displayName || p.displayname,
+            type: p.type || 'registered'
+          })),
+          vehicle: savedTrip?.vehicle ? {
+            model: savedTrip.vehicle.model,
+            regNo: savedTrip.vehicle.regNo,
+            seatingCapacity: savedTrip.vehicle.seatingCapacity
+          } : null,
+          startLocation: savedTrip?.location?.startAddress,
+          endLocation: savedTrip?.location?.endAddress,
+          startDate: savedTrip?.startDate,
+          startTime: savedTrip?.startTime
+        };
+
+        const message = usersAlreadyInTrip.length > 0
+          ? `Successfully added ${newUsers.length} passenger${newUsers.length !== 1 ? 's' : ''}. ${usersAlreadyInTrip.length} user${usersAlreadyInTrip.length !== 1 ? 's were' : ' was'} already in the trip.`
+          : `Successfully added ${newUsers.length} passenger${newUsers.length !== 1 ? 's' : ''} to the trip.`;
+
+        return this.responseService.success(
+          !isCurrentlyGroup 
+            ? `Trip was converted from ${originalPassengerTypeValue} to GROUP. ${message}`
+            : message,
+          responseData,
+          200
+        );
+        
+      } catch (e) {
+        console.error('Failed to send passenger added notification', e);
+        
+        // Still return success even if notification fails
+        const message = usersAlreadyInTrip.length > 0
+          ? `Successfully added ${newUsers.length} passenger${newUsers.length !== 1 ? 's' : ''}. ${usersAlreadyInTrip.length} user${usersAlreadyInTrip.length !== 1 ? 's were' : ' was'} already in the trip.`
+          : `Successfully added ${newUsers.length} passenger${newUsers.length !== 1 ? 's' : ''} to the trip.`;
+
+        return this.responseService.success(
+          !isCurrentlyGroup 
+            ? `Trip was converted from ${originalPassengerTypeValue} to GROUP. ${message}`
+            : message,
+          {
+            tripId: trip.id,
+            addedCount: newUsers.length,
+            skippedCount: usersAlreadyInTrip.length,
+            updatedPassengerCount: trip.passengerCount,
+            passengerType: trip.passengerType,
+            wasConverted: !isCurrentlyGroup,
+            originalPassengerType: originalPassengerTypeValue
+          },
+          200
+        );
+      }
+    });
+  }
+
+  /**
+   * Helper method to check if a user is already in the trip
+   */
+  private async isUserInTrip(trip: Trip, userId: number): Promise<boolean> {
+    // Check if user is the requester
+    if (trip.requester && trip.requester.id === userId) {
+      return true;
+    }
+
+    // Check selectedIndividual
+    if (trip.selectedIndividual && trip.selectedIndividual.id === userId) {
+      return true;
+    }
+
+    // Check selectedGroupUsers
+    if (trip.selectedGroupUsers && trip.selectedGroupUsers.length > 0) {
+      const isInGroup = trip.selectedGroupUsers.some(user => user && user.id === userId);
+      if (isInGroup) {
+        return true;
+      }
+    }
+
+    // Check selectedOthers (by ID if stored as number)
+    if (trip.selectedOthers && trip.selectedOthers.length > 0) {
+      const isInOthers = trip.selectedOthers.some(
+        other => other && parseInt(other.id) === userId
+      );
+      if (isInOthers) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Helper method to get current passenger count
+   */
+  private async getCurrentPassengerCount(trip: Trip): Promise<number> {
+    let count = 0;
+
+    // Requester (if includeMeInGroup is true or if it's OWN type)
+    if (trip.requester && 
+        (trip.includeMeInGroup || trip.passengerType === PassengerType.OWN)) {
+      count++;
+    }
+
+    // Selected individual
+    if (trip.selectedIndividual) {
+      count++;
+    }
+
+    // Selected group users
+    if (trip.selectedGroupUsers) {
+      count += trip.selectedGroupUsers.filter(u => u && u.id).length;
+    }
+
+    // Selected others
+    if (trip.selectedOthers) {
+      count += trip.selectedOthers.filter(o => o && o.id).length;
+    }
+
+    return count;
+  }
+
   /*
   private async restoreVehicleSeats(vehicleId: number, passengerCount: number, transactionalEntityManager) {
     if (!vehicleId) return;
@@ -2811,15 +3398,22 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       .leftJoinAndSelect('trip.requester', 'requester')
       .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
       .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
-      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
-
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers')
+      .leftJoinAndSelect('trip.selectedIndividual', 'selectedIndividual'); 
       
     //if(user.role != 'sysadmin' 
     //  && user.role != 'supervisor'
     //) {
-      queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
+    //  queryBuilder.andWhere('trip.requester.id = :id', { id: user.userId });
     //}
     
+    queryBuilder.where(
+      new Brackets(qb => {
+        qb.where('trip.requester.id = :id', { id: user.userId })
+          .orWhere('selectedGroupUsers.id = :id', { id: user.userId })
+          .orWhere('selectedIndividual.id = :id', { id: user.userId });
+      })
+    );
 
     // Apply time filter
     const now = new Date();
@@ -2854,6 +3448,228 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     // Apply status filter if provided
     if (requestDto.statusFilter) {
       queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+    }
+
+    // Apply search filter if provided
+    if (requestDto.search && requestDto.search.trim() !== '') {
+      const searchTerm = `%${requestDto.search.trim()}%`;
+      const cleanSearch = requestDto.search.trim();
+      
+      // Check if search term starts with # for ID search
+      if (cleanSearch.startsWith('#')) {
+        // Extract the part after #
+        const idSearch = cleanSearch.substring(1).trim();
+        
+        // If it's a number or partial number
+        if (/^\d+$/.test(idSearch)) {
+          // It's a numeric ID search - use partial matching on ID
+          queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+            idSearch: `%${idSearch}%` 
+          });
+        } else {
+          // # followed by non-numeric - treat as regular search on other fields
+          queryBuilder.andWhere(
+            new Brackets(qb => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            })
+          );
+        }
+      } else {
+        // Regular search across multiple fields
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+              .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+              .orWhere('requester.displayname LIKE :searchTerm')
+              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              .orWhere('vehicle.regNo LIKE :searchTerm')
+              .orWhere('vehicle.model LIKE :searchTerm');
+          })
+        );
+      }
+    }
+
+    // Calculate pagination
+    const skip = (requestDto.page - 1) * requestDto.limit;
+    
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting based on sortField and sortOrder
+    if (requestDto.sortField === SortField.ID) {
+      // Sort by trip ID
+      queryBuilder.orderBy('trip.id', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+    } else {
+      // Sort by start date and time (default)
+      // For startTime, we need to consider both date and time
+      queryBuilder
+        .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+    }
+    
+    // Get paginated results
+    const trips = await queryBuilder
+      .skip(skip)
+      .take(requestDto.limit)
+      .getMany();
+
+    // Transform trips to TripCardDto format
+    const tripCards = await Promise.all(
+      trips.map(async (trip) => {
+        const tripType = await this.determineTripType(trip, user.userId);
+        
+
+        let instanceCount = 0;
+        let instanceIds: number[] | null = null;
+
+        // If this is a master scheduled trip (not an instance itself), fetch its instances
+        if (trip.isScheduled && !trip.isInstance) {
+          // Fetch all instances for this master trip
+          const instances = await this.tripRepo.find({
+            where: {
+              masterTripId: trip.id,
+              isInstance: true
+            },
+            select: ['id'] // Only need IDs
+          });
+          
+          instanceCount = instances.length;
+          instanceIds = instances.map(instance => instance.id);
+        } 
+        // If this is an instance trip, we might want to find its master and other instances
+        else if (trip.isInstance && trip.masterTripId) {
+          // Get the master trip and all its instances
+          const masterTripId = trip.masterTripId;
+          
+          // Get all instances including this one
+          const allInstances = await this.tripRepo.find({
+            where: {
+              masterTripId: masterTripId,
+              isInstance: true
+            },
+            select: ['id']
+          });
+          
+          instanceCount = allInstances.length;
+          instanceIds = allInstances.map(instance => instance.id);
+          
+          // Also get the master trip ID for reference
+          const masterTrip = await this.tripRepo.findOne({
+            where: { id: masterTripId },
+            select: ['id', 'isScheduled']
+          });
+        }
+
+        return {
+          id: trip.id,
+          requesterName: trip.requester?.displayname,
+          vehicleModel: trip.vehicle?.model || 'Unknown',
+          vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+          status: trip.status,
+          date: this.formatDateForDB(trip.startDate.toString()),
+          time: trip.startTime.substring(0, 5), // Format to HH:MM
+          tripUserType: tripType,
+          driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+          startLocation: trip.location?.startAddress,
+          endLocation: trip.location?.endAddress,
+
+          // Scheduled trip fields from entity
+          isScheduled: trip.isScheduled ?? false,
+          isInstance: trip.isInstance ?? false,
+          masterTripId: trip.masterTripId,
+          instanceDate: trip.instanceDate,
+          
+          // Calculated instance data
+          instanceCount: instanceCount,
+          instanceIds: instanceIds,
+          
+          // Other schedule fields
+          repetition: trip.repetition,
+          validTillDate: trip.validTillDate,
+          includeWeekends: trip.includeWeekends ?? false,
+          repeatAfterDays: trip.repeatAfterDays
+        };
+      })
+    );
+
+    const hasMore = skip + trips.length < total;
+
+    return {
+      success: true,
+      data: {
+        trips: tripCards,
+        total,
+        page: requestDto.page,
+        limit: requestDto.limit,
+        hasMore,
+      },
+      statusCode: 200,
+    };
+  }
+
+  /*
+  async getAllTrips(user: any, requestDto: TripListRequestDto) {
+
+    // Create base query builder
+    const queryBuilder = this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.vehicle', 'vehicle')
+      .leftJoinAndSelect('trip.location', 'location')
+      .leftJoinAndSelect('trip.requester', 'requester')
+      .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+      .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+    // Apply time filter
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
+
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    switch (requestDto.timeFilter) {
+      case 'today':
+        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
+          today: this.formatDateForDB(now.toISOString()) 
+        });
+        break;
+      case 'week':
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        break;
+      case 'month':
+        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      case 'all':
+      default:
+        // No date filter
+        break;
+    }
+
+    // Apply status filter if provided
+    if (requestDto.statusFilter) {
+      if (requestDto.statusFilter === 'scheduled') {
+        queryBuilder.andWhere(
+          '(trip.isScheduled = :isScheduled OR trip.isInstance = :isInstance)', 
+          { 
+            isScheduled: true,
+            isInstance: true 
+          }
+        );
+      } else {
+        queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
+      }
     }
 
     // Calculate pagination
@@ -2963,160 +3779,262 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       statusCode: 200,
     };
   }
-
+  */
   async getAllTrips(user: any, requestDto: TripListRequestDto) {
+    try {
+        // Create base query builder with necessary joins
+        const queryBuilder = this.tripRepo
+          .createQueryBuilder('trip')
+          .leftJoinAndSelect('trip.vehicle', 'vehicle')
+          .leftJoinAndSelect('trip.location', 'location')
+          .leftJoinAndSelect('trip.requester', 'requester')
+          .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+          .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+          .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
-    // Create base query builder
-    const queryBuilder = this.tripRepo
-      .createQueryBuilder('trip')
-      .leftJoinAndSelect('trip.vehicle', 'vehicle')
-      .leftJoinAndSelect('trip.location', 'location')
-      .leftJoinAndSelect('trip.requester', 'requester')
-      .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
-      .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
-      .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
-
-    // Apply time filter
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfToday = new Date(startOfToday);
-    endOfToday.setDate(endOfToday.getDate() + 1); // Next day
-
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    switch (requestDto.timeFilter) {
-      case 'today':
-        //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
-        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
-          today: this.formatDateForDB(now.toISOString()) 
-        });
-        break;
-      case 'week':
-        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
-        break;
-      case 'month':
-        queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
-        break;
-      case 'all':
-      default:
-        // No date filter
-        break;
-    }
-
-    // Apply status filter if provided
-    if (requestDto.statusFilter) {
-      queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
-    }
-
-    // Calculate pagination
-    const skip = (requestDto.page - 1) * requestDto.limit;
-    
-    // Get total count
-    const total = await queryBuilder.getCount();
-    
-    // Get paginated results
-    const trips = await queryBuilder
-      .orderBy('trip.startDate', 'DESC')
-      .addOrderBy('trip.startTime', 'DESC')
-      .skip(skip)
-      .take(requestDto.limit)
-      .getMany();
-
-    // Transform trips to TripCardDto format
-    const tripCards = await Promise.all(
-      trips.map(async (trip) => {
-        const tripType = await this.determineTripType(trip, user.userId);
+        // Apply time filter
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
         
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        let instanceCount = 0;
-        let instanceIds: number[] | null = null;
-
-        // If this is a master scheduled trip (not an instance itself), fetch its instances
-        if (trip.isScheduled && !trip.isInstance) {
-          // Fetch all instances for this master trip
-          const instances = await this.tripRepo.find({
-            where: {
-              masterTripId: trip.id,
-              isInstance: true
-            },
-            select: ['id'] // Only need IDs
-          });
-          
-          instanceCount = instances.length;
-          instanceIds = instances.map(instance => instance.id);
-        } 
-        // If this is an instance trip, we might want to find its master and other instances
-        else if (trip.isInstance && trip.masterTripId) {
-          // Get the master trip and all its instances
-          const masterTripId = trip.masterTripId;
-          
-          // Get all instances including this one
-          const allInstances = await this.tripRepo.find({
-            where: {
-              masterTripId: masterTripId,
-              isInstance: true
-            },
-            select: ['id']
-          });
-          
-          instanceCount = allInstances.length;
-          instanceIds = allInstances.map(instance => instance.id);
-          
-          // Also get the master trip ID for reference
-          const masterTrip = await this.tripRepo.findOne({
-            where: { id: masterTripId },
-            select: ['id', 'isScheduled']
-          });
+        switch (requestDto.timeFilter) {
+          case 'today':
+            queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
+              today: this.formatDateForDB(now.toISOString()) 
+            });
+            break;
+          case 'week':
+            queryBuilder.andWhere('trip.startDate >= :startDate', { 
+              startDate: this.formatDateForDB(startOfWeek.toISOString()) 
+            });
+            break;
+          case 'month':
+            queryBuilder.andWhere('trip.startDate >= :startDate', { 
+              startDate: this.formatDateForDB(startOfMonth.toISOString()) 
+            });
+            break;
+          case 'all':
+          default:
+            // No date filter
+            break;
         }
 
+        // Apply status filter if provided
+        if (requestDto.statusFilter) {
+          if (requestDto.statusFilter === 'scheduled') {
+            queryBuilder.andWhere(
+              '(trip.isScheduled = :isScheduled OR trip.isInstance = :isInstance)', 
+              { 
+                isScheduled: true,
+                isInstance: true 
+              }
+            );
+          } else if (requestDto.statusFilter === 'normal') {
+            queryBuilder.andWhere(
+              '(trip.isScheduled = :isScheduled AND trip.isInstance = :isInstance)', 
+              { 
+                isScheduled: false,
+                isInstance: false 
+              }
+            );
+          } else {
+            queryBuilder.andWhere('trip.status = :status', { 
+              status: requestDto.statusFilter 
+            });
+          }
+        }
+
+        // Apply search filter if provided
+        if (requestDto.search && requestDto.search.trim() !== '') {
+          const searchTerm = `%${requestDto.search.trim()}%`;
+          const cleanSearch = requestDto.search.trim();
+          
+          // Check if search term starts with # for ID search
+          if (cleanSearch.startsWith('#')) {
+            // Extract the part after #
+            const idSearch = cleanSearch.substring(1).trim();
+            
+            // If it's a number or partial number
+            if (/^\d+$/.test(idSearch)) {
+              // It's a numeric ID search - use partial matching on ID
+              queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+                idSearch: `%${idSearch}%` 
+              });
+            } else {
+              // # followed by non-numeric - treat as regular search on other fields
+              queryBuilder.andWhere(
+                new Brackets(qb => {
+                  qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                    .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                    .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                    .orWhere('requester.displayname LIKE :searchTerm')
+                    .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                    .orWhere('vehicle.regNo LIKE :searchTerm')
+                    .orWhere('vehicle.model LIKE :searchTerm');
+                })
+              );
+            }
+          } else {
+            // Regular search across multiple fields
+            queryBuilder.andWhere(
+              new Brackets(qb => {
+                qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                  .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                  .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                  .orWhere('requester.displayname LIKE :searchTerm')
+                  .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                  .orWhere('vehicle.regNo LIKE :searchTerm')
+                  .orWhere('vehicle.model LIKE :searchTerm');
+              })
+            );
+          }
+        }
+
+        // Calculate pagination
+        const skip = (requestDto.page - 1) * requestDto.limit;
+        
+        // Get total count
+        const total = await queryBuilder.getCount();
+
+        // Apply sorting based on sortField and sortOrder
+        if (requestDto.sortField === SortField.ID) {
+          // Sort by trip ID
+          queryBuilder.orderBy('trip.id', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+        } else {
+          // Sort by start date and time (default)
+          // For startTime, we need to consider both date and time
+          queryBuilder
+            .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+            .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+        }
+        
+        // Get paginated results
+        const trips = await queryBuilder
+          .skip(skip)
+          .take(requestDto.limit)
+          .getMany();
+
+        // Transform trips to TripCardDto format
+        const tripCards = await Promise.all(
+          trips.map(async (trip) => {
+            try {
+              const tripType = await this.determineTripType(trip, user.userId);
+              
+              let instanceCount = 0;
+              let instanceIds: number[] | null = null;
+
+              if (trip.isScheduled && !trip.isInstance) {
+                const instances = await this.tripRepo.find({
+                  where: {
+                    masterTripId: trip.id,
+                    isInstance: true
+                  },
+                  select: ['id']
+                });
+                
+                instanceCount = instances.length;
+                instanceIds = instances.map(instance => instance.id);
+              } 
+              else if (trip.isInstance && trip.masterTripId) {
+                const allInstances = await this.tripRepo.find({
+                  where: {
+                    masterTripId: trip.masterTripId,
+                    isInstance: true
+                  },
+                  select: ['id']
+                });
+                
+                instanceCount = allInstances.length;
+                instanceIds = allInstances.map(instance => instance.id);
+              }
+
+              return {
+                id: trip.id,
+                requesterName: trip.requester?.displayname || 'Unknown',
+                vehicleModel: trip.vehicle?.model || 'Unknown',
+                vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+                status: trip.status,
+                date: this.formatDateForDB(trip.startDate.toString()),
+                time: trip.startTime?.substring(0, 5) || '00:00',
+                tripUserType: tripType,
+                driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+                startLocation: trip.location?.startAddress,
+                endLocation: trip.location?.endAddress,
+                isScheduled: trip.isScheduled ?? false,
+                isInstance: trip.isInstance ?? false,
+                masterTripId: trip.masterTripId,
+                instanceDate: trip.instanceDate,
+                instanceCount: instanceCount,
+                instanceIds: instanceIds,
+                repetition: trip.repetition,
+                validTillDate: trip.validTillDate,
+                includeWeekends: trip.includeWeekends ?? false,
+                repeatAfterDays: trip.repeatAfterDays
+              };
+            } catch (error) {
+              console.error(`Error processing trip ${trip.id}:`, error);
+              return {
+                id: trip.id,
+                requesterName: 'Error loading',
+                vehicleModel: 'Unknown',
+                vehicleRegNo: 'Unknown',
+                status: trip.status || 'unknown',
+                date: this.formatDateForDB(trip.startDate?.toString() || new Date().toISOString()),
+                time: trip.startTime?.substring(0, 5) || '00:00',
+                tripUserType: 'Unknown',
+                driverName: null,
+                startLocation: null,
+                endLocation: null,
+                isScheduled: false,
+                isInstance: false,
+                masterTripId: null,
+                instanceDate: null,
+                instanceCount: 0,
+                instanceIds: null,
+                repetition: null,
+                validTillDate: null,
+                includeWeekends: false,
+                repeatAfterDays: null
+              };
+            }
+          })
+        );
+
+        const hasMore = skip + trips.length < total;
+
         return {
-          id: trip.id,
-          requesterName: trip.requester?.displayname,
-          vehicleModel: trip.vehicle?.model || 'Unknown',
-          vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
-          status: trip.status,
-          date: this.formatDateForDB(trip.startDate.toString()),
-          time: trip.startTime.substring(0, 5), // Format to HH:MM
-          tripUserType: tripType,
-          driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
-          startLocation: trip.location?.startAddress,
-          endLocation: trip.location?.endAddress,
-
-          // Scheduled trip fields from entity
-          isScheduled: trip.isScheduled ?? false,
-          isInstance: trip.isInstance ?? false,
-          masterTripId: trip.masterTripId,
-          instanceDate: trip.instanceDate,
-          
-          // Calculated instance data
-          instanceCount: instanceCount,
-          instanceIds: instanceIds,
-          
-          // Other schedule fields
-          repetition: trip.repetition,
-          validTillDate: trip.validTillDate,
-          includeWeekends: trip.includeWeekends ?? false,
-          repeatAfterDays: trip.repeatAfterDays
+          success: true,
+          data: {
+            trips: tripCards,
+            total,
+            page: requestDto.page,
+            limit: requestDto.limit,
+            hasMore,
+            sortField: requestDto.sortField,
+            sortOrder: requestDto.sortOrder,
+          },
+          statusCode: 200,
         };
-      })
-    );
 
-    const hasMore = skip + trips.length < total;
-
-    return {
-      success: true,
-      data: {
-        trips: tripCards,
-        total,
-        page: requestDto.page,
-        limit: requestDto.limit,
-        hasMore,
-      },
-      statusCode: 200,
-    };
+    } catch (error) {
+      console.error('Error in getAllTrips:', error);
+      
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch trips',
+        statusCode: 500,
+        data: {
+          trips: [],
+          total: 0,
+          page: requestDto.page || 1,
+          limit: requestDto.limit || 10,
+          hasMore: false,
+        }
+      };
+    }
   }
 
   async getSupervisorTrips(user: any, requestDto: TripListRequestDto) {
@@ -3173,16 +4091,72 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       queryBuilder.andWhere('trip.status = :status', { status: requestDto.statusFilter });
     }
 
+    // Apply search filter if provided
+    if (requestDto.search && requestDto.search.trim() !== '') {
+      const searchTerm = `%${requestDto.search.trim()}%`;
+      const cleanSearch = requestDto.search.trim();
+      
+      // Check if search term starts with # for ID search
+      if (cleanSearch.startsWith('#')) {
+        // Extract the part after #
+        const idSearch = cleanSearch.substring(1).trim();
+        
+        // If it's a number or partial number
+        if (/^\d+$/.test(idSearch)) {
+          // It's a numeric ID search - use partial matching on ID
+          queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+            idSearch: `%${idSearch}%` 
+          });
+        } else {
+          // # followed by non-numeric - treat as regular search on other fields
+          queryBuilder.andWhere(
+            new Brackets(qb => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            })
+          );
+        }
+      } else {
+        // Regular search across multiple fields
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+              .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+              .orWhere('requester.displayname LIKE :searchTerm')
+              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              .orWhere('vehicle.regNo LIKE :searchTerm')
+              .orWhere('vehicle.model LIKE :searchTerm');
+          })
+        );
+      }
+    }
+
     // Calculate pagination
     const skip = (requestDto.page - 1) * requestDto.limit;
     
     // Get total count
     const total = await queryBuilder.getCount();
+
+    // Apply sorting based on sortField and sortOrder
+    if (requestDto.sortField === SortField.ID) {
+      // Sort by trip ID
+      queryBuilder.orderBy('trip.id', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+    } else {
+      // Sort by start date and time (default)
+      // For startTime, we need to consider both date and time
+      queryBuilder
+        .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+    }
     
     // Get paginated results
     const trips = await queryBuilder
-      .orderBy('trip.startDate', 'DESC')
-      .addOrderBy('trip.startTime', 'DESC')
       .skip(skip)
       .take(requestDto.limit)
       .getMany();
@@ -3950,12 +4924,68 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       }
     }
 
+    // Apply search filter if provided
+    if (filterDto.search && filterDto.search.trim() !== '') {
+      const searchTerm = `%${filterDto.search.trim()}%`;
+      const cleanSearch = filterDto.search.trim();
+      
+      // Check if search term starts with # for ID search
+      if (cleanSearch.startsWith('#')) {
+        // Extract the part after #
+        const idSearch = cleanSearch.substring(1).trim();
+        
+        // If it's a number or partial number
+        if (/^\d+$/.test(idSearch)) {
+          // It's a numeric ID search - use partial matching on ID
+          queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+            idSearch: `%${idSearch}%` 
+          });
+        } else {
+          // # followed by non-numeric - treat as regular search on other fields
+          queryBuilder.andWhere(
+            new Brackets(qb => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            })
+          );
+        }
+      } else {
+        // Regular search across multiple fields
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+              .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+              .orWhere('requester.displayname LIKE :searchTerm')
+              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              .orWhere('vehicle.regNo LIKE :searchTerm')
+              .orWhere('vehicle.model LIKE :searchTerm');
+          })
+        );
+      }
+    }
+
     // Get total count
     const total = await queryBuilder.getCount();
 
+    // Apply sorting based on sortField and sortOrder
+    if (filterDto.sortField === SortField.ID) {
+      // Sort by trip ID
+      queryBuilder.orderBy('trip.id', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+    } else {
+      // Sort by start date and time (default)
+      // For startTime, we need to consider both date and time
+      queryBuilder
+        .orderBy('approval.createdAt', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+    }
+    
     // Get paginated results
     const approvals = await queryBuilder
-      .orderBy('approval.createdAt', 'DESC')
       .skip(skip)
       .take(limit)
       .getMany();
@@ -4258,6 +5288,31 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       throw new NotFoundException(this.responseService.error('Trip not found', 404));
     }
 
+    // Calculate available seat count
+    let availableSeatCount = 0;
+    if (trip.vehicle) {
+      // Start with vehicle's seating capacity
+      const vehicleCapacity = trip.vehicle.seatingCapacity;
+      
+      // Subtract current trip's passenger count
+      let totalPassengers = trip.passengerCount || 0;
+      
+      // Subtract passenger counts from conflicting trips
+      if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+        for (const conflictTrip of trip.conflictingTrips) {
+          // Only count passengers from active conflicts (not cancelled/rejected)
+          if (conflictTrip.status !== TripStatus.CANCELED && 
+              conflictTrip.status !== TripStatus.REJECTED &&
+              conflictTrip.status !== TripStatus.DRAFT) {
+            totalPassengers += conflictTrip.passengerCount || 0;
+          }
+        }
+      }
+      
+      // Calculate available seats (ensure not negative)
+      availableSeatCount = Math.max(0, vehicleCapacity - totalPassengers - 1);
+    }
+
     // Get instance data for scheduled trips
     let instanceCount = 0;
     let instanceIds: { id: number, startDate: Date }[] = [];
@@ -4319,6 +5374,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       tripType: trip.tripType, // 'normal', 'fixed_rate', or 'safety_approval'
       fixedRate: trip.fixedRate, // number or null
       reason: trip.reason, 
+      availableSeatCount: availableSeatCount,
       
       // Schedule details
       schedule: {
@@ -5230,11 +6286,66 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         });
     }
 
+    // Apply search filter if provided
+    if (filterDto.search && filterDto.search.trim() !== '') {
+      const searchTerm = `%${filterDto.search.trim()}%`;
+      const cleanSearch = filterDto.search.trim();
+      
+      // Check if search term starts with # for ID search
+      if (cleanSearch.startsWith('#')) {
+        // Extract the part after #
+        const idSearch = cleanSearch.substring(1).trim();
+        
+        // If it's a number or partial number
+        if (/^\d+$/.test(idSearch)) {
+          // It's a numeric ID search - use partial matching on ID
+          baseQueryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+            idSearch: `%${idSearch}%` 
+          });
+        } else {
+          // # followed by non-numeric - treat as regular search on other fields
+          baseQueryBuilder.andWhere(
+            new Brackets(qb => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            })
+          );
+        }
+      } else {
+        // Regular search across multiple fields
+        baseQueryBuilder.andWhere(
+          new Brackets(qb => {
+            qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+              .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+              .orWhere('requester.displayname LIKE :searchTerm')
+              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              .orWhere('vehicle.regNo LIKE :searchTerm')
+              .orWhere('vehicle.model LIKE :searchTerm');
+          })
+        );
+      }
+    }
+
+    // Apply sorting based on sortField and sortOrder
+    if (filterDto.sortField === SortField.ID) {
+      // Sort by trip ID
+      baseQueryBuilder.orderBy('trip.id', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+    } else {
+      // Sort by start date and time (default)
+      // For startTime, we need to consider both date and time
+      baseQueryBuilder
+        .orderBy('trip.startDate', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        .addOrderBy('trip.startTime', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+    }
+
     // Get all trips first
-    const allTrips = await baseQueryBuilder
-      .orderBy('trip.startDate', 'ASC')
-      .addOrderBy('trip.startTime', 'ASC')
-      .getMany();
+    const allTrips = await baseQueryBuilder.getMany();
 
     // Filter to get only main trips (earliest in each connected group)
     const mainTrips = await this.filterMainTrips(allTrips);
@@ -6501,6 +7612,64 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
     });
   }
 
+  // Apply search filter if provided
+    if (requestDto.search && requestDto.search.trim() !== '') {
+      const searchTerm = `%${requestDto.search.trim()}%`;
+      const cleanSearch = requestDto.search.trim();
+      
+      // Check if search term starts with # for ID search
+      if (cleanSearch.startsWith('#')) {
+        // Extract the part after #
+        const idSearch = cleanSearch.substring(1).trim();
+        
+        // If it's a number or partial number
+        if (/^\d+$/.test(idSearch)) {
+          // It's a numeric ID search - use partial matching on ID
+          queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', { 
+            idSearch: `%${idSearch}%` 
+          });
+        } else {
+          // # followed by non-numeric - treat as regular search on other fields
+          queryBuilder.andWhere(
+            new Brackets(qb => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            })
+          );
+        }
+      } else {
+        // Regular search across multiple fields
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+              .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+              .orWhere('requester.displayname LIKE :searchTerm')
+              .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+              .orWhere('vehicle.regNo LIKE :searchTerm')
+              .orWhere('vehicle.model LIKE :searchTerm');
+          })
+        );
+      }
+    }
+
+  // Apply sorting based on sortField and sortOrder
+    if (requestDto.sortField === SortField.ID) {
+      // Sort by trip ID
+      queryBuilder.orderBy('trip.id', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+    } else {
+      // Sort by start date and time (default)
+      // For startTime, we need to consider both date and time
+      queryBuilder
+        .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+    }
+
   // Calculate pagination
   const page = requestDto.page || 1;
   const limit = requestDto.limit || 10;
@@ -6511,8 +7680,6 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
 
   // Get paginated results
   const trips = await queryBuilder
-    .orderBy('trip.startDate', 'ASC')
-    .addOrderBy('trip.startTime', 'ASC')
     .skip(skip)
     .take(limit)
     .getMany();

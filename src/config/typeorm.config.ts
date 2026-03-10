@@ -33,4 +33,10 @@ export default new DataSource({
   migrationsTableName: 'migrations',
   migrationsRun: false,
   synchronize: false,
+
+  // ✅ Add timezone in extra configuration
+  extra: {
+    timezone: 'Asia/Colombo',
+  },
+  
 });

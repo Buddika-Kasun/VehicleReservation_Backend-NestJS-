@@ -8343,7 +8343,7 @@ async startTrip(tripId: number, userId: number): Promise<any> {
         400
       )
     );
-  } else if (!isEarly && timeDiffMinutes > 60) {
+  } else if (!isEarly && timeDiffMinutes > 120) {
     const minutesLate = Math.abs(timeDiffMinutes);
 
     return new BadRequestException(

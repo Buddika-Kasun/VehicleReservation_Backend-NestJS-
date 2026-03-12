@@ -25,6 +25,7 @@ import { HealthService } from './modules/health/health.service';
 import { setupGracefulShutdown } from './common/utils/graceful-shutdown';
 import { Request, Response } from 'express';
 import { red, green, yellow, blue, magenta, cyan, white, gray, bold, underline } from 'colorette';
+import { DataSource } from 'typeorm';
 
 // ==================== CONSTANTS & VISUALS ====================
 const APP_LOGO = `
@@ -163,64 +164,8 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
     if (!dbHealth.connected) throw new Error('Database connection failed');
     console.log(green(`${ICONS.CHECK} Database verified ${gray(`(${dbHealth.latency}ms)`)}`));
 
-    // NEW: Set and verify database timezone
-    console.log(blue(`${ICONS.CLOCK} Setting database timezone...`));
-    try {
-      // Get the database connection from TypeORM
-      const dataSource = app.get('DataSource'); // or however you access your DataSource
-
-      // Set timezone for this session
-      await dataSource.query(`SET timezone TO 'Asia/Colombo'`);
-
-      // Verify timezone is set correctly
-      const timezoneResult = await dataSource.query(`SHOW timezone`);
-      const currentTimezone = timezoneResult[0]?.TimeZone || timezoneResult[0]?.timezone;
-
-      if (currentTimezone === 'Asia/Colombo') {
-        console.log(green(`${ICONS.CHECK} Database timezone set to: ${cyan(currentTimezone)}`));
-      } else {
-        console.log(
-          yellow(
-            `${ICONS.WARNING} Database timezone is ${yellow(
-              currentTimezone,
-            )}, expected Asia/Colombo`,
-          ),
-        );
-
-        // Try to set at database level (requires superuser)
-        try {
-          const dbName = configService.get('DB_DATABASE');
-          await dataSource.query(`ALTER DATABASE "${dbName}" SET timezone TO 'Asia/Colombo'`);
-          console.log(green(`${ICONS.CHECK} Database-level timezone configured`));
-        } catch (alterError) {
-          console.log(
-            yellow(
-              `${ICONS.WARNING} Could not set database-level timezone (may require superuser)`,
-            ),
-          );
-        }
-      }
-
-      // Test timezone with a query
-      const timeTest = await dataSource.query(`
-        SELECT 
-          NOW() as current_time,
-          NOW() AT TIME ZONE 'UTC' as utc_time,
-          EXTRACT(TIMEZONE FROM NOW()) as tz_offset
-      `);
-
-      const currentTime = timeTest[0]?.current_time;
-      const utcTime = timeTest[0]?.utc_time;
-      const tzOffset = timeTest[0]?.tz_offset;
-
-      console.log(gray(`  ├─ DB Time: ${cyan(currentTime)}`));
-      console.log(gray(`  ├─ UTC Time: ${gray(utcTime)}`));
-      console.log(gray(`  └─ Offset: ${cyan(tzOffset)} minutes (${cyan(tzOffset / 60)} hours)`));
-    } catch (timezoneError: any) {
-      console.log(
-        yellow(`${ICONS.WARNING} Could not configure timezone: ${timezoneError.message}`),
-      );
-    }
+    // ✅ NEW: Verify and fix database timezone
+    await verifyAndFixDatabaseTimezone(app, configService);
 
     // Redis Check
     console.log(blue(`${ICONS.REDIS} Checking redis configuration...`));
@@ -250,6 +195,54 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
   } catch (error: any) {
     console.log(red(`${ICONS.ERROR} Startup validation failed: ${error.message}`));
     process.exit(1);
+  }
+}
+
+async function verifyAndFixDatabaseTimezone(app: INestApplication, configService: ConfigService) {
+  console.log(blue(`${ICONS.CLOCK} ${bold('Verifying database timezone...')}`));
+
+  try {
+    const dataSource = app.get(DataSource);
+
+    // Check session timezone (what your app uses)
+    const sessionResult = await dataSource.query(`SHOW timezone`);
+    const sessionTimezone = sessionResult[0]?.TimeZone || sessionResult[0]?.timezone;
+
+    // Check server default
+    const serverResult = await dataSource.query(`
+      SELECT name, setting, source 
+      FROM pg_settings 
+      WHERE name = 'timezone'
+    `);
+
+    console.log(gray(`  ├─ Session timezone: ${cyan(sessionTimezone)} (what your app uses)`));
+    console.log(
+      gray(
+        `  ├─ Server default: ${cyan(serverResult[0]?.setting)} (from ${serverResult[0]?.source})`,
+      ),
+    );
+
+    // Check offset
+    const offsetResult = await dataSource.query(`
+      SELECT 
+        EXTRACT(TIMEZONE FROM NOW()) as offset_minutes,
+        CASE 
+          WHEN EXTRACT(TIMEZONE FROM NOW()) = 330 THEN '✅ Sri Lanka Time'
+          WHEN EXTRACT(TIMEZONE FROM NOW()) = 0 THEN '⚠️ UTC Time'
+          ELSE '❌ Other'
+        END as status
+    `);
+
+    console.log(gray(`  ├─ Current offset: ${cyan(offsetResult[0]?.offset_minutes)} minutes`));
+    console.log(gray(`  └─ Status: ${cyan(offsetResult[0]?.status)}`));
+
+    if (offsetResult[0]?.offset_minutes === 330) {
+      console.log(green(`${ICONS.CHECK} Database session is correctly using Sri Lanka time`));
+    } else {
+      console.log(yellow(`${ICONS.WARNING} Database session is not using Sri Lanka time`));
+    }
+  } catch (error: any) {
+    console.log(yellow(`${ICONS.WARNING} Could not verify timezone: ${error.message}`));
   }
 }
 

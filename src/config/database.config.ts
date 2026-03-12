@@ -10,7 +10,7 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
 
   return {
     type: 'postgres',
-    
+
     ...(process.env.DATABASE_URL
       ? { url: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
       : {
@@ -22,12 +22,8 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
         }),
 
     // SAME AS typeorm.config.ts
-    entities: [
-      path.join(__dirname, '..', '**', '*.entity.{ts,js}'),
-    ],
-    migrations: [
-      path.join(__dirname, '..', 'infra', 'database', 'migrations', '*.{ts,js}')
-    ],
+    entities: [path.join(__dirname, '..', '**', '*.entity.{ts,js}')],
+    migrations: [path.join(__dirname, '..', 'infra', 'database', 'migrations', '*.{ts,js}')],
 
     migrationsTableName: 'migrations',
 
@@ -35,12 +31,13 @@ export const databaseConfig = (): TypeOrmModuleOptions & DataSourceOptions => {
     synchronize: false,
     //logging: !isProd,
     logging: false,
-    
+
     extra: {
       max: 20,
       connectionTimeoutMillis: 10000,
       // ✅ Add timezone here - this passes through to PostgreSQL driver
       timezone: 'Asia/Colombo', // or '+05:30' for Sri Lanka
+      options: '-c timezone=Asia/Colombo',
     },
   };
 };

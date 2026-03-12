@@ -6718,7 +6718,8 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     }
 
     return {
-        mainTrips,
+        //mainTrips,
+        mainTrips: allTrips,
         total,
         allConnectedTripIds
     };

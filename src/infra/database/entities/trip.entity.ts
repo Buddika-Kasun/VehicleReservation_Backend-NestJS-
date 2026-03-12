@@ -12,6 +12,7 @@ import { Feedback } from './feedback.entity';
 import { TripLocation } from './trip-location.entity';
 import { Schedule } from './trip-schedule.entity';
 import { Department } from './department.entity';
+import { SriLankaTimeUtil } from '../../../common/utils/sri-lanka-time.util';
 
 export enum TripStatus {
   DRAFT = 'draft',
@@ -212,5 +213,17 @@ export class Trip {
     nullable: false 
   })
   updatedAt: Date;
+
+  @BeforeInsert()
+  setCreatedAt() {
+    const now = SriLankaTimeUtil.now();
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
+
+  @BeforeUpdate()
+  setUpdatedAt() {
+    this.updatedAt = SriLankaTimeUtil.now();
+  }
 
 }

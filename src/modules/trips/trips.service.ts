@@ -23,6 +23,7 @@ import * as moment from 'moment-timezone';
 import { Department } from 'src/infra/database/entities/department.entity';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { request } from 'http';
+import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
 
 @Injectable()
 export class TripsService {
@@ -1641,6 +1642,8 @@ export class TripsService {
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
       department: department,
+      createdAt: SriLankaTimeUtil.now(),
+      updatedAt: SriLankaTimeUtil.now(),
     });
 
     const savedTrip = await this.tripRepo.save(trip);
@@ -1691,6 +1694,8 @@ export class TripsService {
       repetition: scheduleData.repetition,
       includeWeekends: scheduleData.includeWeekends || false,
       repeatAfterDays: scheduleData.repeatAfterDays,
+      createdAt: SriLankaTimeUtil.now(),
+      updatedAt: SriLankaTimeUtil.now(),
     });
 
     return await this.scheduleRepo.save(schedule);

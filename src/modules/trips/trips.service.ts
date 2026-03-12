@@ -4128,7 +4128,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       case 'today':
         queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
           //today: this.formatDateForDB(now.toISOString())
-          today: SriLankaTimeUtil.now().getDate(),
+          today: SriLankaTimeUtil.now(),
         });
         break;
       case 'week':

@@ -1610,8 +1610,6 @@ export class TripsService {
       returnDateTime = new Date(createTripDto.scheduleData.returnDateTime);
     }
 
-    const now = moment().tz('Asia/Colombo').format();
-
     // Create the master trip
     const trip = this.tripRepo.create({
       ...createTripDto.scheduleData,
@@ -1645,8 +1643,8 @@ export class TripsService {
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
       department: department,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: SriLankaTimeUtil.now(),
+      updatedAt: SriLankaTimeUtil.now(),
     });
 
     const savedTrip = await this.tripRepo.save(trip);

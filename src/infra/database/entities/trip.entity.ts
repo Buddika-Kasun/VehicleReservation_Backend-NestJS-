@@ -12,6 +12,7 @@ import { Feedback } from './feedback.entity';
 import { TripLocation } from './trip-location.entity';
 import { Schedule } from './trip-schedule.entity';
 import { Department } from './department.entity';
+import { SriLankaTimeUtil } from '../../../common/utils/sri-lanka-time.util';
 
 export enum TripStatus {
   DRAFT = 'draft',

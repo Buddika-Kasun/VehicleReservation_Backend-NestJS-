@@ -1609,7 +1609,6 @@ export class TripsService {
       returnDateTime = new Date(createTripDto.scheduleData.returnDateTime);
     }
 
-    const now = SriLankaTimeUtil.now();
 
     // Create the master trip
     const trip = this.tripRepo.create({
@@ -1646,9 +1645,6 @@ export class TripsService {
       department: department,
     });
 
-    trip.createdAt = now;
-    trip.updatedAt = now;
-
     const savedTrip = await this.tripRepo.save(trip);
 
     // Add selected group users
@@ -1684,7 +1680,7 @@ export class TripsService {
       //instanceCount: tripInstances.length,
       //instanceIds: tripInstances.map(inst => inst.id),
       requiresApproval: requiresApproval,
-      timestamp: now,
+      timestamp: savedTrip.createdAt.toISOString(),
       statusCode: 200
     };
   }

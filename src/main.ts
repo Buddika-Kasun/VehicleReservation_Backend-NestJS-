@@ -156,12 +156,71 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
 
   try {
     const healthService = app.get(HealthService);
-    
+
     // Database Check
     console.log(blue(`${ICONS.DATABASE} Checking database connection...`));
     const dbHealth = await healthService.checkDatabase();
     if (!dbHealth.connected) throw new Error('Database connection failed');
     console.log(green(`${ICONS.CHECK} Database verified ${gray(`(${dbHealth.latency}ms)`)}`));
+
+    // NEW: Set and verify database timezone
+    console.log(blue(`${ICONS.CLOCK} Setting database timezone...`));
+    try {
+      // Get the database connection from TypeORM
+      const dataSource = app.get('DataSource'); // or however you access your DataSource
+
+      // Set timezone for this session
+      await dataSource.query(`SET timezone TO 'Asia/Colombo'`);
+
+      // Verify timezone is set correctly
+      const timezoneResult = await dataSource.query(`SHOW timezone`);
+      const currentTimezone = timezoneResult[0]?.TimeZone || timezoneResult[0]?.timezone;
+
+      if (currentTimezone === 'Asia/Colombo') {
+        console.log(green(`${ICONS.CHECK} Database timezone set to: ${cyan(currentTimezone)}`));
+      } else {
+        console.log(
+          yellow(
+            `${ICONS.WARNING} Database timezone is ${yellow(
+              currentTimezone,
+            )}, expected Asia/Colombo`,
+          ),
+        );
+
+        // Try to set at database level (requires superuser)
+        try {
+          const dbName = configService.get('DB_DATABASE');
+          await dataSource.query(`ALTER DATABASE "${dbName}" SET timezone TO 'Asia/Colombo'`);
+          console.log(green(`${ICONS.CHECK} Database-level timezone configured`));
+        } catch (alterError) {
+          console.log(
+            yellow(
+              `${ICONS.WARNING} Could not set database-level timezone (may require superuser)`,
+            ),
+          );
+        }
+      }
+
+      // Test timezone with a query
+      const timeTest = await dataSource.query(`
+        SELECT 
+          NOW() as current_time,
+          NOW() AT TIME ZONE 'UTC' as utc_time,
+          EXTRACT(TIMEZONE FROM NOW()) as tz_offset
+      `);
+
+      const currentTime = timeTest[0]?.current_time;
+      const utcTime = timeTest[0]?.utc_time;
+      const tzOffset = timeTest[0]?.tz_offset;
+
+      console.log(gray(`  ├─ DB Time: ${cyan(currentTime)}`));
+      console.log(gray(`  ├─ UTC Time: ${gray(utcTime)}`));
+      console.log(gray(`  └─ Offset: ${cyan(tzOffset)} minutes (${cyan(tzOffset / 60)} hours)`));
+    } catch (timezoneError: any) {
+      console.log(
+        yellow(`${ICONS.WARNING} Could not configure timezone: ${timezoneError.message}`),
+      );
+    }
 
     // Redis Check
     console.log(blue(`${ICONS.REDIS} Checking redis configuration...`));
@@ -172,12 +231,18 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
 
     // Env Check
     const required = ['JWT_SECRET', 'REDIS_URL'];
-    const missing = required.filter(v => !process.env[v] && !configService.get(v));
+    const missing = required.filter((v) => !process.env[v] && !configService.get(v));
     if (missing.length > 0) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
-    
+
     // Firebase Notice
-    if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PROJECT_ID) {
-      console.log(yellow(`${ICONS.WARNING} FIREBASE env variables missing. Push notifications disabled.`));
+    if (
+      !process.env.FIREBASE_PRIVATE_KEY ||
+      !process.env.FIREBASE_CLIENT_EMAIL ||
+      !process.env.FIREBASE_PROJECT_ID
+    ) {
+      console.log(
+        yellow(`${ICONS.WARNING} FIREBASE env variables missing. Push notifications disabled.`),
+      );
     }
 
     console.log(gray('└───────────────────────────────────────────┘'));

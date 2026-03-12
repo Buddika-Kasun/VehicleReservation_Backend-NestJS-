@@ -1644,9 +1644,10 @@ export class TripsService {
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
       department: department,
-      createdAt: now,
-      updatedAt: now,
     });
+
+    trip.createdAt = now;
+    trip.updatedAt = now;
 
     const savedTrip = await this.tripRepo.save(trip);
 

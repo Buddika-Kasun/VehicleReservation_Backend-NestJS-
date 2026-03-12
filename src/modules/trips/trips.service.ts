@@ -4135,8 +4135,13 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         const todayStart = SriLankaTimeUtil.startOfDay();
         const todayEnd = SriLankaTimeUtil.endOfDay();
 
+        /*
         queryBuilder.andWhere('trip.createdAt BETWEEN :start AND :end', {
           start: todayStart,
+          end: todayEnd,
+        });
+        */
+        queryBuilder.andWhere('trip.createdAt <= :end', {
           end: todayEnd,
         });
         break;
@@ -4993,9 +4998,18 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         break;
       */
       case 'today':
+        /*
         queryBuilder.andWhere('DATE(trip.updatedAt) = DATE(:today)', {
           //today: this.formatDateForDB(now.toISOString())
           today: SriLankaTimeUtil.todayDateStr(),
+        });
+        */
+        const todayStart = SriLankaTimeUtil.startOfDay();
+        const todayEnd = SriLankaTimeUtil.endOfDay();
+
+        queryBuilder.andWhere('trip.updatedAt BETWEEN :start AND :end', {
+          start: todayStart,
+          end: todayEnd,
         });
         break;
       case 'week':

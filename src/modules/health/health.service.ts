@@ -167,7 +167,7 @@ export class HealthService {
       environment: this.configService.get('NODE_ENV', 'development'),
       version: process.env.npm_package_version || '1.0.0',
       timestamp: new Date().toISOString(),
-      slTime: SriLankaTimeUtil.now()
+      slTime: SriLankaTimeUtil.todayDateStr()
     };
   }
 

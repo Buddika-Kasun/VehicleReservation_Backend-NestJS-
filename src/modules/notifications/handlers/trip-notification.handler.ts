@@ -26,6 +26,8 @@ export class TripNotificationHandler implements OnModuleInit {
     this.eventBus.subscribe(EVENTS.TRIP.FINISH, this.handleTripFinished.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.COMPLETE, this.handleTripEndedReading.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.STATUS_CHANGE, this.handleTripStatusChange.bind(this));
+    this.eventBus.subscribe(EVENTS.TRIP.JOIN, this.handleTripPassengerJoin.bind(this));
+    this.eventBus.subscribe(EVENTS.TRIP.PASSENGERS_ADDED, this.handleTripPassengersAdd.bind(this));
     
     this.logger.log('TripNotificationHandler initialized');
   }
@@ -636,5 +638,104 @@ export class TripNotificationHandler implements OnModuleInit {
       priority,
     });
   }  
+
+  private async handleTripPassengerJoin(data: any): Promise<void> {
+    const { 
+      tripId, 
+      userId, 
+      userName, 
+      requesterId, 
+    } = data;
+    
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_PASSENGER_JOINED,
+      userId: String(userId),
+      title: 'Joined the Trip as a Passenger',
+      message: `You have joined trip #${tripId} as a passenger.`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_PASSENGER_JOINED,
+      userId: String(requesterId),
+      title: 'New Passenger Joined Your Trip',
+      message: `${userName} passenger joined your trip #${tripId} as a passenger.`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+
+    const supervisors = await this.userService.getTransportSupervisors();
+    
+    for (const supervisor of supervisors) {
+      await this.notificationsService.create({
+        type: NotificationType.TRIP_PASSENGER_JOINED,
+        userId: String(supervisor.id),
+        title: 'New Passenger Joined Trip',
+        message: `${userName} passenger have joined trip #${tripId} as a passenger.`,
+        data,
+        priority: NotificationPriority.MEDIUM,
+      });
+    }
+
+  }
+
+  private async handleTripPassengersAdd(data: any): Promise<void> {
+    const { 
+      tripId, 
+      userId, 
+      userName, 
+      userRole, 
+      newPassengers,
+      addedCount,
+      skippedCount,
+      requesterId,
+    } = data;
+    
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_PASSENGERS_ADDED,
+      userId: String(userId),
+      title: 'Passengers Added to Trip',
+      message: `${addedCount} passengers have been added to trip #${tripId} by yourself. ${skippedCount > 0 ? `${skippedCount} passengers were skipped due to already being passengers.` : ''}`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_PASSENGER_JOINED,
+      userId: String(requesterId),
+      title: 'New Passengers added to Your Trip',
+      message: `${addedCount} passengers have been added to your trip #${tripId} by ${userName}(${userRole}).`,
+      data,
+      priority: NotificationPriority.MEDIUM,
+    });
+
+    if (newPassengers && Array.isArray(newPassengers)) {
+      for (const passenger of newPassengers) {
+        await this.notificationsService.create({
+          type: NotificationType.TRIP_PASSENGER_JOINED,
+          userId: String(passenger.id),
+          title: 'Added to Trip as a Passenger',
+          message: `You have been added to trip #${tripId} as a passenger by ${userName}(${userRole}).`,
+          data,
+          priority: NotificationPriority.HIGH,
+        });
+      }
+    }
+
+    const supervisors = await this.userService.getTransportSupervisors();
+    
+    for (const supervisor of supervisors) {
+      await this.notificationsService.create({
+        type: NotificationType.TRIP_PASSENGERS_ADDED,
+        userId: String(supervisor.id),
+        title: 'New Passengers Added to Trip',
+        message: `Trip #${tripId} has been updated with new ${addedCount} passengers added by ${userName}(${userRole}).`,
+        data,
+        priority: NotificationPriority.HIGH,
+      });
+    }
+
+  }
 
 }

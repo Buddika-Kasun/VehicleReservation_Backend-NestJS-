@@ -214,16 +214,4 @@ export class Trip {
   })
   updatedAt: Date;
 
-  @BeforeInsert()
-  setCreatedAt() {
-    const now = SriLankaTimeUtil.now();
-    this.createdAt = now;
-    this.updatedAt = now;
-  }
-
-  @BeforeUpdate()
-  setUpdatedAt() {
-    this.updatedAt = SriLankaTimeUtil.now();
-  }
-
 }

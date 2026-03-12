@@ -1684,7 +1684,7 @@ export class TripsService {
       //instanceCount: tripInstances.length,
       //instanceIds: tripInstances.map(inst => inst.id),
       requiresApproval: requiresApproval,
-      timestamp: savedTrip.createdAt.toISOString(),
+      timestamp: now,
       statusCode: 200
     };
   }

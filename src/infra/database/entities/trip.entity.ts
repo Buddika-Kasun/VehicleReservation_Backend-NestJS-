@@ -1,6 +1,8 @@
 import {
   Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn, 
-  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable
+  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable,
+  BeforeInsert,
+  BeforeUpdate
 } from 'typeorm';
 import { User } from './user.entity';
 import { Vehicle } from './vehicle.entity';
@@ -199,13 +201,16 @@ export class Trip {
   @ManyToOne(() => User, { nullable: true })
   secondaryDriver?: User;
 
-  @CreateDateColumn({ 
-    type: 'timestamptz'
+  @Column({ 
+    type: 'timestamp', 
+    nullable: false 
   })
   createdAt: Date;
 
-  @UpdateDateColumn({ 
-    type: 'timestamptz'
+  @Column({ 
+    type: 'timestamp', 
+    nullable: false 
   })
   updatedAt: Date;
+
 }

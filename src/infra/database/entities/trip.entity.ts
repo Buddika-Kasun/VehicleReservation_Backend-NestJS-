@@ -1,8 +1,17 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn, 
-  CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany, JoinTable,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToOne,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+  ManyToMany,
+  JoinTable,
   BeforeInsert,
-  BeforeUpdate
+  BeforeUpdate,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Vehicle } from './vehicle.entity';
@@ -52,17 +61,17 @@ export class Trip {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, user => user.trips)
+  @ManyToOne(() => User, (user) => user.trips)
   requester: User;
 
   @ManyToOne(() => Department, { nullable: true })
   department?: Department;
 
-  @ManyToOne(() => Vehicle, vehicle => vehicle.trips, { nullable: true })
+  @ManyToOne(() => Vehicle, (vehicle) => vehicle.trips, { nullable: true })
   vehicle?: Vehicle;
 
   // Location information
-  @OneToOne(() => TripLocation, location => location.trip, { cascade: true })
+  @OneToOne(() => TripLocation, (location) => location.trip, { cascade: true })
   @JoinColumn()
   location: TripLocation;
 
@@ -105,7 +114,7 @@ export class Trip {
   @JoinTable({
     name: 'trip_selected_group_users',
     joinColumn: { name: 'trip_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' }
+    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' },
   })
   selectedGroupUsers: User[];
 
@@ -143,37 +152,37 @@ export class Trip {
   //endOdometer?: number;
 
   // Relations
-  @OneToOne(() => Approval, approval => approval.trip, { 
+  @OneToOne(() => Approval, (approval) => approval.trip, {
     cascade: true,
-    onDelete: 'CASCADE' 
+    onDelete: 'CASCADE',
   })
   @JoinColumn()
   approval?: Approval;
 
-  @OneToOne(() => OdometerLog, odometerLog => odometerLog.trip, { cascade: true })
+  @OneToOne(() => OdometerLog, (odometerLog) => odometerLog.trip, { cascade: true })
   @JoinColumn()
   odometerLog?: OdometerLog;
 
-  @OneToOne(() => Feedback, feedback => feedback.trip, { cascade: true })
+  @OneToOne(() => Feedback, (feedback) => feedback.trip, { cascade: true })
   @JoinColumn()
   feedback?: Feedback;
 
-  @ManyToMany(() => Trip, trip => trip.linkedTrips, { nullable: true })
+  @ManyToMany(() => Trip, (trip) => trip.linkedTrips, { nullable: true })
   @JoinTable({
     name: 'trip_conflicts',
     joinColumn: { name: 'trip_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'conflict_trip_id', referencedColumnName: 'id' }
+    inverseJoinColumn: { name: 'conflict_trip_id', referencedColumnName: 'id' },
   })
   conflictingTrips?: Trip[];
 
-  @ManyToMany(() => Trip, trip => trip.conflictingTrips)
+  @ManyToMany(() => Trip, (trip) => trip.conflictingTrips)
   linkedTrips?: Trip[];
 
   // NEW
   @Column({ default: false })
   isScheduled: boolean;
 
-  @OneToOne(() => Schedule, schedule => schedule.trip, { cascade: true })
+  @OneToOne(() => Schedule, (schedule) => schedule.trip, { cascade: true })
   @JoinColumn()
   schedule?: Schedule;
 
@@ -202,16 +211,15 @@ export class Trip {
   @ManyToOne(() => User, { nullable: true })
   secondaryDriver?: User;
 
-  @Column({ 
-    type: 'timestamp', 
-    nullable: false 
+  @Column({
+    type: 'timestamp',
+    nullable: false,
   })
   createdAt: Date;
 
-  @Column({ 
-    type: 'timestamp', 
-    nullable: false 
+  @Column({
+    type: 'timestamp',
+    nullable: false,
   })
   updatedAt: Date;
-
 }

@@ -1643,6 +1643,8 @@ export class TripsService {
       cost: parsedFixedRate,
       reason: createTripDto.tripTypeData.reason,
       department: department,
+      createdAt: SriLankaTimeUtil.now(),
+      updatedAt: SriLankaTimeUtil.now(),
     });
 
     const savedTrip = await this.tripRepo.save(trip);
@@ -1680,7 +1682,7 @@ export class TripsService {
       //instanceCount: tripInstances.length,
       //instanceIds: tripInstances.map(inst => inst.id),
       requiresApproval: requiresApproval,
-      timestamp: savedTrip.createdAt.toISOString(),
+      //timestamp: savedTrip.createdAt.toISOString(),
       statusCode: 200
     };
   }
@@ -3424,6 +3426,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     );
 
     // Apply time filter
+    /*
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(startOfToday);
@@ -3433,8 +3436,10 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    */
 
     switch (requestDto.timeFilter) {
+      /*
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
         queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
@@ -3446,6 +3451,27 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         break;
       case 'month':
         queryBuilder.andWhere('trip.startDate >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      */
+      case 'today':
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', {
+          //today: this.formatDateForDB(now.toISOString())
+          today: SriLankaTimeUtil.todayDateStr(),
+        });
+        break;
+      case 'week':
+        const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+        queryBuilder.andWhere('trip.startDate BETWEEN :weekStart AND :weekEnd', {
+          weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+          weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+        });
+        break;
+      case 'month':
+        const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+        queryBuilder.andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
+          monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+          monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
+        });
         break;
       case 'all':
       default:
@@ -3811,17 +3837,22 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         switch (requestDto.timeFilter) {
           case 'today':
             queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', { 
-              today: this.formatDateForDB(now.toISOString()) 
+              //today: this.formatDateForDB(now.toISOString()) 
+              today: SriLankaTimeUtil.todayDateStr(),
             });
             break;
           case 'week':
-            queryBuilder.andWhere('trip.startDate >= :startDate', { 
-              startDate: this.formatDateForDB(startOfWeek.toISOString()) 
+            const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+            queryBuilder.andWhere('trip.startDate BETWEEN :weekStart AND :weekEnd', {
+              weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+              weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
             });
             break;
           case 'month':
-            queryBuilder.andWhere('trip.startDate >= :startDate', { 
-              startDate: this.formatDateForDB(startOfMonth.toISOString()) 
+            const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+            queryBuilder.andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
+              monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+              monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
             });
             break;
           case 'all':
@@ -4065,6 +4096,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     */
 
     // Apply time filter
+    /*
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(startOfToday);
@@ -4074,8 +4106,10 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    */
 
     switch (requestDto.timeFilter) {
+      /*
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
         //queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
@@ -4088,6 +4122,27 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         break;
       case 'month':
         queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        break;
+      */
+      case 'today':
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
+          //today: this.formatDateForDB(now.toISOString())
+          today: SriLankaTimeUtil.todayDateStr(),
+        });
+        break;
+      case 'week':
+        const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+        queryBuilder.andWhere('trip.createdAt BETWEEN :weekStart AND :weekEnd', {
+          weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+          weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+        });
+        break;
+      case 'month':
+        const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+        queryBuilder.andWhere('trip.createdAt BETWEEN :monthStart AND :monthEnd', {
+          monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+          monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
+        });
         break;
       case 'all':
       default:
@@ -4894,6 +4949,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     }
 
     // Apply time filter
+    /*
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(startOfToday);
@@ -4903,19 +4959,46 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    */
 
     switch (filterDto.timeFilter) {
+      /*
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
-        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', { 
-          today: this.formatDateForDB(now.toISOString()) 
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
+          today: this.formatDateForDB(now.toISOString()),
         });
         break;
       case 'week':
-        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfWeek.toISOString()) });
+        queryBuilder.andWhere('trip.createdAt >= :startDate', {
+          startDate: this.formatDateForDB(startOfWeek.toISOString()),
+        });
         break;
       case 'month':
-        queryBuilder.andWhere('trip.createdAt >= :startDate', { startDate: this.formatDateForDB(startOfMonth.toISOString()) });
+        queryBuilder.andWhere('trip.createdAt >= :startDate', {
+          startDate: this.formatDateForDB(startOfMonth.toISOString()),
+        });
+        break;
+      */
+      case 'today':
+        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
+          //today: this.formatDateForDB(now.toISOString())
+          today: SriLankaTimeUtil.todayDateStr(),
+        });
+        break;
+      case 'week':
+        const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+        queryBuilder.andWhere('trip.createdAt BETWEEN :weekStart AND :weekEnd', {
+          weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+          weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+        });
+        break;
+      case 'month':
+        const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+        queryBuilder.andWhere('trip.createdAt BETWEEN :monthStart AND :monthEnd', {
+          monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+          monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
+        });
         break;
       case 'all':
       default:
@@ -6393,12 +6476,14 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         const statusFilter = filterDto.statusFilter;
 
         // Calculate date ranges based on time filter
+        /*
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const startOfWeek = new Date(startOfToday);
         startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
+        */
+       
         // Get main trips with all connected trip IDs
         const mainTripsWithConnections = await this.getMainTripsWithConnections(
             timeFilter, 
@@ -6406,9 +6491,9 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
             filterDto.search,
             filterDto.sortField,
             filterDto.sortOrder,
-            startOfToday,
-            startOfWeek,
-            startOfMonth,
+            //startOfToday,
+            //startOfWeek,
+            //startOfMonth,
             skip,
             limit
         );
@@ -6470,9 +6555,9 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     search: string,
     sortField: SortField,
     sortOrder: SortOrder,
-    startOfToday: Date,
-    startOfWeek: Date,
-    startOfMonth: Date,
+    //startOfToday: Date,
+    //startOfWeek: Date,
+    //startOfMonth: Date,
     skip: number,
     limit: number
 ): Promise<{
@@ -6511,21 +6596,42 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
 
     // Apply time filter
     switch (timeFilter) {
-        case 'today':
-            queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', { 
-                date: this.formatDateForDB(startOfToday.toISOString()) 
-            });
-            break;
-        case 'week':
-            queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', { 
-                startDate: this.formatDateForDB(startOfWeek.toISOString()) 
-            });
-            break;
-        case 'month':
-            queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', { 
-                startDate: this.formatDateForDB(startOfMonth.toISOString()) 
-            });
-            break;
+      /*
+      case 'today':
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+          date: this.formatDateForDB(startOfToday.toISOString()),
+        });
+        break;
+      case 'week':
+        queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', {
+          startDate: this.formatDateForDB(startOfWeek.toISOString()),
+        });
+        break;
+      case 'month':
+        queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', {
+          startDate: this.formatDateForDB(startOfMonth.toISOString()),
+        });
+      */
+      case 'today':
+        queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', {
+          //today: this.formatDateForDB(now.toISOString())
+          today: SriLankaTimeUtil.todayDateStr(),
+        });
+        break;
+      case 'week':
+        const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+        queryBuilder.andWhere('trip.startDate BETWEEN :weekStart AND :weekEnd', {
+          weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+          weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+        });
+        break;
+      case 'month':
+        const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+        queryBuilder.andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
+          monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+          monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
+        });
+        break;
     }
 
     // Apply search filter
@@ -7924,19 +8030,41 @@ async getDriverAssignedTrips(driverId: number, requestDto: any): Promise<any> {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   switch (requestDto.timeFilter) {
+    /*
     case 'today':
-      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', { 
-        date: this.formatDateForDB(startOfToday.toISOString()) 
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+        date: this.formatDateForDB(startOfToday.toISOString()),
       });
       break;
     case 'week':
-      queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', { 
-        startDate: this.formatDateForDB(startOfWeek.toISOString()) 
+      queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', {
+        startDate: this.formatDateForDB(startOfWeek.toISOString()),
       });
       break;
     case 'month':
-      queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', { 
-        startDate: this.formatDateForDB(startOfMonth.toISOString()) 
+      queryBuilder.andWhere('DATE(trip.startDate) >= DATE(:startDate)', {
+        startDate: this.formatDateForDB(startOfMonth.toISOString()),
+      });
+      break;
+    */
+    case 'today':
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', {
+        //today: this.formatDateForDB(now.toISOString())
+        today: SriLankaTimeUtil.todayDateStr(),
+      });
+      break;
+    case 'week':
+      const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+      queryBuilder.andWhere('trip.startDate BETWEEN :weekStart AND :weekEnd', {
+        weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+        weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+      });
+      break;
+    case 'month':
+      const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+      queryBuilder.andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
+        monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+        monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
       });
       break;
     case 'all':

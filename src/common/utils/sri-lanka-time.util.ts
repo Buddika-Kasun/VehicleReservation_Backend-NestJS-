@@ -53,7 +53,7 @@ export class SriLankaTimeUtil {
    */
   static toDBTime(time: string): string {
     if (!time) return '00:00:00';
-    
+
     const parts = time.split(':');
     if (parts.length === 3) return time;
     if (parts.length === 2) return `${time}:00`;
@@ -64,11 +64,7 @@ export class SriLankaTimeUtil {
    * Combine date and time strings into a single Date object in Sri Lanka timezone
    */
   static combineDateTime(dateStr: string, timeStr: string): Date {
-    return moment.tz(
-      `${dateStr} ${timeStr}`,
-      this.DATETIME_FORMAT,
-      this.TIMEZONE
-    ).toDate();
+    return moment.tz(`${dateStr} ${timeStr}`, this.DATETIME_FORMAT, this.TIMEZONE).toDate();
   }
 
   /**
@@ -117,40 +113,27 @@ export class SriLankaTimeUtil {
    * Check if a date is today in Sri Lanka timezone
    */
   static isToday(date: Date | string): boolean {
-    return moment(date).tz(this.TIMEZONE).isSame(
-      moment().tz(this.TIMEZONE),
-      'day'
-    );
+    return moment(date).tz(this.TIMEZONE).isSame(moment().tz(this.TIMEZONE), 'day');
   }
 
   /**
    * Check if a date is in the past in Sri Lanka timezone
    */
   static isPast(date: Date | string): boolean {
-    return moment(date).tz(this.TIMEZONE).isBefore(
-      moment().tz(this.TIMEZONE),
-      'day'
-    );
+    return moment(date).tz(this.TIMEZONE).isBefore(moment().tz(this.TIMEZONE), 'day');
   }
 
   /**
    * Check if a date is in the future in Sri Lanka timezone
    */
   static isFuture(date: Date | string): boolean {
-    return moment(date).tz(this.TIMEZONE).isAfter(
-      moment().tz(this.TIMEZONE),
-      'day'
-    );
+    return moment(date).tz(this.TIMEZONE).isAfter(moment().tz(this.TIMEZONE), 'day');
   }
 
   /**
    * Calculate difference in minutes between two times on same date
    */
-  static timeDiffInMinutes(
-    date: string,
-    time1: string,
-    time2: string
-  ): number {
+  static timeDiffInMinutes(date: string, time1: string, time2: string): number {
     const dt1 = this.combineDateTime(date, time1);
     const dt2 = this.combineDateTime(date, time2);
     return Math.abs(moment(dt2).diff(moment(dt1), 'minutes'));
@@ -159,19 +142,15 @@ export class SriLankaTimeUtil {
   /**
    * Calculate difference in minutes accounting for midnight wrap
    */
-  static timeDiffWithWrap(
-    date: string,
-    time1: string,
-    time2: string
-  ): number {
+  static timeDiffWithWrap(date: string, time1: string, time2: string): number {
     const dt1 = this.combineDateTime(date, time1);
     let dt2 = this.combineDateTime(date, time2);
-    
+
     // If time2 is earlier than time1, assume it's next day
     if (dt2 < dt1) {
       dt2 = moment(dt2).add(1, 'day').toDate();
     }
-    
+
     return moment(dt2).diff(moment(dt1), 'minutes');
   }
 
@@ -185,16 +164,20 @@ export class SriLankaTimeUtil {
   /**
    * Add minutes to a time on a specific date
    */
-  static addMinutes(date: string, time: string, minutes: number): {
+  static addMinutes(
+    date: string,
+    time: string,
+    minutes: number,
+  ): {
     date: string;
     time: string;
   } {
     const dt = this.combineDateTime(date, time);
     const newDt = moment(dt).add(minutes, 'minutes');
-    
+
     return {
       date: newDt.format(this.DATE_FORMAT),
-      time: newDt.format(this.TIME_FORMAT)
+      time: newDt.format(this.TIME_FORMAT),
     };
   }
 
@@ -230,31 +213,31 @@ export class SriLankaTimeUtil {
     endDate: Date;
   } {
     const now = moment().tz(this.TIMEZONE);
-    
+
     switch (filter) {
       case 'today':
         return {
           startDate: now.clone().startOf('day').toDate(),
-          endDate: now.clone().endOf('day').toDate()
+          endDate: now.clone().endOf('day').toDate(),
         };
-        
+
       case 'week':
         return {
           startDate: now.clone().startOf('week').toDate(),
-          endDate: now.clone().endOf('week').toDate()
+          endDate: now.clone().endOf('week').toDate(),
         };
-        
+
       case 'month':
         return {
           startDate: now.clone().startOf('month').toDate(),
-          endDate: now.clone().endOf('month').toDate()
+          endDate: now.clone().endOf('month').toDate(),
         };
-        
+
       case 'all':
       default:
         return {
           startDate: moment('2000-01-01').tz(this.TIMEZONE).toDate(),
-          endDate: now.clone().add(100, 'years').toDate()
+          endDate: now.clone().add(100, 'years').toDate(),
         };
     }
   }
@@ -262,15 +245,11 @@ export class SriLankaTimeUtil {
   /**
    * Check if a time is within a range considering midnight wrap
    */
-  static isTimeInRange(
-    time: string,
-    rangeStart: string,
-    rangeEnd: string
-  ): boolean {
+  static isTimeInRange(time: string, rangeStart: string, rangeEnd: string): boolean {
     const timeMoment = moment(time, this.TIME_FORMAT);
     const startMoment = moment(rangeStart, this.TIME_FORMAT);
     const endMoment = moment(rangeEnd, this.TIME_FORMAT);
-    
+
     if (startMoment.isBefore(endMoment)) {
       // Normal range
       return timeMoment.isBetween(startMoment, endMoment, null, '[]');
@@ -289,11 +268,11 @@ export class SriLankaTimeUtil {
   static calculateDuration(
     startTime: Date,
     endTime: Date,
-    unit: 'minutes' | 'hours' = 'minutes'
+    unit: 'minutes' | 'hours' = 'minutes',
   ): number {
     const start = moment(startTime).tz(this.TIMEZONE);
     const end = moment(endTime).tz(this.TIMEZONE);
-    
+
     if (unit === 'hours') {
       return parseFloat(end.diff(start, 'hours', true).toFixed(2));
     }
@@ -316,10 +295,10 @@ export class SriLankaTimeUtil {
     if (moment(startDate).isAfter(moment(endDate))) {
       throw new Error('Start date must be before or equal to end date');
     }
-    
+
     const maxDays = 365;
     const daysDiff = moment(endDate).diff(moment(startDate), 'days');
-    
+
     if (daysDiff > maxDays) {
       throw new Error(`Date range cannot exceed ${maxDays} days`);
     }
@@ -332,12 +311,12 @@ export class SriLankaTimeUtil {
     const dates: Date[] = [];
     const current = moment(startDate).tz(this.TIMEZONE).startOf('day');
     const end = moment(endDate).tz(this.TIMEZONE).startOf('day');
-    
+
     while (current.isSameOrBefore(end)) {
       dates.push(current.clone().toDate());
       current.add(1, 'day');
     }
-    
+
     return dates;
   }
 
@@ -358,5 +337,27 @@ export class SriLankaTimeUtil {
       nextDay.add(1, 'day');
     }
     return nextDay.toDate();
+  }
+
+  // Add to SriLankaTimeUtil
+  static getCurrentWeekRange(): { start: Date; end: Date } {
+    const now = moment().tz(this.TIMEZONE);
+    // Get Sunday and adjust to Monday
+    const sunday = now.clone().startOf('week');
+    const monday = sunday.clone().add(1, 'day');
+    const nextSunday = sunday.clone().add(7, 'days');
+
+    return {
+      start: monday.toDate(),
+      end: nextSunday.toDate(),
+    };
+  }
+
+  static getCurrentMonthRange(): { start: Date; end: Date } {
+    const now = moment().tz(this.TIMEZONE);
+    return {
+      start: now.clone().startOf('month').toDate(),
+      end: now.clone().endOf('month').toDate(),
+    };
   }
 }

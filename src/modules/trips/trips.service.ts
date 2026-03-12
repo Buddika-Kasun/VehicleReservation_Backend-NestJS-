@@ -1215,6 +1215,7 @@ export class TripsService {
 
     // Update trip status
     currentTrip.status = tripStatus;
+    currentTrip.updatedAt = SriLankaTimeUtil.now();
     const savedTrip = await this.tripRepo.save(currentTrip);
 
     // Handle conflict trip relationships
@@ -4215,8 +4216,9 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
       // Sort by start date and time (default)
       // For startTime, we need to consider both date and time
       queryBuilder
-        .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
-        .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        //.orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        //.addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+        .orderBy('trip.createdAt', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
     }
     
     // Get paginated results
@@ -4283,6 +4285,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
           driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
           startLocation: trip.location?.startAddress,
           endLocation: trip.location?.endAddress,
+          createdAt: trip.createdAt,
 
           // Scheduled trip fields from entity
           isScheduled: trip.isScheduled ?? false,
@@ -4981,21 +4984,21 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         break;
       */
       case 'today':
-        queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
+        queryBuilder.andWhere('DATE(trip.updatedAt) = DATE(:today)', {
           //today: this.formatDateForDB(now.toISOString())
           today: SriLankaTimeUtil.todayDateStr(),
         });
         break;
       case 'week':
         const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
-        queryBuilder.andWhere('trip.createdAt BETWEEN :weekStart AND :weekEnd', {
+        queryBuilder.andWhere('trip.updatedAt BETWEEN :weekStart AND :weekEnd', {
           weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
           weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
         });
         break;
       case 'month':
         const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
-        queryBuilder.andWhere('trip.createdAt BETWEEN :monthStart AND :monthEnd', {
+        queryBuilder.andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
           monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
           monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
         });
@@ -5072,8 +5075,10 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
     } else {
       // Sort by start date and time (default)
       // For startTime, we need to consider both date and time
-      queryBuilder
-        .orderBy('approval.createdAt', filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+      queryBuilder.orderBy(
+        'approval.updatedAt',
+        filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC',
+      );
     }
     
     // Get paginated results
@@ -5171,6 +5176,7 @@ private calculateEndTimeNew(createTripDto: CreateTripDto): string {
         vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
         status: trip.status,
         requestedAt: trip.createdAt,
+        confirmAt: trip.updatedAt,
         approvalStep: approval.currentStep.toLowerCase(),
         assignedApprover: this.getAssignedApproverInfo(approval),
         approver1Name: approval.approver1?.displayname,

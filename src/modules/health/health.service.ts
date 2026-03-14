@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/typeorm';
 import { Connection } from 'typeorm';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
 
 // DTOs for Swagger documentation
 export class DatabaseHealth {
@@ -132,6 +133,9 @@ export class HealthCheckResult {
 
   @ApiProperty({ description: 'Timestamp of the health check', example: '2024-01-15T10:30:00.000Z' })
   timestamp: string;
+
+  @ApiProperty({ description: 'Current time in Sri Lanka', example: '2024-01-15T16:30:00.000+05:30' })
+  slTime: string;
 }
 
 @Injectable()
@@ -163,6 +167,7 @@ export class HealthService {
       environment: this.configService.get('NODE_ENV', 'development'),
       version: process.env.npm_package_version || '1.0.0',
       timestamp: new Date().toISOString(),
+      slTime: `${SriLankaTimeUtil.todayDateStr()} ${SriLankaTimeUtil.currentTimeStr()}`,
     };
   }
 

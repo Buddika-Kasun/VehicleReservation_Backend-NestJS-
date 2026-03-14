@@ -25,6 +25,7 @@ import { HealthService } from './modules/health/health.service';
 import { setupGracefulShutdown } from './common/utils/graceful-shutdown';
 import { Request, Response } from 'express';
 import { red, green, yellow, blue, magenta, cyan, white, gray, bold, underline } from 'colorette';
+import { DataSource } from 'typeorm';
 
 // ==================== CONSTANTS & VISUALS ====================
 const APP_LOGO = `
@@ -156,12 +157,15 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
 
   try {
     const healthService = app.get(HealthService);
-    
+
     // Database Check
     console.log(blue(`${ICONS.DATABASE} Checking database connection...`));
     const dbHealth = await healthService.checkDatabase();
     if (!dbHealth.connected) throw new Error('Database connection failed');
     console.log(green(`${ICONS.CHECK} Database verified ${gray(`(${dbHealth.latency}ms)`)}`));
+
+    // ✅ NEW: Verify and fix database timezone
+    await verifyAndFixDatabaseTimezone(app, configService);
 
     // Redis Check
     console.log(blue(`${ICONS.REDIS} Checking redis configuration...`));
@@ -172,12 +176,18 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
 
     // Env Check
     const required = ['JWT_SECRET', 'REDIS_URL'];
-    const missing = required.filter(v => !process.env[v] && !configService.get(v));
+    const missing = required.filter((v) => !process.env[v] && !configService.get(v));
     if (missing.length > 0) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
-    
+
     // Firebase Notice
-    if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PROJECT_ID) {
-      console.log(yellow(`${ICONS.WARNING} FIREBASE env variables missing. Push notifications disabled.`));
+    if (
+      !process.env.FIREBASE_PRIVATE_KEY ||
+      !process.env.FIREBASE_CLIENT_EMAIL ||
+      !process.env.FIREBASE_PROJECT_ID
+    ) {
+      console.log(
+        yellow(`${ICONS.WARNING} FIREBASE env variables missing. Push notifications disabled.`),
+      );
     }
 
     console.log(gray('└───────────────────────────────────────────┘'));
@@ -185,6 +195,54 @@ async function validateInfrastructure(app: INestApplication, configService: Conf
   } catch (error: any) {
     console.log(red(`${ICONS.ERROR} Startup validation failed: ${error.message}`));
     process.exit(1);
+  }
+}
+
+async function verifyAndFixDatabaseTimezone(app: INestApplication, configService: ConfigService) {
+  console.log(blue(`${ICONS.CLOCK} ${bold('Verifying database timezone...')}`));
+
+  try {
+    const dataSource = app.get(DataSource);
+
+    // Check session timezone (what your app uses)
+    const sessionResult = await dataSource.query(`SHOW timezone`);
+    const sessionTimezone = sessionResult[0]?.TimeZone || sessionResult[0]?.timezone;
+
+    // Check server default
+    const serverResult = await dataSource.query(`
+      SELECT name, setting, source 
+      FROM pg_settings 
+      WHERE name = 'timezone'
+    `);
+
+    console.log(gray(`  ├─ Session timezone: ${cyan(sessionTimezone)} (what your app uses)`));
+    console.log(
+      gray(
+        `  ├─ Server default: ${cyan(serverResult[0]?.setting)} (from ${serverResult[0]?.source})`,
+      ),
+    );
+
+    // Check offset
+    const offsetResult = await dataSource.query(`
+      SELECT 
+        EXTRACT(TIMEZONE FROM NOW()) as offset_minutes,
+        CASE 
+          WHEN EXTRACT(TIMEZONE FROM NOW()) = 330 THEN '✅ Sri Lanka Time'
+          WHEN EXTRACT(TIMEZONE FROM NOW()) = 0 THEN '⚠️ UTC Time'
+          ELSE '❌ Other'
+        END as status
+    `);
+
+    console.log(gray(`  ├─ Current offset: ${cyan(offsetResult[0]?.offset_minutes)} minutes`));
+    console.log(gray(`  └─ Status: ${cyan(offsetResult[0]?.status)}`));
+
+    if (offsetResult[0]?.offset_minutes === 330) {
+      console.log(green(`${ICONS.CHECK} Database session is correctly using Sri Lanka time`));
+    } else {
+      console.log(yellow(`${ICONS.WARNING} Database session is not using Sri Lanka time`));
+    }
+  } catch (error: any) {
+    console.log(yellow(`${ICONS.WARNING} Could not verify timezone: ${error.message}`));
   }
 }
 

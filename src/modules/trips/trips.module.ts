@@ -14,14 +14,27 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { Schedule } from 'src/infra/database/entities/trip-schedule.entity';
 import { VehicleRecommendService } from './vehicleRecommend.service';
 import { Department } from 'src/infra/database/entities/department.entity';
+import { TripTimelineService } from './trip-timeline.service';
+import { TripTimeline } from 'src/infra/database/entities/trip-timeline.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, Approval, OdometerLog, Vehicle, User, TripLocation, ApprovalConfig, Schedule, Department]),
+    TypeOrmModule.forFeature([
+      Trip,
+      Approval,
+      OdometerLog,
+      Vehicle,
+      User,
+      TripLocation,
+      ApprovalConfig,
+      Schedule,
+      Department,
+      TripTimeline,
+    ]),
     NotificationsModule,
   ],
   controllers: [TripsController],
-  providers: [TripsService, VehicleRecommendService, ResponseService],
-  exports: [TripsService, VehicleRecommendService],
+  providers: [TripsService, VehicleRecommendService, ResponseService, TripTimelineService],
+  exports: [TripsService, VehicleRecommendService, TripTimelineService],
 })
 export class TripsModule {}

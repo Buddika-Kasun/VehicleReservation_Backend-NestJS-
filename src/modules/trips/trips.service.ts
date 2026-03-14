@@ -49,6 +49,7 @@ import { Department } from 'src/infra/database/entities/department.entity';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { request } from 'http';
 import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
+import { TripTimelineService } from './trip-timeline.service';
 
 @Injectable()
 export class TripsService {
@@ -76,6 +77,7 @@ export class TripsService {
     private readonly departmentRepo: Repository<Department>,
     private readonly responseService: ResponseService,
     private readonly eventBus: EventBusService,
+    private readonly tripTimelineService: TripTimelineService,
   ) {}
 
   // Calculate distance using Haversine formula
@@ -1038,18 +1040,19 @@ export class TripsService {
       ],
     });
 
+    const assigner = await this.userRepo.findOne({
+      where: { id: userId },
+    });
+
     if (!trip) {
       throw new NotFoundException(this.responseService.error('Trip not found', 404));
     }
 
     // Check if trip already has a vehicle assigned
-    /*
+    let isChange = false;
     if (trip.vehicle) {
-      throw new BadRequestException(
-        this.responseService.error('Trip already has a vehicle assigned', 400)
-      );
+      isChange = true;
     }
-    */
 
     // Get the vehicle with relations
     const vehicle = await this.vehicleRepo.findOne({
@@ -1138,6 +1141,12 @@ export class TripsService {
       await transactionalEntityManager.save(Trip, trip);
     });
 
+    try {
+      await this.tripTimelineService.recordVehicleAssignment(trip.id, assigner, isChange);
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
+
     // Send notifications
     try {
       // TODO: Publish event for notifications
@@ -1166,11 +1175,11 @@ export class TripsService {
   }
 
   async confirmReviewTrip(tripId: number, userId: number) {
-    const requester = await this.userRepo.findOne({
+    const conformer = await this.userRepo.findOne({
       where: { id: userId },
       relations: ['department', 'department.head'],
     });
-    if (!requester) {
+    if (!conformer) {
       throw new NotFoundException(this.responseService.error('Requester not found', 404));
     }
 
@@ -1206,7 +1215,7 @@ export class TripsService {
         includeWeekends: currentTrip.schedule.includeWeekends,
         repeatAfterDays: currentTrip.schedule.repeatAfterDays,
       };
-      await this.validateScheduleData(scheduleData);
+      //await this.validateScheduleData(scheduleData);
     }
 
     // Get passenger count from existing trip
@@ -1260,6 +1269,12 @@ export class TripsService {
     currentTrip.status = tripStatus;
     currentTrip.updatedAt = SriLankaTimeUtil.now();
     const savedTrip = await this.tripRepo.save(currentTrip);
+
+    try {
+      await this.tripTimelineService.recordConfirmation(savedTrip.id, conformer);
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
 
     // Handle conflict trip relationships
     if (conflictingTrips.length > 0) {
@@ -1389,12 +1404,12 @@ export class TripsService {
         tripId: savedTrip.id,
         userId: userId,
         userRole:
-          requester.role === UserRole.SUPERVISOR
+          conformer.role === UserRole.SUPERVISOR
             ? 'TRANSPORT SUPERVISOR'
-            : requester.role === UserRole.ADMIN
+            : conformer.role === UserRole.ADMIN
             ? 'HOD'
-            : requester.role,
-        userName: requester.displayname,
+            : conformer.role,
+        userName: conformer.displayname,
         approvers: approvers,
       });
     } catch (e) {
@@ -1704,6 +1719,12 @@ export class TripsService {
     });
 
     const savedTrip = await this.tripRepo.save(trip);
+
+    try{
+      await this.tripTimelineService.initializeTimeline(savedTrip, requester);
+    } catch(e){
+      console.error('Error saving trip timeline:', e);
+    }
 
     // Add selected group users
     if (selectedGroupUserIds.length > 0) {
@@ -2625,6 +2646,8 @@ export class TripsService {
       throw new ForbiddenException('User not authenticated');
     }
 
+    const cancelUser = await this.userRepo.findOne({ where: { id: user.userId } });
+
     // Find the trip with all necessary relations
     const trip = await this.tripRepo.findOne({
       where: { id: tripId },
@@ -2725,6 +2748,12 @@ export class TripsService {
             updatedAt: new Date(),
           },
         );
+      }
+
+      try {
+        await this.tripTimelineService.recordCancellation(trip.id, cancelUser);
+      } catch (e) {
+        console.error('Error saving trip timeline:', e);
       }
 
       try {
@@ -5723,13 +5752,13 @@ export class TripsService {
     }
 
     // Get user making the request
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) {
+    const approver = await this.userRepo.findOne({ where: { id: userId } });
+    if (!approver) {
       throw new NotFoundException(this.responseService.error('User not found', 404));
     }
 
     const approval = trip.approval;
-    const isSysAdmin = user.role === UserRole.SYSADMIN;
+    const isSysAdmin = approver.role === UserRole.SYSADMIN;
 
     // Check if already approved
     if (approval.overallStatus === StatusApproval.APPROVED) {
@@ -5838,7 +5867,26 @@ export class TripsService {
 
     // Save changes
     await this.approvalRepo.save(approval);
-    await this.tripRepo.save(trip);
+    const savedTrip = await this.tripRepo.save(trip);
+
+    try {
+      if(isSysAdmin) {
+        await this.tripTimelineService.recordApproval(savedTrip, approver, 'all');
+      }
+      else {
+        for (const approverType of approverTypes) {
+        if (approverType === ApproverType.HOD) {
+          await this.tripTimelineService.recordApproval(savedTrip, approver, 1);
+        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+          await this.tripTimelineService.recordApproval(savedTrip, approver, 2);        
+        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          await this.tripTimelineService.recordApproval(savedTrip, approver, 'safety');
+        }
+      }
+      }
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
 
     try {
       // Publish TRIP.APPROVE event
@@ -5858,7 +5906,7 @@ export class TripsService {
         tripId: trip.id,
         approvalStatus: approval.overallStatus,
         currentStep: approval.currentStep,
-        approvedBy: user.displayname,
+        approvedBy: approver.displayname,
         approvedAt: now,
         nextStep: approval.currentStep
           ? `Waiting for ${approval.currentStep} approval`
@@ -5894,13 +5942,13 @@ export class TripsService {
     }
 
     // Get user making the request
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) {
+    const rejector = await this.userRepo.findOne({ where: { id: userId } });
+    if (!rejector) {
       throw new NotFoundException(this.responseService.error('User not found', 404));
     }
 
     const approval = trip.approval;
-    const isSysAdmin = user.role === UserRole.SYSADMIN;
+    const isSysAdmin = rejector.role === UserRole.SYSADMIN;
 
     // Check if already rejected
     if (approval.overallStatus === StatusApproval.REJECTED) {
@@ -5986,6 +6034,12 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
+    try {
+      await this.tripTimelineService.recordRejection(trip.id, rejector);
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
+
     /*
     // Restore vehicle seats if vehicle was assigned
     if (trip.vehicle) {
@@ -6000,13 +6054,13 @@ export class TripsService {
       await this.eventBus.publish('TRIP', 'REJECT', {
         tripId: trip.id,
         userId: userId,
-        userName: user.displayname,
+        userName: rejector.displayname,
         userRole:
-          user.role === UserRole.SUPERVISOR
+          rejector.role === UserRole.SUPERVISOR
             ? 'TRANSPORT SUPERVISOR'
-            : user.role === UserRole.ADMIN
+            : rejector.role === UserRole.ADMIN
             ? 'HOD'
-            : user.role,
+            : rejector.role,
         approver1Id: trip.approval?.approver1?.id || null,
         approval2Id: trip.approval?.approver2?.id || null,
         safetyApproverId: trip.approval?.safetyApprover?.id || null,
@@ -6024,7 +6078,7 @@ export class TripsService {
       data: {
         tripId: trip.id,
         approvalStatus: approval.overallStatus,
-        rejectedBy: user.displayname,
+        rejectedBy: rejector.displayname,
         rejectedAt: now,
         rejectionReason: rejectionReason,
       },
@@ -7767,6 +7821,12 @@ export class TripsService {
       }
 
       try {
+        await this.tripTimelineService.recordMeterReading(trip.id, user, 'start');
+      } catch (e) {
+        console.error('Error saving trip timeline:', e);
+      }
+
+      try {
         const passengers = await this.getPassengersByTripId(trip.id);
 
         // Publish TRIP.STARTREAD event
@@ -7860,6 +7920,12 @@ export class TripsService {
       // Check if there are approved conflicting trips and update their end odometer to 0
       if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
         await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+      }
+
+      try {
+        await this.tripTimelineService.recordMeterReading(trip.id, user, 'end');
+      } catch (e) {
+        console.error('Error saving trip timeline:', e);
       }
 
       try {
@@ -8065,6 +8131,12 @@ export class TripsService {
               if (conflictOdometerLog.startReading !== null) {
                 fullConflictTrip.status = TripStatus.READ;
               }
+
+              try {
+                await this.tripTimelineService.recordMeterReading(conflictTrip.id, user, 'start');
+              } catch (e) {
+                console.error('Error saving trip timeline:', e);
+              }
             }
           } else {
             // Update conflict trip's end reading
@@ -8082,6 +8154,12 @@ export class TripsService {
               ) {
                 fullConflictTrip.status = TripStatus.COMPLETED;
                 fullConflictTrip.cost = 0;
+              }
+
+              try {
+                await this.tripTimelineService.recordMeterReading(conflictTrip.id, user, 'end');
+              } catch (e) {
+                console.error('Error saving trip timeline:', e);
               }
 
               /*
@@ -8686,6 +8764,12 @@ export class TripsService {
             status: connectedTrip.status,
           });
         }
+
+        try {
+          await this.tripTimelineService.recordDriverAction(connectedTrip.id, user, 'start');
+        } catch (e) {
+          console.error('Error saving trip timeline:', e);
+        }
       }
 
       // Save all connected trips
@@ -8695,7 +8779,13 @@ export class TripsService {
     }
 
     // Save the main trip
-    await this.tripRepo.save(trip);
+    const savedTrip = await this.tripRepo.save(trip);
+
+    try {
+      await this.tripTimelineService.recordDriverAction(savedTrip.id, user, 'start');
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
 
     try {
       const passengers = await this.getPassengersByTripId(trip.id);
@@ -8825,6 +8915,12 @@ export class TripsService {
             status: connectedTrip.status,
           });
         }
+
+        try {
+          await this.tripTimelineService.recordDriverAction(connectedTrip.id, user, 'end');
+        } catch (e) {
+          console.error('Error saving trip timeline:', e);
+        }
       }
 
       // Save all connected trips
@@ -8834,7 +8930,13 @@ export class TripsService {
     }
 
     // Save the main trip
-    await this.tripRepo.save(trip);
+    const savedTrip = await this.tripRepo.save(trip);
+
+    try {
+      await this.tripTimelineService.recordDriverAction(savedTrip.id, user, 'end');
+    } catch (e) {
+      console.error('Error saving trip timeline:', e);
+    }
 
     try {
       const passengers = await this.getPassengersByTripId(trip.id);

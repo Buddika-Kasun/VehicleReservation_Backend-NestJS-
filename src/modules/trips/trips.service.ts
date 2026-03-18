@@ -4242,9 +4242,17 @@ export class TripsService {
           end: todayEnd,
         });
         */
-        queryBuilder.andWhere('trip.createdAt <= :end', {
-          end: todayEnd,
-        });
+        if(requestDto.statusFilter == 'draft') {
+          queryBuilder.andWhere('trip.createdAt <= :end', {
+            end: todayEnd,
+          });
+        }
+        else {
+          queryBuilder.andWhere('trip.createdAt BETWEEN :start AND :end', {
+            start: todayStart,
+            end: todayEnd,
+          });
+        }
         break;
       case 'week':
         const weekRange = SriLankaTimeUtil.getCurrentWeekRange();

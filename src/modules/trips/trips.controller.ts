@@ -42,6 +42,7 @@ import { UserRole } from 'src/infra/database/entities/user.entity';
 import { TripListRequestDto, TripListResponseDto } from './dto/trip-list-request.dto';
 import { get } from 'http';
 import { VehicleRecommendService } from './vehicleRecommend.service';
+import { TripTimelineService } from './trip-timeline.service';
 
 @ApiTags('trips')
 @Controller('trips')
@@ -60,6 +61,7 @@ import { VehicleRecommendService } from './vehicleRecommend.service';
 export class TripsController {
   constructor(
     private readonly tripsService: TripsService,
+    private readonly tripTimelineService: TripTimelineService,
     private readonly vehicleRecommendService: VehicleRecommendService,
   ) {}
 
@@ -169,6 +171,31 @@ export class TripsController {
   @ApiResponse({ status: 404, description: 'Trip not found' })
   async getTripById(@Param('id', ParseIntPipe) id: number) {
     const result = await this.tripsService.getTripById(id);
+    return result;
+  }
+
+  @Get('get-timeline-by-id/:id')
+  @Roles(
+    UserRole.SYSADMIN,
+  )
+  @ApiOperation({ summary: 'Get trip timeline by ID' })
+  @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip timeline retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Trip retrieved successfully' },
+        timestamp: { type: 'string', format: 'date-time' },
+        statusCode: { type: 'number', example: 200 },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Trip not found' })
+  async getTripTimelineById(@Param('id', ParseIntPipe) id: number) {
+    const result = await this.tripTimelineService.getFormattedTimeline(id);
     return result;
   }
 

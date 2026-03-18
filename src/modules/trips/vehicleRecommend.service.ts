@@ -49,7 +49,7 @@ export class VehicleRecommendService {
     const requestedWindow = this.calculateTripWindow(requestedTrip);
 
     // Get all active vehicles (with pagination and search)
-    const vehicles = await this.fetchVehicles(search, page, pageSize);
+    const vehicles = await this.fetchVehicles(search, page, 100);
 
     // For each vehicle, calculate actual available seats during requested time
     const analyzedVehicles: AvailableVehicleDto[] = [];
@@ -357,9 +357,9 @@ export class VehicleRecommendService {
     );
     
     // Calculate trip end time (start + duration + rest)
-    const duration = (trip.location?.estimatedDuration || 60) * 60000;
-    const rest = (trip.location?.estimatedRestingHours || 0) * 3600000;
-    const end = new Date(start.getTime() + duration + rest);
+    const duration = (trip.location?.estimatedDuration || 60) * 60000; 
+    const rest = (trip.location?.estimatedRestingHours || 0) * 60000;
+    const end = new Date(start.getTime() + (duration * 2) + rest);
     
     // Add time window for end buffer
     const endWithBuffer = new Date(

@@ -2658,6 +2658,10 @@ export class TripsService {
       where: { id: tripId },
       relations: [
         'vehicle',
+        'vehicle.assignedDriverPrimary',
+        'vehicle.assignedDriverSecondary',
+        'primaryDriver',
+        'secondaryDriver',
         'conflictingTrips',
         'linkedTrips',
         'conflictingTrips.vehicle',
@@ -2733,6 +2737,8 @@ export class TripsService {
         { id: tripId },
         {
           status: TripStatus.CANCELED,
+          primaryDriver: trip.vehicle?.assignedDriverPrimary ?? null,
+          secondaryDriver: trip.vehicle?.assignedDriverSecondary ?? null,
           //approval: null,
           // Add any other fields you want to update
           //updatedAt: new Date(),
@@ -5933,6 +5939,10 @@ export class TripsService {
         'approval.safetyApprover',
         'requester',
         'vehicle',
+        'vehicle.assignedDriverPrimary',
+        'vehicle.assignedDriverSecondary',
+        'primaryDriver',
+        'secondaryDriver',
       ],
     });
 
@@ -6034,6 +6044,9 @@ export class TripsService {
 
     // Update trip status to REJECTED
     trip.status = TripStatus.REJECTED;
+
+    trip.primaryDriver = trip.vehicle?.assignedDriverPrimary ?? null;
+    trip.secondaryDriver = trip.vehicle?.assignedDriverSecondary ?? null;
 
     // Save changes
     await this.approvalRepo.save(approval);

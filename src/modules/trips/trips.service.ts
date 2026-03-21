@@ -1134,8 +1134,8 @@ export class TripsService {
 
       // Update trip with vehicle
       trip.vehicle = vehicle;
-      trip.primaryDriver = vehicle.assignedDriverPrimary;
-      trip.secondaryDriver = vehicle.assignedDriverSecondary;
+      trip.primaryDriver = null;
+      trip.secondaryDriver = null;
 
       // Save trip with vehicle assignment
       await transactionalEntityManager.save(Trip, trip);
@@ -1175,6 +1175,7 @@ export class TripsService {
   }
 
   async confirmReviewTrip(tripId: number, userId: number) {
+
     const conformer = await this.userRepo.findOne({
       where: { id: userId },
       relations: ['department', 'department.head'],
@@ -1267,6 +1268,8 @@ export class TripsService {
 
     // Update trip status
     currentTrip.status = tripStatus;
+    currentTrip.primaryDriver = null;
+    currentTrip.secondaryDriver = null;
     currentTrip.updatedAt = SriLankaTimeUtil.now();
     const savedTrip = await this.tripRepo.save(currentTrip);
 
@@ -1867,6 +1870,8 @@ export class TripsService {
         department: masterTrip.department,
         primaryDriver: masterTrip.primaryDriver,
         secondaryDriver: masterTrip.secondaryDriver,
+        createdAt: masterTrip.createdAt,
+        updatedAt: masterTrip.updatedAt,
       });
 
       const savedInstance = await this.tripRepo.save(tripInstance);
@@ -2653,6 +2658,10 @@ export class TripsService {
       where: { id: tripId },
       relations: [
         'vehicle',
+        'vehicle.assignedDriverPrimary',
+        'vehicle.assignedDriverSecondary',
+        'primaryDriver',
+        'secondaryDriver',
         'conflictingTrips',
         'linkedTrips',
         'conflictingTrips.vehicle',
@@ -2728,9 +2737,11 @@ export class TripsService {
         { id: tripId },
         {
           status: TripStatus.CANCELED,
+          primaryDriver: trip.vehicle?.assignedDriverPrimary ?? null,
+          secondaryDriver: trip.vehicle?.assignedDriverSecondary ?? null,
           //approval: null,
           // Add any other fields you want to update
-          updatedAt: new Date(),
+          //updatedAt: new Date(),
         },
       );
 
@@ -4231,9 +4242,17 @@ export class TripsService {
           end: todayEnd,
         });
         */
-        queryBuilder.andWhere('trip.createdAt <= :end', {
-          end: todayEnd,
-        });
+        if(requestDto.statusFilter == 'draft') {
+          queryBuilder.andWhere('trip.createdAt <= :end', {
+            end: todayEnd,
+          });
+        }
+        else {
+          queryBuilder.andWhere('trip.createdAt BETWEEN :start AND :end', {
+            start: todayStart,
+            end: todayEnd,
+          });
+        }
         break;
       case 'week':
         const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
@@ -5207,7 +5226,7 @@ export class TripsService {
       // Sort by start date and time (default)
       // For startTime, we need to consider both date and time
       queryBuilder.orderBy(
-        'approval.updatedAt',
+        'trip.updatedAt',
         filterDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC',
       );
     }
@@ -5928,6 +5947,10 @@ export class TripsService {
         'approval.safetyApprover',
         'requester',
         'vehicle',
+        'vehicle.assignedDriverPrimary',
+        'vehicle.assignedDriverSecondary',
+        'primaryDriver',
+        'secondaryDriver',
       ],
     });
 
@@ -6029,6 +6052,9 @@ export class TripsService {
 
     // Update trip status to REJECTED
     trip.status = TripStatus.REJECTED;
+
+    trip.primaryDriver = trip.vehicle?.assignedDriverPrimary ?? null;
+    trip.secondaryDriver = trip.vehicle?.assignedDriverSecondary ?? null;
 
     // Save changes
     await this.approvalRepo.save(approval);
@@ -6265,6 +6291,7 @@ export class TripsService {
 
     return {
       hasDrivers: true,
+      /*
       primary: trip.primaryDriver
         ? {
             id: trip.primaryDriver.id,
@@ -6281,6 +6308,37 @@ export class TripsService {
             role: trip.secondaryDriver.role,
           }
         : null,
+      */
+      primary: trip.primaryDriver
+        ? {
+            id: trip.primaryDriver.id,
+            name: trip.primaryDriver.displayname,
+            phone: trip.primaryDriver.phone,
+            role: trip.primaryDriver.role,
+          }
+        : trip.vehicle.assignedDriverPrimary 
+          ? {
+              id: trip.vehicle.assignedDriverPrimary.id,
+              name: trip.vehicle.assignedDriverPrimary.displayname,
+              phone: trip.vehicle.assignedDriverPrimary.phone,
+              role: trip.vehicle.assignedDriverPrimary.role
+            }
+          : null,
+      secondary: trip.secondaryDriver
+        ? {
+            id: trip.secondaryDriver.id,
+            name: trip.secondaryDriver.displayname,
+            phone: trip.secondaryDriver.phone,
+            role: trip.secondaryDriver.role,
+          }
+        : trip.vehicle.assignedDriverSecondary 
+          ? {
+              id: trip.vehicle.assignedDriverSecondary.id,
+              name: trip.vehicle.assignedDriverSecondary.displayname,
+              phone: trip.vehicle.assignedDriverSecondary.phone,
+              role: trip.vehicle.assignedDriverSecondary.role
+            }
+          : null,
     };
   }
 
@@ -8249,16 +8307,18 @@ export class TripsService {
       .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
       .leftJoinAndSelect('conflictingTrips.vehicle', 'conflictVehicle')
       .leftJoinAndSelect('conflictingTrips.location', 'conflictLocation')
-      .leftJoinAndSelect('trip.odometerLog', 'odometerLog');
+      .leftJoinAndSelect('trip.odometerLog', 'odometerLog')
+      .leftJoinAndSelect('trip.primaryDriver', 'primaryDriver')
+      .leftJoinAndSelect('trip.secondaryDriver', 'secondaryDriver');
 
     // Apply driver filter only if user is a DRIVER (not SYSADMIN)
     if (isDriver || isSupervisor) {
       queryBuilder.where(
         new Brackets((qb) => {
-          qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId }).orWhere(
-            'vehicle.assignedDriverSecondary.id = :driverId',
-            { driverId },
-          );
+          qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId }).
+          orWhere('vehicle.assignedDriverSecondary.id = :driverId', { driverId }).
+          orWhere('trip.primaryDriver.id = :driverId', { driverId }).
+          orWhere('trip.secondaryDriver.id = :driverId', { driverId });
         }),
       );
     } else if (isSysAdmin) {
@@ -8746,7 +8806,9 @@ export class TripsService {
 
     // Start the main trip
     trip.status = TripStatus.ONGOING;
-    trip.updatedAt = now;
+    trip.primaryDriver = trip.vehicle.assignedDriverPrimary;
+    trip.secondaryDriver = trip.vehicle.assignedDriverSecondary ?? null;
+    //trip.updatedAt = now;
 
     // Also start all connected trips that have odometer start reading
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
@@ -8756,7 +8818,9 @@ export class TripsService {
         // Check if connected trip meets criteria for starting
         if (connectedTrip.status === TripStatus.READ && connectedTrip.odometerLog?.startReading) {
           connectedTrip.status = TripStatus.ONGOING;
-          connectedTrip.updatedAt = now;
+          connectedTrip.primaryDriver = trip.vehicle.assignedDriverPrimary;
+          connectedTrip.secondaryDriver = trip.vehicle.assignedDriverSecondary ?? null;
+          //connectedTrip.updatedAt = now;
           await this.tripRepo.save(connectedTrip);
 
           connectedTripsStarted.push({
@@ -8897,7 +8961,7 @@ export class TripsService {
     // End the main trip
     trip.status = TripStatus.FINISHED;
     trip.endPassengerCount = endPassengerCount;
-    trip.updatedAt = now;
+    //trip.updatedAt = now;
 
     // Also end all connected trips that are ongoing
     if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
@@ -8907,7 +8971,7 @@ export class TripsService {
         // Check if connected trip is ongoing
         if (connectedTrip.status === TripStatus.ONGOING) {
           connectedTrip.status = TripStatus.FINISHED;
-          connectedTrip.updatedAt = now;
+          //connectedTrip.updatedAt = now;
           await this.tripRepo.save(connectedTrip);
 
           connectedTripsEnded.push({

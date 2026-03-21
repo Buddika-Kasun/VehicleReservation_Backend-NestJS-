@@ -7976,7 +7976,12 @@ export class TripsService {
           odometerLog.endReading
         ) {
           const distance = odometerLog.endReading - odometerLog.startReading;
-          trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+          if (odometerLog.startReading == 0 || odometerLog.endReading == 0) {
+            trip.cost = 0;
+          }
+          else {
+            trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+          }
           console.log(
             `Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`,
           );

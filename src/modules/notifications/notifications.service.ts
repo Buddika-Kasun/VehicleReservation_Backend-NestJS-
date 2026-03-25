@@ -194,6 +194,7 @@ export class NotificationsService {
   }
 
   // PRIVATE METHODS
+  /*
   private async sendPushNotification(notification: Notification): Promise<void> {
     try {
       if (!notification.userId) return;
@@ -244,6 +245,86 @@ export class NotificationsService {
       }
     } catch (error) {
       this.logger.error(`Failed to send push notification: ${error.message}`);
+    }
+  }
+  */
+  private async sendPushNotification(notification: Notification): Promise<void> {
+    try {
+      if (!notification.userId) {
+        this.logger.warn('No userId in notification, skipping push');
+        return;
+      }
+
+      // Get user's devices
+      const devices = await this.getUserDevices(notification.userId);
+
+      if (devices.length === 0) {
+        this.logger.log(`No devices found for user ${notification.userId}`);
+        return;
+      }
+
+      // Separate devices by type
+      const mobileDevices = devices.filter((d) => d.deviceType !== 'web');
+      const webDevices = devices.filter((d) => d.deviceType === 'web');
+
+      this.logger.log(
+        `User ${notification.userId} has ${mobileDevices.length} mobile devices and ${webDevices.length} web devices`,
+      );
+
+      // Send push notifications to mobile devices
+      if (mobileDevices.length > 0) {
+        // Get valid tokens (filter out null/undefined)
+        const mobileTokens = mobileDevices
+          .map((d) => d.fcmToken)
+          .filter(
+            (token): token is string => token !== null && token !== undefined && token !== '',
+          );
+
+        if (mobileTokens.length === 0) {
+          this.logger.warn(`No valid FCM tokens for mobile devices of user ${notification.userId}`);
+        } else {
+          // Send to all tokens - consider using Promise.allSettled for parallel execution
+          const sendPromises = mobileTokens.map((token) =>
+            this.firebaseService
+              .sendPushNotification(
+                token,
+                notification.title || 'New Notification',
+                notification.message || 'You have a new notification',
+                {
+                  id: String(notification.id),
+                  type: notification.type,
+                  tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
+                  userId: String(notification.userId),
+                  createdAt: notification.createdAt.toISOString(),
+                },
+              )
+              .catch((error) => {
+                this.logger.error(
+                  `Failed to send to token ${token.substring(0, 10)}...: ${error.message}`,
+                );
+                return null; // Don't fail other sends
+              }),
+          );
+
+          const results = await Promise.allSettled(sendPromises);
+          const successful = results.filter((r) => r.status === 'fulfilled').length;
+          this.logger.log(
+            `Push notifications sent: ${successful}/${mobileTokens.length} successful`,
+          );
+        }
+      }
+
+      // Send SMS to web devices
+      if (webDevices.length > 0) {
+        
+          await this.sendSmsNotification(notification);
+          this.logger.log(
+            `SMS sent for notification ${notification.id} to user ${notification.userId}`,
+          );
+      }
+    } catch (error) {
+      this.logger.error(`Failed to send push notification: ${error.message}`);
+      // Don't throw error to avoid breaking the notification flow
     }
   }
 

@@ -270,8 +270,8 @@ export class NotificationsService {
       const smsMessage = this.formatSmsMessage(notification);
 
       // Send SMS
-      //await this.smsService.sendSms(user.phone, smsMessage);
-      await this.smsService.sendSms('+94715315915', smsMessage);
+      await this.smsService.sendSms(user.phone, smsMessage);
+      //await this.smsService.sendSms('+94715315915', smsMessage);
 
       this.logger.log(`SMS sent to user ${notification.userId}`);
     } catch (error) {

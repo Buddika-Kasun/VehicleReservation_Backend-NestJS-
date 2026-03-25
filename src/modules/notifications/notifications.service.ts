@@ -370,7 +370,7 @@ export class NotificationsService {
     try {
       // Check if device already exists for this user
       let existingDevice = null;
-      if (deviceInfo.type == 'web') {
+      if (deviceInfo?.type == 'web') {
         existingDevice = await this.fcmTokenRepository.findOne({
           where: [
             {
@@ -394,7 +394,7 @@ export class NotificationsService {
 
       if (existingDevice) {
         // Update existing device's token and timestamp
-        if (deviceInfo.type == 'web') {
+        if (deviceInfo?.type == 'web') {
           await this.fcmTokenRepository.update(
             { id: existingDevice.id },
             {
@@ -424,7 +424,7 @@ export class NotificationsService {
         this.logger.log(`Updated FCM token for device ${deviceId} of user ${userId}`);
       } else {
 
-        if (deviceInfo.type != 'web') {
+        if (deviceInfo?.type != 'web') {
           // Check if this token is used by another device (optional cleanup)
           await this.cleanupDuplicateTokens(fcmToken, userId, deviceId);
         }

@@ -13,6 +13,7 @@ import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { EVENTS } from 'src/common/constants/events.constants';
 import { access } from 'fs';
 import { UserFcmToken } from 'src/infra/database/entities/user-fcm-token.entity';
+import { SmsService } from './sms.service';
 
 @Injectable()
 export class NotificationsService {
@@ -27,6 +28,7 @@ export class NotificationsService {
     private readonly userRepository: Repository<User>,
     private readonly eventEmitter: EventEmitter2,
     private readonly firebaseService: FirebaseService,
+    private readonly smsService: SmsService,
     private readonly eventBus: EventBusService,
   ) {}
 
@@ -42,7 +44,7 @@ export class NotificationsService {
     // Send push notification
     if (savedNotification.userId) {
       await this.sendPushNotification(savedNotification);
-      
+
       // Publish event for gateway
       await this.eventBus.publish('NOTIFICATION', 'CREATE', {
         notificationId: savedNotification.id,
@@ -94,13 +96,11 @@ export class NotificationsService {
       notification.read = true;
       const savedNotification = await this.notificationRepository.save(notification);
 
-      
       await this.eventBus.publish('NOTIFICATION', 'REFRESH', {
         notificationId: savedNotification.id,
         userId: savedNotification.userId,
         action: 'refresh',
       });
-      
 
       return savedNotification;
     }
@@ -147,19 +147,18 @@ export class NotificationsService {
       userId: notification.userId,
       access: 'refresh',
     });
-
   }
 
   async deleteAll(userId: string): Promise<void> {
     await this.notificationRepository
-    .createQueryBuilder()
-    .update(Notification)
-    .set({ isActive: false })
-    .where('userId = :userId AND isActive = :isActive', { 
-      userId, 
-      isActive: true 
-    })
-    .execute();
+      .createQueryBuilder()
+      .update(Notification)
+      .set({ isActive: false })
+      .where('userId = :userId AND isActive = :isActive', {
+        userId,
+        isActive: true,
+      })
+      .execute();
 
     //await this.eventBus.publish('NOTIFICATION', 'DELETE_ALL', { userId });
   }
@@ -199,49 +198,110 @@ export class NotificationsService {
     try {
       if (!notification.userId) return;
 
-      /*
-      const user = await this.userRepository.findOne({ 
-        where: { id: Number(notification.userId) } 
-      });
+      // Get user's devices
+      const devices = await this.getUserDevices(notification.userId);
 
-      if (!user || !user.fcmToken) return;
-
-      await this.firebaseService.sendPushNotification(
-        user.fcmToken,
-        notification.title || 'New Notification',
-        notification.message || 'You have a new notification',
-        { 
-          id: String(notification.id), 
-          type: notification.type,
-          tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
-          userId: String(notification.userId),
-          createdAt: notification.createdAt.toISOString(), 
-        }
-      );
-      */
-     
-      // NEW UPDATE
-      const tokens = await this.getUserFcmTokens(notification.userId);
-  
-      // Send to all tokens
-      for (const token of tokens) {
-        await this.firebaseService.sendPushNotification(
-          token,
-          notification.title || 'New Notification',
-          notification.message || 'You have a new notification',
-          { 
-            id: String(notification.id), 
-            type: notification.type,
-            tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
-            userId: String(notification.userId),
-            createdAt: notification.createdAt.toISOString(), 
-          }
-        );
+      if (devices.length === 0) {
+        this.logger.log(`No devices found for user ${notification.userId}`);
+        return;
       }
 
+      // Separate devices by type
+      const mobileDevices = devices.filter((d) => d.deviceType !== 'web');console.log("==== mobile : ",mobileDevices.length);
+      const webDevices = devices.filter((d) => d.deviceType === 'web');console.log('==== web : ', webDevices.length);
+
+      // NEW UPDATE
+      //const tokens = await this.getUserFcmTokens(notification.userId);
+
+      // Send push notifications to mobile devices
+      if (mobileDevices.length > 0) {
+        const mobileTokens = mobileDevices.map((d) => d.fcmToken).filter(Boolean);
+
+        // Send to all tokens
+        for (const token of mobileTokens) {
+          await this.firebaseService.sendPushNotification(
+            token,
+            notification.title || 'New Notification',
+            notification.message || 'You have a new notification',
+            {
+              id: String(notification.id),
+              type: notification.type,
+              tripId: notification.data?.tripId ? String(notification.data.tripId) : undefined,
+              userId: String(notification.userId),
+              createdAt: notification.createdAt.toISOString(),
+            },
+          );
+        }
+      }
+
+      // Send SMS to web devices
+      if (webDevices.length > 0) {
+        await this.sendSmsNotification(notification);
+        this.logger.log(`SMS sent to ${webDevices.length} web devices`);
+        //console.log(`SMS sent to ${webDevices.length} web devices`);
+      }
     } catch (error) {
       this.logger.error(`Failed to send push notification: ${error.message}`);
     }
+  }
+
+  private async sendSmsNotification(notification: Notification): Promise<void> {
+    try {
+      if (!notification.userId) return;
+
+      // Get user with phone number
+      const user = await this.userRepository.findOne({
+        where: { id: Number(notification.userId) },
+      });
+
+      if (!user || !user.phone 
+        //|| !user.isPhoneVerified
+      ) {
+        this.logger.warn(`User ${notification.userId} has no verified phone number`);
+        return;
+      }
+
+      if (user.username == 'sysadmin') {
+        console.log('No need to send SMS to the sysadmin!');
+        return;
+      }
+
+      // Format SMS message
+      const smsMessage = this.formatSmsMessage(notification);
+
+      // Send SMS
+      //await this.smsService.sendSms(user.phone, smsMessage);
+      await this.smsService.sendSms('+94715315915', smsMessage);
+
+      this.logger.log(`SMS sent to user ${notification.userId}`);
+    } catch (error) {
+      this.logger.error(`Failed to send SMS notification: ${error.message}`);
+    }
+  }
+
+  private formatSmsMessage(notification: Notification): string {
+    // Create a concise SMS message (max 160 chars)
+    let message = '--- PCW RIDE --- \n';
+
+    // Add title if exists
+    if (notification.title) {
+      message += `${notification.title}: `;
+    }
+
+    // Add message body
+    message += notification.message || 'You have a new notification';
+
+    // Add trip ID if available
+    // if (notification.data?.tripId) {
+    //   message += ` Trip ID: ${notification.data.tripId}`;
+    // }
+
+    // Truncate if too long (SMS limit 160 characters)
+    if (message.length > 160) {
+      message = message.substring(0, 157) + '...';
+    }
+
+    return message;
   }
 
   // src/modules/notifications/notifications.service.ts (additional methods)
@@ -263,15 +323,13 @@ export class NotificationsService {
         .andWhere('user.isActive = :isActive', { isActive: true })
         .getMany();
 
-      const tokens = users.map(user => user.fcmToken).filter(Boolean);
-      
+      const tokens = users.map((user) => user.fcmToken).filter(Boolean);
+
       if (tokens.length > 0) {
-        await this.firebaseService.sendMulticastNotification(
-          tokens,
-          title,
-          message,
-          { ...data, type: type || NotificationType.SYSTEM_ALERT }
-        );
+        await this.firebaseService.sendMulticastNotification(tokens, title, message, {
+          ...data,
+          type: type || NotificationType.SYSTEM_ALERT,
+        });
       }
 
       // Also create notification records in DB
@@ -294,11 +352,8 @@ export class NotificationsService {
 
   async updateUserFcmToken(userId: string, fcmToken: string): Promise<void> {
     try {
-      await this.userRepository.update(
-        { id: Number(userId) },
-        { fcmToken, updatedAt: new Date() }
-      );
-      
+      await this.userRepository.update({ id: Number(userId) }, { fcmToken, updatedAt: new Date() });
+
       this.logger.log(`Updated FCM token for user ${userId}`);
     } catch (error) {
       this.logger.error(`Error updating FCM token: ${error.message}`);
@@ -307,38 +362,73 @@ export class NotificationsService {
   }
 
   async updateUserFcmTokenNew(
-    userId: string, 
-    fcmToken: string, 
+    userId: string,
+    fcmToken: string,
     deviceId: string,
-    deviceInfo?: { name?: string; type?: string }
+    deviceInfo?: { name?: string; type?: string },
   ): Promise<void> {
     try {
       // Check if device already exists for this user
-      const existingDevice = await this.fcmTokenRepository.findOne({
-        where: { 
-          userId: Number(userId), 
-          deviceId: deviceId 
-        }
-      });
+      let existingDevice = null;
+      if (deviceInfo.type == 'web') {
+        existingDevice = await this.fcmTokenRepository.findOne({
+          where: [
+            {
+              userId: Number(userId),
+              deviceType: 'web',
+            },
+            {
+              deviceId: deviceId, // Assuming deviceId is available
+            },
+          ],
+        });
+      }
+      else {
+        existingDevice = await this.fcmTokenRepository.findOne({
+          where: {
+            userId: Number(userId),
+            deviceId: deviceId,
+          },
+        });
+      }
 
       if (existingDevice) {
         // Update existing device's token and timestamp
-        await this.fcmTokenRepository.update(
-          { id: existingDevice.id },
-          { 
-            fcmToken, // Update token in case it changed
-            isActive: true,
-            lastUsedAt: new Date(),
-            ...(deviceInfo?.name && { deviceName: deviceInfo.name }),
-            ...(deviceInfo?.type && { deviceType: deviceInfo.type })
-          }
-        );
-        
+        if (deviceInfo.type == 'web') {
+          await this.fcmTokenRepository.update(
+            { id: existingDevice.id },
+            {
+              fcmToken, // Update token in case it changed
+              isActive: true,
+              lastUsedAt: new Date(),
+              userId: Number(userId),
+              deviceId: deviceId,
+              ...(deviceInfo?.name && { deviceName: deviceInfo.name }),
+              ...(deviceInfo?.type && { deviceType: deviceInfo.type }),
+            },
+          );
+        }
+        else {
+          await this.fcmTokenRepository.update(
+            { id: existingDevice.id },
+            {
+              fcmToken, // Update token in case it changed
+              isActive: true,
+              lastUsedAt: new Date(),
+              ...(deviceInfo?.name && { deviceName: deviceInfo.name }),
+              ...(deviceInfo?.type && { deviceType: deviceInfo.type }),
+            },
+          );
+        }
+
         this.logger.log(`Updated FCM token for device ${deviceId} of user ${userId}`);
       } else {
-        // Check if this token is used by another device (optional cleanup)
-        await this.cleanupDuplicateTokens(fcmToken, userId, deviceId);
-        
+
+        if (deviceInfo.type != 'web') {
+          // Check if this token is used by another device (optional cleanup)
+          await this.cleanupDuplicateTokens(fcmToken, userId, deviceId);
+        }
+          
         // Create new device entry
         await this.fcmTokenRepository.save({
           userId: Number(userId),
@@ -347,9 +437,9 @@ export class NotificationsService {
           deviceName: deviceInfo?.name,
           deviceType: deviceInfo?.type,
           isActive: true,
-          lastUsedAt: new Date()
+          lastUsedAt: new Date(),
         });
-        
+
         this.logger.log(`Registered new device ${deviceId} for user ${userId}`);
       }
     } catch (error) {
@@ -360,18 +450,18 @@ export class NotificationsService {
 
   // Optional: Clean up if same token is used by different device
   private async cleanupDuplicateTokens(
-    fcmToken: string, 
-    userId: string, 
-    currentDeviceId: string
+    fcmToken: string,
+    userId: string,
+    currentDeviceId: string,
   ): Promise<void> {
     // If this token exists for another device, mark it as inactive
     await this.fcmTokenRepository.update(
-      { 
-        fcmToken, 
+      {
+        fcmToken,
         deviceId: Not(currentDeviceId),
-        isActive: true 
+        isActive: true,
       },
-      { isActive: false }
+      { isActive: false },
     );
   }
 
@@ -379,9 +469,9 @@ export class NotificationsService {
     try {
       await this.userRepository.update(
         { id: Number(userId) },
-        { fcmToken: null, updatedAt: new Date() }
+        { fcmToken: null, updatedAt: new Date() },
       );
-      
+
       this.logger.log(`Deleted FCM token for user ${userId}`);
     } catch (error) {
       this.logger.error(`Error deleting FCM token: ${error.message}`);
@@ -393,17 +483,17 @@ export class NotificationsService {
     try {
       // Delete or mark as inactive based on device ID
       await this.fcmTokenRepository.update(
-        { 
-          userId: Number(userId), 
-          deviceId: deviceId 
+        {
+          userId: Number(userId),
+          deviceId: deviceId,
         },
-        { 
+        {
           isActive: false,
           // Optional: clear token for security
-          fcmToken: null 
-        }
+          fcmToken: null,
+        },
       );
-      
+
       this.logger.log(`Deleted FCM token for user ${userId} device ${deviceId}`);
     } catch (error) {
       this.logger.error(`Error deleting FCM token: ${error.message}`);
@@ -413,23 +503,23 @@ export class NotificationsService {
 
   async getUserFcmTokens(userId: string): Promise<string[]> {
     const tokens = await this.fcmTokenRepository.find({
-      where: { 
-        userId: Number(userId), 
+      where: {
+        userId: Number(userId),
         isActive: true,
         // Ensure token exists
-        fcmToken: Not(IsNull())
+        fcmToken: Not(IsNull()),
       },
-      order: { lastUsedAt: 'DESC' }
+      order: { lastUsedAt: 'DESC' },
     });
-    
-    return tokens.map(t => t.fcmToken);
+
+    return tokens.map((t) => t.fcmToken);
   }
 
   async getUserDevices(userId: string): Promise<any[]> {
     return this.fcmTokenRepository.find({
       where: { userId: Number(userId), isActive: true },
       select: ['deviceId', 'deviceName', 'deviceType', 'lastUsedAt'],
-      order: { lastUsedAt: 'DESC' }
+      order: { lastUsedAt: 'DESC' },
     });
   }
 
@@ -441,13 +531,11 @@ export class NotificationsService {
     data?: any,
   ): Promise<void> {
     try {
-      await this.firebaseService.sendToTopic(
-        topic,
-        title,
-        message,
-        { ...data, type: type || NotificationType.SYSTEM_ALERT }
-      );
-      
+      await this.firebaseService.sendToTopic(topic, title, message, {
+        ...data,
+        type: type || NotificationType.SYSTEM_ALERT,
+      });
+
       this.logger.log(`Notification sent to topic "${topic}"`);
     } catch (error) {
       this.logger.error(`Error sending to topic "${topic}": ${error.message}`);
@@ -457,8 +545,8 @@ export class NotificationsService {
 
   async subscribeUserToTopic(userId: string, topic: string): Promise<void> {
     try {
-      const user = await this.userRepository.findOne({ 
-        where: { id: Number(userId) } 
+      const user = await this.userRepository.findOne({
+        where: { id: Number(userId) },
       });
 
       if (!user || !user.fcmToken) {
@@ -472,5 +560,4 @@ export class NotificationsService {
       throw error;
     }
   }
-
 }

@@ -50,6 +50,7 @@ import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { request } from 'http';
 import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
 import { TripTimelineService } from './trip-timeline.service';
+import { ExceedApproval } from 'src/infra/database/entities/exceed-approval.entity';
 
 @Injectable()
 export class TripsService {
@@ -67,6 +68,8 @@ export class TripsService {
     private readonly tripLocationRepo: Repository<TripLocation>,
     @InjectRepository(Approval)
     private readonly approvalRepo: Repository<Approval>,
+    @InjectRepository(ExceedApproval)
+    private readonly exceedApprovalRepo: Repository<ExceedApproval>,
     @InjectRepository(OdometerLog)
     private readonly odometerLogRepo: Repository<OdometerLog>,
     @InjectRepository(ApprovalConfig)
@@ -5754,6 +5757,7 @@ export class TripsService {
         'approval.safetyApprover',
         'requester',
         'vehicle',
+        'vehicle.assignedDriverPrimary',
         'primaryDriver',
       ],
     });
@@ -7782,6 +7786,7 @@ export class TripsService {
       where: { id: tripId },
       relations: [
         'vehicle',
+        'vehicle.assignedDriverPrimary',
         'vehicle.vehicleType',
         'odometerLog',
         'conflictingTrips',
@@ -7897,7 +7902,7 @@ export class TripsService {
           userId: userId,
           userName: user.displayname,
           requesterId: trip.requester?.id || null,
-          driverId: trip.primaryDriver?.id || null,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
           passengers: passengers || [],
         });
       } catch (e) {
@@ -7954,8 +7959,28 @@ export class TripsService {
       odometerLog.endRecordedBy = user;
       odometerLog.endRecordedAt = now;
 
-      // Update trip status to COMPLETED
-      trip.status = TripStatus.COMPLETED;
+      const finalEstimateDistance = trip.mileage * 2 + 10;
+      const actualDistance = odometerLog.endReading - odometerLog.startReading;
+      const isDistanceExceed = actualDistance >= finalEstimateDistance;
+
+      if (isDistanceExceed) {
+        trip.status = TripStatus.EXCEED;
+
+        const exceedApproval = this.exceedApprovalRepo.create({ trip: trip }
+        );
+        await this.exceedApprovalRepo.save(exceedApproval);
+
+        // Publish TRIP.EXCEED event
+        await this.eventBus.publish('TRIP', 'EXCEED', {
+          tripId: trip.id,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
+        });
+
+      } else {
+        // Update trip status to COMPLETED
+        trip.status = TripStatus.COMPLETED;
+      }
+
       /*
     trip.cost = (odometerLog.endReading - odometerLog.startReading) * trip.vehicle.vehicleType.costPerKm;
     
@@ -7978,8 +8003,7 @@ export class TripsService {
           const distance = odometerLog.endReading - odometerLog.startReading;
           if (odometerLog.startReading == 0 || odometerLog.endReading == 0) {
             trip.cost = 0;
-          }
-          else {
+          } else {
             trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
           }
           console.log(
@@ -8001,13 +8025,14 @@ export class TripsService {
       }
 
       try {
+
         // Publish TRIP.COMPLETE event
         await this.eventBus.publish('TRIP', 'COMPLETE', {
           tripId: trip.id,
           userId: userId,
           userName: user.displayname,
           requesterId: trip.requester?.id || null,
-          driverId: trip.primaryDriver?.id || null,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
         });
       } catch (e) {
         console.error('Failed to send notifications', e);

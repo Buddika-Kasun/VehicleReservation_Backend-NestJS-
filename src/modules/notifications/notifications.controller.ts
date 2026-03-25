@@ -11,6 +11,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { ResponseService } from 'src/common/services/response.service';
 import { GetUser } from 'src/common/decorators/user.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('notifications')
 @ApiBearerAuth()
@@ -21,19 +22,14 @@ export class NotificationsController {
     private readonly responseService: ResponseService,
   ) {}
 
-  @Post("create")
-  async create(
-    @Body() createNotificationDto: CreateNotificationDto
-  ) {
+  @Post('create')
+  async create(@Body() createNotificationDto: CreateNotificationDto) {
     const notification = await this.notificationsService.create(createNotificationDto);
     return this.responseService.created('Notification created successfully', { notification });
   }
 
-  @Get("get-all")
-  async findAll(
-    @GetUser() user: any, 
-    @Query() paginationDto: NotificationPaginationDto
-  ) {
+  @Get('get-all')
+  async findAll(@GetUser() user: any, @Query() paginationDto: NotificationPaginationDto) {
     // Assuming req.user contains the authenticated user
     const result = await this.notificationsService.findAllForUser(user.userId, paginationDto);
     return this.responseService.success('Notifications retrieved successfully', {
@@ -43,79 +39,55 @@ export class NotificationsController {
         page: result.page,
         limit: result.limit,
         totalPages: Math.ceil(result.total / result.limit),
-      }
+      },
     });
   }
 
   @Get('unread-count')
-  async getUnreadCount(
-    @GetUser() user: any,
-  ) {
+  async getUnreadCount(@GetUser() user: any) {
     const count = await this.notificationsService.getUnreadCount(user.userId);
     return this.responseService.success('Unread count retrieved successfully', { count });
   }
 
   @Get('get/:id')
-  async findOne(
-    @Param('id') id: string, 
-    @GetUser() user: any
-  ) {
+  async findOne(@Param('id') id: string, @GetUser() user: any) {
     const notification = await this.notificationsService.findOne(+id, user.userId);
     return this.responseService.success('Notification retrieved successfully', { notification });
   }
 
   @Put('mark-all-read')
-  async markAllAsRead(
-    @GetUser() user: any
-  ) {
+  async markAllAsRead(@GetUser() user: any) {
     await this.notificationsService.markAllAsRead(user.userId);
     return this.responseService.success('All notifications marked as read', null);
   }
 
   @Put('read/:id')
-  async markAsRead(
-    @Param('id') id: string, 
-    @GetUser() user: any
-  ) {
+  async markAsRead(@Param('id') id: string, @GetUser() user: any) {
     const notification = await this.notificationsService.markAsRead(+id, user.userId);
     return this.responseService.success('Notification marked as read', { notification });
   }
 
   @Put('unread/:id')
-  async markAsUnread(
-    @Param('id') id: string, 
-    @GetUser() user: any
-  ) {
+  async markAsUnread(@Param('id') id: string, @GetUser() user: any) {
     const notification = await this.notificationsService.markAsUnread(+id, user.userId);
     return this.responseService.success('Notification marked as read', { notification });
   }
 
   @Delete('delete/:id')
-  async remove(
-    @Param('id') id: string, 
-    @GetUser() user: any
-  ) {
+  async remove(@Param('id') id: string, @GetUser() user: any) {
     await this.notificationsService.delete(+id, user.userId);
     return this.responseService.success('Notification deleted successfully', null);
   }
 
   @Delete('delete-all')
-  async deleteAll(
-    @GetUser() user: any
-  ) {
+  async deleteAll(@GetUser() user: any) {
     await this.notificationsService.deleteAll(user.userId);
     return this.responseService.success('All notifications deleted successfully', null);
   }
 
   @Post('batch')
   async sendBatchNotifications(
-    @Body() body: {
-      userIds: string[];
-      title: string;
-      message: string;
-      type?: string;
-      data?: any;
-    },
+    @Body() body: { userIds: string[]; title: string; message: string; type?: string; data?: any },
   ) {
     await this.notificationsService.sendBatchNotifications(
       body.userIds,
@@ -128,10 +100,7 @@ export class NotificationsController {
   }
 
   @Put('/update-fcm-token')
-  async updateFcmToken(
-    @GetUser() user: any,
-    @Body() body: { fcmToken: string },
-  ) {
+  async updateFcmToken(@GetUser() user: any, @Body() body: { fcmToken: string }) {
     await this.notificationsService.updateUserFcmToken(user.userId, body.fcmToken);
     return { success: true };
   }
@@ -139,52 +108,40 @@ export class NotificationsController {
   @Put('/update-fcm-token-new')
   async updateFcmTokenNew(
     @GetUser() user: any,
-    @Body() body: { 
-      fcmToken: string; 
+    @Body()
+    body: {
+      fcmToken: string;
       deviceId: string;
       deviceName?: string;
       deviceType?: string;
     },
   ) {
     await this.notificationsService.updateUserFcmTokenNew(
-      user.userId, 
-      body.fcmToken, 
+      user.userId,
+      body.fcmToken,
       body.deviceId,
-      { name: body.deviceName, type: body.deviceType }
+      { name: body.deviceName, type: body.deviceType },
     );
     return { success: true };
   }
 
   @Delete('/delete-fcm-token')
-  async deleteFcmToken(
-    @GetUser() user: any,
-    @Body() body: { fcmToken: string },
-  ) {
+  @Public()
+  async deleteFcmToken(@GetUser() user: any, @Body() body: { fcmToken: string }) {
     await this.notificationsService.deleteUserFcmToken(user.userId);
     return { success: true };
   }
 
   @Put('/delete-fcm-token-new')
-  async deleteFcmTokenNew(
-    @GetUser() user: any,
-    @Body() body: { deviceId: string },
-  ) {
-    await this.notificationsService.deleteUserFcmTokenNew(
-      user.userId, 
-      body.deviceId
-    );
+  @Public()
+  async deleteFcmTokenNew(@Body() body: { deviceId: string, userId: string }) {
+    await this.notificationsService.deleteUserFcmTokenNew(body.userId, body.deviceId);
     return { success: true };
   }
 
   @Post('topic')
   async sendToTopic(
-    @Body() body: {
-      topic: string;
-      title: string;
-      message: string;
-      type?: string;
-      data?: any;
-    },
+    @Body() body: { topic: string; title: string; message: string; type?: string; data?: any },
   ) {
     await this.notificationsService.sendToTopic(
       body.topic,
@@ -197,10 +154,7 @@ export class NotificationsController {
   }
 
   @Post(':userId/subscribe/:topic')
-  async subscribeToTopic(
-    @Param('userId') userId: string,
-    @Param('topic') topic: string,
-  ) {
+  async subscribeToTopic(@Param('userId') userId: string, @Param('topic') topic: string) {
     await this.notificationsService.subscribeUserToTopic(userId, topic);
     return { success: true };
   }

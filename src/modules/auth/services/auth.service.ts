@@ -273,8 +273,19 @@ private async canUserCreate(user: any): Promise<boolean> {
     }
 
     try {
-      // Verify the refresh token
-      const payload = this.verifyRefreshToken(refreshToken);
+      // First verify the token signature
+      let payload;
+      try {
+        payload = this.verifyRefreshToken(refreshToken);
+      } catch (error) {
+        console.error('Token verification failed:', error.message);
+        throw new UnauthorizedException(
+          this.responseService.error(
+            error.name === 'TokenExpiredError' ? 'Refresh token expired' : 'Invalid refresh token',
+            401,
+          ),
+        );
+      }
 
       // Check if user still exists
       const res = await this.usersService.findByUsername(payload.username);
@@ -282,81 +293,72 @@ private async canUserCreate(user: any): Promise<boolean> {
       const user = res.data?.user;
 
       if (!user) {
-        throw new UnauthorizedException(
-          this.responseService.error(
-            'User not found',
-            401
-          )
-        );
+        throw new UnauthorizedException(this.responseService.error('User not found', 401));
+      }
+
+      // Validate that the refresh token matches the stored token
+      const storedToken = this.refreshTokens.get(user.id);
+      if (!storedToken || storedToken !== refreshToken) {
+        console.error(`Token mismatch for user ${user.id}`);
+        throw new UnauthorizedException(this.responseService.error('Invalid refresh token', 401));
       }
 
       // Generate new tokens
-      const newPayload = { 
-        sub: user.id, 
-        email: user.email, 
-        role: user.role, 
-        username: user.username 
+      const newPayload = {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        username: user.username,
       };
 
       const accessToken = this.generateAccessToken(newPayload);
 
-      const newRefreshToken = this.generateRefreshToken(newPayload)
+      //const newRefreshToken = this.generateRefreshToken(newPayload);
 
       // Update stored refresh token
-      this.storeRefreshToken(user.id, newRefreshToken);
+      //this.storeRefreshToken(user.id, newRefreshToken);
 
       const sanitizedUser = sanitizeUser(user);
 
-      return this.responseService.success(
-        'Returns new access and refresh tokens',
-        {
-          accessToken,
-          refreshToken: newRefreshToken,
-          user: sanitizedUser
-        }
-      );
-
+      return this.responseService.success('Returns new access and refresh tokens', {
+        accessToken,
+        //refreshToken: newRefreshToken,
+        refreshToken: refreshToken,
+        user: sanitizedUser,
+      });
     } catch (error) {
-      if (error.name === 'TokenExpiredError') {
-        throw new UnauthorizedException(
-          this.responseService.error(
-            'Refresh token expired',
-            401
-          )
-        );
+      // If it's already an HttpException, rethrow it
+      if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
+        throw error;
       }
-      if (error.name === 'JsonWebTokenError') {
-        throw new UnauthorizedException(
-          this.responseService.error(
-            'Invalid refresh token',
-            401
-          )
-        );
-      }
-      throw new UnauthorizedException(
-        this.responseService.error(
-          'Token verification failed',
-          401
-        )
-      );
+
+      console.error('Refresh token error:', error);
+      throw new UnauthorizedException(this.responseService.error('Failed to refresh token', 401));
     }
   }
 
   private generateAccessToken(payload: any) {
     return this.jwtService.sign(payload, {
       expiresIn: this.configService.get('jwt.expiresIn') || '1d',
+      secret: this.configService.get('jwt.secret') || 'supersecretkey',
+      //expiresIn: this.configService.get('JWT_EXPIRES_IN') || '1d',
+      //secret: this.configService.get('JWT_SECRET') || 'supersecretkey',
     });
   }
 
   private generateRefreshToken(payload: any) {
     return this.jwtService.sign(payload, {
       expiresIn: this.configService.get('jwt.refreshExpiresIn') || '7d',
+      secret: this.configService.get('jwt.refreshSecret') || 'supersecretrefreshkey',
+      //expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN') || '7d',
+      //secret: this.configService.get('JWT_REFRESH_SECRET') || 'supersecretrefreshkey',
     });
   }
 
   private verifyRefreshToken(refreshToken: string) {
     return this.jwtService.verify(refreshToken, {
       secret: this.configService.get('jwt.refreshSecret') || 'supersecretrefreshkey',
+      //secret: this.configService.get('JWT_REFRESH_SECRET') || 'supersecretrefreshkey',
     });
   }
   

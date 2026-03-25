@@ -26,13 +26,14 @@ import { SriLankaTimeUtil } from '../../../common/utils/sri-lanka-time.util';
 export enum TripStatus {
   DRAFT = 'draft',
   PENDING = 'pending',
-  APPROVED = 'approved',
-  READ = 'read',
-  FINISHED = 'finished',
-  REJECTED = 'rejected',
-  ONGOING = 'ongoing',
-  COMPLETED = 'completed',
   CANCELED = 'canceled',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  READ = 'read',
+  ONGOING = 'ongoing',
+  FINISHED = 'finished',
+  EXCEED = 'exceed',
+  COMPLETED = 'completed',
 }
 
 export enum RepetitionType {

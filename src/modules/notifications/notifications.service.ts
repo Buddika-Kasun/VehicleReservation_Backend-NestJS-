@@ -774,7 +774,11 @@ export class NotificationsService {
 
   async getUserDevices(userId: string): Promise<any[]> {
     return this.fcmTokenRepository.find({
-      where: { userId: Number(userId), isActive: true },
+      where: {
+        userId: Number(userId),
+        isActive: true,
+        fcmToken: Not(IsNull()),
+      },
       select: ['deviceId', 'deviceName', 'deviceType', 'lastUsedAt'],
       order: { lastUsedAt: 'DESC' },
     });

@@ -1175,7 +1175,6 @@ export class TripsService {
   }
 
   async confirmReviewTrip(tripId: number, userId: number) {
-
     const conformer = await this.userRepo.findOne({
       where: { id: userId },
       relations: ['department', 'department.head'],
@@ -1723,9 +1722,9 @@ export class TripsService {
 
     const savedTrip = await this.tripRepo.save(trip);
 
-    try{
+    try {
       await this.tripTimelineService.initializeTimeline(savedTrip, requester);
-    } catch(e){
+    } catch (e) {
       console.error('Error saving trip timeline:', e);
     }
 
@@ -4242,12 +4241,11 @@ export class TripsService {
           end: todayEnd,
         });
         */
-        if(requestDto.statusFilter == 'draft') {
+        if (requestDto.statusFilter == 'draft') {
           queryBuilder.andWhere('trip.createdAt <= :end', {
             end: todayEnd,
           });
-        }
-        else {
+        } else {
           queryBuilder.andWhere('trip.createdAt BETWEEN :start AND :end', {
             start: todayStart,
             end: todayEnd,
@@ -5889,19 +5887,18 @@ export class TripsService {
     const savedTrip = await this.tripRepo.save(trip);
 
     try {
-      if(isSysAdmin) {
+      if (isSysAdmin) {
         await this.tripTimelineService.recordApproval(savedTrip, approver, 'all');
-      }
-      else {
+      } else {
         for (const approverType of approverTypes) {
-        if (approverType === ApproverType.HOD) {
-          await this.tripTimelineService.recordApproval(savedTrip, approver, 1);
-        } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
-          await this.tripTimelineService.recordApproval(savedTrip, approver, 2);        
-        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
-          await this.tripTimelineService.recordApproval(savedTrip, approver, 'safety');
+          if (approverType === ApproverType.HOD) {
+            await this.tripTimelineService.recordApproval(savedTrip, approver, 1);
+          } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
+            await this.tripTimelineService.recordApproval(savedTrip, approver, 2);
+          } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+            await this.tripTimelineService.recordApproval(savedTrip, approver, 'safety');
+          }
         }
-      }
       }
     } catch (e) {
       console.error('Error saving trip timeline:', e);
@@ -6316,14 +6313,14 @@ export class TripsService {
             phone: trip.primaryDriver.phone,
             role: trip.primaryDriver.role,
           }
-        : trip.vehicle.assignedDriverPrimary 
-          ? {
-              id: trip.vehicle.assignedDriverPrimary.id,
-              name: trip.vehicle.assignedDriverPrimary.displayname,
-              phone: trip.vehicle.assignedDriverPrimary.phone,
-              role: trip.vehicle.assignedDriverPrimary.role
-            }
-          : null,
+        : trip.vehicle.assignedDriverPrimary
+        ? {
+            id: trip.vehicle.assignedDriverPrimary.id,
+            name: trip.vehicle.assignedDriverPrimary.displayname,
+            phone: trip.vehicle.assignedDriverPrimary.phone,
+            role: trip.vehicle.assignedDriverPrimary.role,
+          }
+        : null,
       secondary: trip.secondaryDriver
         ? {
             id: trip.secondaryDriver.id,
@@ -6331,14 +6328,14 @@ export class TripsService {
             phone: trip.secondaryDriver.phone,
             role: trip.secondaryDriver.role,
           }
-        : trip.vehicle.assignedDriverSecondary 
-          ? {
-              id: trip.vehicle.assignedDriverSecondary.id,
-              name: trip.vehicle.assignedDriverSecondary.displayname,
-              phone: trip.vehicle.assignedDriverSecondary.phone,
-              role: trip.vehicle.assignedDriverSecondary.role
-            }
-          : null,
+        : trip.vehicle.assignedDriverSecondary
+        ? {
+            id: trip.vehicle.assignedDriverSecondary.id,
+            name: trip.vehicle.assignedDriverSecondary.displayname,
+            phone: trip.vehicle.assignedDriverSecondary.phone,
+            role: trip.vehicle.assignedDriverSecondary.role,
+          }
+        : null,
     };
   }
 
@@ -7875,7 +7872,14 @@ export class TripsService {
 
       // Check if there are approved conflicting trips and update their start odometer to 0
       if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
-        await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
+        //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
+        await this.updateConflictingTripsOdometer(
+          trip.conflictingTrips,
+          'start',
+          reading,
+          user,
+          now,
+        );
       }
 
       try {
@@ -7942,7 +7946,11 @@ export class TripsService {
       }
 
       // Update end reading fields
-      odometerLog.endReading = reading;
+      if (odometerLog.startReading == 0) {
+        odometerLog.endReading = 0;
+      } else {
+        odometerLog.endReading = reading;
+      }
       odometerLog.endRecordedBy = user;
       odometerLog.endRecordedAt = now;
 
@@ -7968,7 +7976,12 @@ export class TripsService {
           odometerLog.endReading
         ) {
           const distance = odometerLog.endReading - odometerLog.startReading;
-          trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+          if (odometerLog.startReading == 0 || odometerLog.endReading == 0) {
+            trip.cost = 0;
+          }
+          else {
+            trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
+          }
           console.log(
             `Calculated cost: ${trip.cost} = ${distance}km * ${trip.vehicle.vehicleType.costPerKm}/km`,
           );
@@ -7977,7 +7990,8 @@ export class TripsService {
 
       // Check if there are approved conflicting trips and update their end odometer to 0
       if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
-        await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+        //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+        await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', reading, user, now);
       }
 
       try {
@@ -8315,10 +8329,10 @@ export class TripsService {
     if (isDriver || isSupervisor) {
       queryBuilder.where(
         new Brackets((qb) => {
-          qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId }).
-          orWhere('vehicle.assignedDriverSecondary.id = :driverId', { driverId }).
-          orWhere('trip.primaryDriver.id = :driverId', { driverId }).
-          orWhere('trip.secondaryDriver.id = :driverId', { driverId });
+          qb.where('vehicle.assignedDriverPrimary.id = :driverId', { driverId })
+            .orWhere('vehicle.assignedDriverSecondary.id = :driverId', { driverId })
+            .orWhere('trip.primaryDriver.id = :driverId', { driverId })
+            .orWhere('trip.secondaryDriver.id = :driverId', { driverId });
         }),
       );
     } else if (isSysAdmin) {

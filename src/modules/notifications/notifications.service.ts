@@ -779,7 +779,6 @@ export class NotificationsService {
         isActive: true,
         fcmToken: Not(IsNull()),
       },
-      select: ['deviceId', 'deviceName', 'deviceType', 'lastUsedAt'],
       order: { lastUsedAt: 'DESC' },
     });
   }

@@ -6353,7 +6353,7 @@ export class TripsService {
 
     let actualDistance = null;
     let actualDuration = null;
-    if (trip.status == TripStatus.COMPLETED) {
+    if (trip.status == TripStatus.COMPLETED || trip.status == TripStatus.EXCEED) {
       actualDistance = (trip.odometerLog?.endReading - trip.odometerLog?.startReading).toString();
       actualDuration = this.calculateDurationMinutes(
         trip.odometerLog.endRecordedAt,

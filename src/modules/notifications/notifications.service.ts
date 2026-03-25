@@ -207,8 +207,10 @@ export class NotificationsService {
       }
 
       // Separate devices by type
-      const mobileDevices = devices.filter((d) => d.deviceType !== 'web');console.log("==== mobile : ",mobileDevices.length);
-      const webDevices = devices.filter((d) => d.deviceType === 'web');console.log('==== web : ', webDevices.length);
+      const mobileDevices = devices.filter((d) => d.deviceType !== 'web');
+      console.log('==== mobile : ', mobileDevices.length);
+      const webDevices = devices.filter((d) => d.deviceType === 'web');
+      console.log('==== web : ', webDevices.length);
 
       // NEW UPDATE
       //const tokens = await this.getUserFcmTokens(notification.userId);
@@ -254,7 +256,9 @@ export class NotificationsService {
         where: { id: Number(notification.userId) },
       });
 
-      if (!user || !user.phone 
+      if (
+        !user ||
+        !user.phone
         //|| !user.isPhoneVerified
       ) {
         this.logger.warn(`User ${notification.userId} has no verified phone number`);
@@ -361,6 +365,7 @@ export class NotificationsService {
     }
   }
 
+  /*
   async updateUserFcmTokenNew(
     userId: string,
     fcmToken: string,
@@ -447,8 +452,178 @@ export class NotificationsService {
       throw error;
     }
   }
+  */
+
+  async updateUserFcmTokenNew(
+    userId: string,
+    fcmToken: string,
+    deviceId: string,
+    deviceInfo?: { name?: string; type?: string },
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `Updating FCM token - userId: ${userId}, deviceId: ${deviceId}, type: ${deviceInfo?.type}`,
+      );
+
+      // First, try to find existing device by deviceId (most reliable)
+      let existingDevice = await this.fcmTokenRepository.findOne({
+        where: { deviceId: deviceId },
+      });
+
+      // If not found by deviceId, try to find by userId and deviceType for web
+      if (!existingDevice && deviceInfo?.type === 'web') {
+        existingDevice = await this.fcmTokenRepository.findOne({
+          where: {
+            userId: Number(userId),
+            deviceType: 'web',
+          },
+        });
+      }
+
+      // If still not found, try to find by token (for mobile token refresh)
+      if (!existingDevice && deviceInfo?.type !== 'web') {
+        existingDevice = await this.fcmTokenRepository.findOne({
+          where: {
+            userId: Number(userId),
+            fcmToken: fcmToken,
+          },
+        });
+      }
+
+      if (existingDevice) {
+        // Update existing device
+        const updateData: any = {
+          fcmToken,
+          isActive: true,
+          lastUsedAt: new Date(),
+          userId: Number(userId), // Ensure userId is set
+        };
+
+        if (deviceInfo?.name) {
+          updateData.deviceName = deviceInfo.name;
+        }
+        if (deviceInfo?.type) {
+          updateData.deviceType = deviceInfo.type;
+        }
+
+        // If deviceId changed, we need to handle it carefully
+        if (existingDevice.deviceId !== deviceId) {
+          // Check if new deviceId already exists
+          const deviceWithNewId = await this.fcmTokenRepository.findOne({
+            where: { deviceId: deviceId },
+          });
+
+          if (deviceWithNewId && deviceWithNewId.id !== existingDevice.id) {
+            // New deviceId already exists - delete the old one and keep the new one
+            await this.fcmTokenRepository.delete({ id: existingDevice.id });
+            // Update the existing device with the new deviceId
+            await this.fcmTokenRepository.update(
+              { id: deviceWithNewId.id },
+              {
+                ...updateData,
+                deviceId: deviceId,
+              },
+            );
+            this.logger.log(`Merged device records for ${deviceId}`);
+          } else {
+            // Safe to update deviceId
+            await this.fcmTokenRepository.update(
+              { id: existingDevice.id },
+              {
+                ...updateData,
+                deviceId: deviceId,
+              },
+            );
+          }
+        } else {
+          // Normal update
+          await this.fcmTokenRepository.update({ id: existingDevice.id }, updateData);
+        }
+
+        this.logger.log(`Updated FCM token for device ${deviceId} of user ${userId}`);
+      } else {
+        // Create new device entry - handle potential duplicate deviceId
+        try {
+          await this.fcmTokenRepository.save({
+            userId: Number(userId),
+            deviceId: deviceId,
+            fcmToken: fcmToken,
+            deviceName: deviceInfo?.name,
+            deviceType: deviceInfo?.type || 'mobile',
+            isActive: true,
+            lastUsedAt: new Date(),
+          });
+          this.logger.log(`Registered new device ${deviceId} for user ${userId}`);
+        } catch (saveError) {
+          // If duplicate key error, try to fetch and update instead
+          if (saveError.code === '23505' || saveError.message?.includes('duplicate key')) {
+            this.logger.log(`Duplicate key error, fetching existing device for ${deviceId}`);
+
+            const existingByDeviceId = await this.fcmTokenRepository.findOne({
+              where: { deviceId: deviceId },
+            });
+
+            if (existingByDeviceId) {
+              // Update the existing record
+              await this.fcmTokenRepository.update(
+                { id: existingByDeviceId.id },
+                {
+                  fcmToken: fcmToken,
+                  userId: Number(userId),
+                  deviceName: deviceInfo?.name,
+                  deviceType: deviceInfo?.type || 'mobile',
+                  isActive: true,
+                  lastUsedAt: new Date(),
+                },
+              );
+              this.logger.log(`Updated existing device after duplicate error`);
+            } else {
+              throw saveError;
+            }
+          } else {
+            throw saveError;
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error updating FCM token: ${error.message}`);
+      this.logger.error(error.stack);
+      throw error;
+    }
+  }
+
+  private async cleanupDuplicateTokens(
+    fcmToken: string,
+    userId: string,
+    currentDeviceId: string,
+  ): Promise<void> {
+    try {
+      // Find any other devices with the same token but different deviceId
+      const duplicateDevices = await this.fcmTokenRepository.find({
+        where: {
+          fcmToken: fcmToken,
+          userId: Number(userId),
+        },
+      });
+
+      // Deactivate duplicates
+      for (const device of duplicateDevices) {
+        if (device.deviceId !== currentDeviceId) {
+          await this.fcmTokenRepository.update(
+            { id: device.id },
+            { isActive: false, lastUsedAt: new Date() },
+          );
+          this.logger.log(`Deactivated duplicate device ${device.deviceId} for user ${userId}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error cleaning up duplicate tokens: ${error.message}`);
+      // Don't throw, just log
+    }
+  }
 
   // Optional: Clean up if same token is used by different device
+  /*
   private async cleanupDuplicateTokens(
     fcmToken: string,
     userId: string,
@@ -464,6 +639,7 @@ export class NotificationsService {
       { isActive: false },
     );
   }
+  */
 
   async deleteUserFcmToken(userId: string): Promise<void> {
     try {

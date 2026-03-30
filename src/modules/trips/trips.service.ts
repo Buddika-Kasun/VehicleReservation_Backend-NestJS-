@@ -6843,6 +6843,7 @@ export class TripsService {
           TripStatus.READ,
           TripStatus.ONGOING,
           TripStatus.COMPLETED,
+          TripStatus.EXCEED,
           TripStatus.FINISHED,
         ],
       });

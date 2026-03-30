@@ -6834,7 +6834,7 @@ export class TripsService {
       });
     } else if (statusFilter === 'alreadyRead') {
       queryBuilder.andWhere('trip.status IN (:...statuses)', {
-        statuses: [TripStatus.READ, TripStatus.COMPLETED],
+        statuses: [TripStatus.READ, TripStatus.EXCEED, TripStatus.COMPLETED],
       });
     } else {
       queryBuilder.andWhere('trip.status IN (:...statuses)', {

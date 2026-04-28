@@ -262,7 +262,7 @@ export class UsersController {
       User retrieved successfully.
     `
   })
-  async getProfile(@GetUser() user) {
+  async getProfile(@GetUser() user:any) {
     return this.usersService.findById(user.id);
   }
 
@@ -401,7 +401,7 @@ export class UsersController {
   @Roles(UserRole.HR, UserRole.ADMIN)
   async toggleActiveStatus(@Param('id', ParseIntPipe) id: number) {
     const user = await this.usersService.findById(id);
-    if (user.data.user.isActive) {
+    if (user.data?.user.isActive) {
       return this.usersService.deactivateUser(id);
     } else {
       return this.usersService.activateUser(id);
@@ -503,7 +503,7 @@ export class UsersController {
       User not found
     `
   })
-  async removeProfilePicture(@GetUser() user) {
+  async removeProfilePicture(@GetUser() user:any) {
     return this.usersService.removeProfilePicture(user.id);
   }
 

@@ -777,7 +777,7 @@ export class NotificationsService {
       where: {
         userId: Number(userId),
         isActive: true,
-        fcmToken: Not(IsNull()),
+        //fcmToken: Not(IsNull()),
       },
       order: { lastUsedAt: 'DESC' },
     });

@@ -7877,6 +7877,7 @@ export class TripsService {
       trip.status = TripStatus.READ;
 
       // Check if there are approved conflicting trips and update their start odometer to 0
+      /*
       if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
         //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
         await this.updateConflictingTripsOdometer(
@@ -7887,6 +7888,7 @@ export class TripsService {
           now,
         );
       }
+      */
 
       try {
         await this.tripTimelineService.recordMeterReading(trip.id, user, 'start');

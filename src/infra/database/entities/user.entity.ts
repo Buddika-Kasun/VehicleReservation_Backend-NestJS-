@@ -62,6 +62,9 @@ export class User {
   @Column({ default: false })
   isActive: boolean;
 
+  @Column({ default: false})
+  isTripApprover: boolean;
+
   @Column({ type: 'enum', enum: Status, default: Status.PENDING })
   isApproved: Status;
 

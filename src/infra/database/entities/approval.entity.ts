@@ -125,6 +125,9 @@ export class Approval {
   @Column({ type: 'text', nullable: true })
   rejectionReason?: string;
 
+  @Column({ default: true })
+  isActive: Boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

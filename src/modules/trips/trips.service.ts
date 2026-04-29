@@ -1198,6 +1198,7 @@ export class TripsService {
         'selectedGroupUsers',
         'primaryDriver',
         'secondaryDriver',
+        'approval',
       ],
     });
 
@@ -1266,7 +1267,7 @@ export class TripsService {
     //let requiresApproval = true;
     let tripStatus =
       currentTrip.status === TripStatus.DRAFT ? TripStatus.PENDING : currentTrip.status;
-    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? true : false;
+    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? currentTrip.tripType !== TripType.EMERGENCY : false;
 
     // Update trip status
     currentTrip.status = tripStatus;
@@ -1362,6 +1363,13 @@ export class TripsService {
       approvalMessage = isScheduledTrip
         ? 'Scheduled trip submitted for approval'
         : 'Trip submitted for approval';
+    }
+    else if(currentTrip.tripType === TripType.EMERGENCY) {
+      // Handle emergency trip specific logic
+      this.approvalRepo.update(
+        { id: currentTrip.approval?.id }, 
+        { isActive: true }
+      );
     }
 
     // Generate trip instances for scheduled trips
@@ -1519,6 +1527,12 @@ export class TripsService {
     ) {
       throw new BadRequestException(
         this.responseService.error('Fixed rate amount is required for fixed rate trips', 400),
+      );
+    }
+
+    if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY && !createTripDto.tripTypeData.approverId) {
+      throw new BadRequestException(
+        this.responseService.error('Approver ID is required for emergency trips', 400),
       );
     }
 
@@ -1721,9 +1735,42 @@ export class TripsService {
       department: department,
       createdAt: SriLankaTimeUtil.now(),
       updatedAt: SriLankaTimeUtil.now(),
-    });
-
+    }) as Trip;
+ 
     const savedTrip = await this.tripRepo.save(trip);
+    
+    if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY) {
+      // Handle emergency trip specific logic
+      // Create approval record
+      try {
+        const approval = this.approvalRepo.create({
+          trip: { id: savedTrip.id } as Trip,
+          //approver1: createTripDto.tripTypeData.approverId,
+          approver1: { id: createTripDto.tripTypeData.approverId } as User,
+          approver1Status: StatusApproval.PENDING,
+          approver2: null,
+          approver2Status: undefined,
+          safetyApprover: null,
+          safetyApproverStatus: undefined,
+          overallStatus: StatusApproval.PENDING,
+          currentStep: ApproverType.HOD,
+          requireApprover1: true, // Always require HOD approval
+          requireApprover2: false,
+          requireSafetyApprover: false,
+          comments: createTripDto.specialRemarks,
+          isActive: false,
+        }) as Approval;
+
+        const savedApproval = await this.approvalRepo.save(approval);
+  
+        savedTrip.approval = savedApproval;
+        await this.tripRepo.save(savedTrip);
+      }
+      catch (error) {
+        console.error('Error creating approval record:', error);
+      }
+
+    }
 
     try {
       await this.tripTimelineService.initializeTimeline(savedTrip, requester);
@@ -5080,12 +5127,13 @@ export class TripsService {
       .leftJoinAndSelect('trip.vehicle', 'vehicle')
       .leftJoinAndSelect('approval.approver1', 'approver1')
       .leftJoinAndSelect('approval.approver2', 'approver2')
-      .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover');
+      .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
+      .where('approval.isActive = :active', { active: true });
 
     // For SYSADMIN: No approver restriction, see ALL approvals
     // For regular users: Only see approvals where they are approver
     if (!isSysAdmin) {
-      queryBuilder.where(
+      queryBuilder.andWhere(
         new Brackets((qb) => {
           qb.where('approval.approver1 = :userId', { userId })
             .orWhere('approval.approver2 = :userId', { userId })
@@ -6199,7 +6247,7 @@ export class TripsService {
   }
 
   private async getApprovalDetails(trip: Trip) {
-    if (!trip.approval) {
+    if (!trip.approval || !trip.approval.isActive) {
       return {
         hasApproval: false,
         message: 'No approval process started',

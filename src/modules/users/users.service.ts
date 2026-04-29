@@ -280,7 +280,7 @@ export class UsersService {
         },
       });
 
-        console.log("Sysadmin: ", sysadmin);
+      console.log('Sysadmin: ', sysadmin);
       return sysadmin;
     } catch (error) {
       //this.logger.error('Error fetching sysadmin:', error);
@@ -535,10 +535,54 @@ export class UsersService {
       .leftJoinAndSelect('user.department', 'department')
       //.where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
       .where('user.role IN (:...roles)', {
-        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE],
+        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE, UserRole.SUPERVISOR],
       })
       .andWhere('user.isApproved = :status', { status: Status.APPROVED })
       .andWhere('user.authenticationLevel = :authLevel', { authLevel: 0 }) // Add this line
+      .orderBy('user.createdAt', 'DESC')
+      .take(10); // limit
+
+    // Add search conditions if search term is provided
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('user.displayname ILIKE :search', { search: searchTerm })
+            .orWhere('user.email ILIKE :search', { search: searchTerm })
+            .orWhere('user.username ILIKE :search', { search: searchTerm });
+        }),
+      );
+    }
+
+    // Execute query
+    const users = await queryBuilder.getMany();
+
+    // Transform to minimal user data
+    const minimalUsers = users.map((user) => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department?.name,
+    }));
+
+    return this.responseService.success('Users retrieved successfully', {
+      users: minimalUsers,
+      total: minimalUsers.length,
+    });
+  }
+
+  async findAllByTripApprovalSearching(search?: string) {
+    // Create query builder
+    const queryBuilder = this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .leftJoinAndSelect('user.department', 'department')
+      //.where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .where('user.role IN (:...roles)', {
+        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE, UserRole.SUPERVISOR],
+      })
+      .andWhere('user.isApproved = :status', { status: Status.APPROVED })
+      .andWhere('user.isTripApprover = :tripApproverStatus', { tripApproverStatus: false }) // Add this line
       .orderBy('user.createdAt', 'DESC')
       .take(10); // limit
 
@@ -601,9 +645,55 @@ export class UsersService {
     });
   }
 
+  async setTripsApproveUser(id: number, state: boolean, reqUser: User) {
+    const user = await this.userRepo.findOne({
+      where: { id: id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(this.responseService.error('User not found', 404));
+    }
+
+    const isTripApprover = user.isTripApprover;
+
+    user.isTripApprover = state;
+
+    const savedUser = await this.userRepo.save(user);
+
+    const minimalUser = {
+      id: savedUser.id,
+      displayName: savedUser.displayname,
+      isTripApprover: savedUser.isTripApprover,
+    };
+
+    return this.responseService.success('User approved successfully', {
+      user: minimalUser,
+    });
+  }
+
   async findAllByApproval() {
     const users = await this.userRepo.find({
       where: { authenticationLevel: 3, role: Not(UserRole.SYSADMIN) },
+      relations: ['company', 'department'],
+      order: { id: 'DESC' },
+    });
+
+    const minimalUsers = users.map((user) => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department.name,
+    }));
+
+    return this.responseService.success('Users retrieved successfully', {
+      users: minimalUsers,
+      total: minimalUsers.length,
+    });
+  }
+
+  async findAllByTripApproval() {
+    const users = await this.userRepo.find({
+      where: { isTripApprover: true },
       relations: ['company', 'department'],
       order: { id: 'DESC' },
     });

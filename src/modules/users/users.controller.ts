@@ -18,37 +18,33 @@ import { ApproveUserDto } from './dto/approve-user.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiTags('User API')
 @ApiBearerAuth()
-@ApiUnauthorizedResponse({ 
-  description: 
-  `
+@ApiUnauthorizedResponse({
+  description: `
       Unauthorized - Invalid or missing JWT token
-  `
+  `,
 })
-@ApiInternalServerErrorResponse({ 
-  description: 
-  `
+@ApiInternalServerErrorResponse({
+  description: `
       Internal server error.
-  `
+  `,
 })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post('create')
   @ApiOperation({ summary: 'Create user' })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       The following fields are required: {missingFields}.
       The following fields are already registered: {Fields}.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 201, 
-    description: 
-    `
+  @ApiResponse({
+    status: 201,
+    description: `
       User registered successfully. Please wait for admin approval.
-    `
+    `,
   })
   async create(@Body() dto: CreateUserDto) {
     return this.usersService.createUser(dto);
@@ -57,39 +53,35 @@ export class UsersController {
   @Put('approve/:id')
   @ApiOperation({ summary: 'Approve user' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       User already approved.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User approved successfully.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 403, 
-    description: 
-    `
+  @ApiResponse({
+    status: 403,
+    description: `
       Forbidden - Insufficient permissions
-    ` 
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   async approve(
     @Param('id', ParseIntPipe) id: number,
     @GetUser() reqUser: any,
-    @Body() dto: ApproveUserDto
+    @Body() dto: ApproveUserDto,
   ) {
     return this.usersService.approveUser(id, dto, reqUser);
   }
@@ -97,19 +89,17 @@ export class UsersController {
   @Put('reject/:id')
   @ApiOperation({ summary: 'Disapprove user' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User disapproved successfully.
-    `
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN, UserRole.SYSADMIN)
   async disapprove(@Param('id', ParseIntPipe) id: number, @GetUser() reqUser: any) {
@@ -118,49 +108,42 @@ export class UsersController {
 
   @Get('get-all')
   @ApiOperation({ summary: 'Get all users' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Users retrieved successfully.
-    `
+    `,
   })
   async getAll() {
     return this.usersService.findAll();
   }
 
   @Post('get-all-by-status')
-  async getUsersByStatus(
-    @Body() body: { status?: string; page?: number; limit?: number }
-  ) {
+  async getUsersByStatus(@Body() body: { status?: string; page?: number; limit?: number }) {
     const { status, page = 1, limit = 20 } = body;
-    
+
     return this.usersService.findAllByStatus(status, page, limit);
   }
 
   @Get('get-all-by-department/:id')
   @ApiOperation({ summary: 'Get all users by department' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Users retrieved successfully.
-    `
+    `,
   })
-  async getAllByDepartment(
-    @Param('id', ParseIntPipe) depId: number,
-  ) {
+  async getAllByDepartment(@Param('id', ParseIntPipe) depId: number) {
     return this.usersService.findAllByDepartment(depId);
   }
 
   @Get('get-all-hod')
   @ApiOperation({ summary: 'Get all users by department' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Users retrieved successfully.
-    `
+    `,
   })
   async getAllHodUsers() {
     return this.usersService.findAllHodUsers();
@@ -168,16 +151,13 @@ export class UsersController {
 
   @Get('get-all-by-role/:role')
   @ApiOperation({ summary: 'Get all users by department' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Users retrieved successfully.
-    `
+    `,
   })
-  async getAllByRole(
-    @Param('role') role: string,
-  ) {
+  async getAllByRole(@Param('role') role: string) {
     return this.usersService.findAllByRole(role);
   }
 
@@ -187,9 +167,7 @@ export class UsersController {
     status: 200,
     description: 'Users retrieved successfully.',
   })
-  async getAllBySearching(
-    @Query('query') search: string,
-  ) {
+  async getAllBySearching(@Query('query') search: string) {
     return this.usersService.findAllBySearching(search);
   }
 
@@ -201,6 +179,16 @@ export class UsersController {
   })
   async getAllByApproval() {
     return this.usersService.findAllByApproval();
+  }
+
+  @Get('get-user-by-trip-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllByTripApproval() {
+    return this.usersService.findAllByTripApproval();
   }
 
   @Get('can-create-trip')
@@ -224,10 +212,18 @@ export class UsersController {
     status: 200,
     description: 'Users retrieved successfully.',
   })
-  async getAllByApprovalSearching(
-    @Query('query') search: string,
-  ) {
+  async getAllByApprovalSearching(@Query('query') search: string) {
     return this.usersService.findAllByApprovalSearching(search);
+  }
+
+  @Get('search-trip-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllByTripApprovalSearching(@Query('query') search: string) {
+    return this.usersService.findAllByTripApprovalSearching(search);
   }
 
   @Put('set-approval/:id')
@@ -245,24 +241,36 @@ export class UsersController {
     return this.usersService.setUserApprove(id, state, reqUser);
   }
 
+  @Put('set-trip-approval/:id')
+  @ApiOperation({ summary: 'Set trip approval' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'User trip approval change successfully.',
+  })
+  async setTripsApproveUser(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
+    @Body('state') state: boolean,
+  ) {
+    return this.usersService.setTripsApproveUser(id, state, reqUser);
+  }
 
   @Get('profile')
   @ApiOperation({ summary: 'Get user profile' })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User retrieved successfully.
-    `
+    `,
   })
-  async getProfile(@GetUser() user:any) {
+  async getProfile(@GetUser() user: any) {
     return this.usersService.findById(user.id);
   }
 
@@ -273,58 +281,49 @@ export class UsersController {
     description: 'User details',
     type: UpdateUserDto,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       The following fields are required: {missingFields}.
       The following fields are already registered: {Fields}.
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User update successfully.
-    `
+    `,
   })
-  async updateUser(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateUserDto: UpdateUserDto
-  ) {
+  async updateUser(@Param('id', ParseIntPipe) id: number, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.updateUser(id, updateUserDto);
   }
 
   @Patch('deactivate/:id')
   @ApiOperation({ summary: 'Deactivate user (soft delete)' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User deactivated successfully
-    ` 
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       User already deactivated
-    `
+    `,
   })
   async deactivateUser(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.deactivateUser(id);
@@ -333,26 +332,23 @@ export class UsersController {
   @Patch('activate/:id')
   @ApiOperation({ summary: 'Activate deactivated user' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User activated successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       User already active
-    `
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN)
   async activateUser(@Param('id', ParseIntPipe) id: number) {
@@ -362,19 +358,17 @@ export class UsersController {
   @Delete('hard-delete/:id')
   @ApiOperation({ summary: 'Permanently delete user' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User deleted permanently
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN)
   async deleteUser(@Param('id', ParseIntPipe) id: number) {
@@ -384,19 +378,17 @@ export class UsersController {
   @Patch('toggle-active/:id')
   @ApiOperation({ summary: 'Toggle user active status' })
   @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       User status toggled successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN)
   async toggleActiveStatus(@Param('id', ParseIntPipe) id: number) {
@@ -415,32 +407,26 @@ export class UsersController {
     description: 'Profile picture file',
     type: ProfilePictureDto,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Profile picture uploaded successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       No file uploaded or invalid file type
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
   @UseInterceptors(FileInterceptor('file', multerConfig))
-  async uploadProfilePicture(
-    @GetUser() user: User,
-    @UploadedFile() file: Express.Multer.File
-  ) {
+  async uploadProfilePicture(@GetUser() user: User, @UploadedFile() file: Express.Multer.File) {
     return this.usersService.updateProfilePicture(user.id, file);
   }
 
@@ -451,59 +437,50 @@ export class UsersController {
     description: 'Profile picture file',
     type: ProfilePictureDto,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Profile picture updated successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       No file uploaded or invalid file type
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
   @UseInterceptors(FileInterceptor('file', multerConfig))
-  async updateProfilePicture(
-    @GetUser() user: User,
-    @UploadedFile() file: Express.Multer.File
-  ) {
+  async updateProfilePicture(@GetUser() user: User, @UploadedFile() file: Express.Multer.File) {
     return this.usersService.updateProfilePicture(user.id, file);
   }
 
   @Delete('profile/picture-remove')
   @ApiOperation({ summary: 'Remove profile picture' })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Profile picture removed successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       No profile picture to remove
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
-  async removeProfilePicture(@GetUser() user:any) {
+  async removeProfilePicture(@GetUser() user: any) {
     return this.usersService.removeProfilePicture(user.id);
   }
 
@@ -516,34 +493,30 @@ export class UsersController {
     description: 'Profile picture file',
     type: ProfilePictureDto,
   })
-  @ApiResponse({ 
-    status: 200, 
-    description: 
-    `
+  @ApiResponse({
+    status: 200,
+    description: `
       Profile picture updated successfully
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 400, 
-    description: 
-    `
+  @ApiResponse({
+    status: 400,
+    description: `
       No file uploaded or invalid file type
-    `
+    `,
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 
-    `
+  @ApiResponse({
+    status: 404,
+    description: `
       User not found
-    `
+    `,
   })
   @Roles(UserRole.HR, UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file', multerConfig))
   async uploadUserProfilePicture(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile() file: Express.Multer.File,
   ) {
     return this.usersService.updateProfilePicture(id, file);
   }
-
 }

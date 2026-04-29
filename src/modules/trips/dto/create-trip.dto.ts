@@ -149,6 +149,10 @@ export class TripTypeDataDto {
   @IsEnum(TripType)
   tripType: TripType;
 
+  @IsOptional()
+  @IsNumber()
+  approverId?: number;
+
   @IsString()
   @IsOptional()
   fixedRate?: string;

@@ -14,6 +14,7 @@ import { Department } from 'src/infra/database/entities/department.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
+import { ApprovalConfigService } from '../approval/approvalConfig.service';
 
 @Injectable()
 export class UsersService {
@@ -22,6 +23,7 @@ export class UsersService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
+    private approvalConfigService: ApprovalConfigService,
     private readonly responseService: ResponseService,
     private readonly eventBus: EventBusService,
   ) {}
@@ -833,6 +835,55 @@ export class UsersService {
     return this.responseService.success('User retrieved successfully', {
       user: sanitizedUser,
     });
+  }
+
+  private async canUserCreate(user: any): Promise<boolean> {
+    // Your existing logic, make it async if needed
+    const allowedRoles = [UserRole.HR, UserRole.SYSADMIN];
+    if (allowedRoles.includes(user.role)) return true;
+    if (user.role === UserRole.EMPLOYEE && user.authenticationLevel === 3) return true;
+    return false;
+  }
+
+  private async canTripApprove(user: any): Promise<boolean> {
+    const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
+    return user.role === UserRole.SYSADMIN ||
+           user.isTripApprover === true ||
+           approvalConfig?.secondaryUserId === user.id || 
+           approvalConfig?.safetyUserId === user.id || 
+           approvalConfig?.hodId === user.id;
+  }
+
+  async initialUserData(id: number) {
+
+    const user = await this.userRepo.findOne({ where: { id } });
+
+    if (user) {
+      const sanitizedUser: UserData = sanitizeUser(user);
+  
+      const [canUserCreate, canTripApprove] = await Promise.all([
+        this.canUserCreate(user),
+        this.canTripApprove(user)
+      ]);
+  
+      const userWithPermissions = {
+        ...sanitizedUser,
+        permissions: {
+          canUserCreate,
+          canTripApprove
+        }
+      };
+      
+      return this.responseService.success(
+        'User data retrieved successfully',
+        {
+          user: userWithPermissions
+        }
+      );
+    }
+    else {
+      this.responseService.error('User not found', 404);
+    }
   }
 
   async updateUser(id: number, dto: UpdateUserDto) {

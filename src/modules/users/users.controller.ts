@@ -13,6 +13,8 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
+import { UsersLogService } from './user-log.service';
+import { TrackUserActivityDto } from 'src/infra/database/entities/user-log.entity';
 
 @Controller('user')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -29,7 +31,46 @@ import { ApproveUserDto } from './dto/approve-user.dto';
   `,
 })
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly userLogService: UsersLogService,
+  ) {}
+
+  @Get('initial-user-by-id/:id')
+  @ApiOperation({ summary: 'Get user by ID' })
+  @ApiResponse({
+    status: 404,
+    description: `
+      User not found.
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: `
+      User retrieved successfully.
+    `,
+  })
+  async getInitialUserById(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.initialUserData(id);
+  }
+
+  @Put('update-user-log')
+  @ApiOperation({ summary: 'Update user log' })
+  @ApiResponse({
+    status: 404,
+    description: `
+      User log not found.
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: `
+      User log updated successfully.
+    `,
+  })
+  async updateUserLog(@Body() dto: TrackUserActivityDto, @GetUser() reqUser: any) {
+    return this.userLogService.updateUserLog(dto, reqUser);
+  }
 
   @Post('create')
   @ApiOperation({ summary: 'Create user' })

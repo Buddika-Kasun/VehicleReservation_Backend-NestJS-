@@ -27,6 +27,7 @@ export class UsersLogService {
             userId,
             isLogin: true,
             lastLogin: dto.dateTime,
+            lastAccess: dto.dateTime,
             deviceName: dto.deviceName,
             platform: dto.platform,
             appVersion: dto.appVersion,
@@ -35,6 +36,7 @@ export class UsersLogService {
           // Update existing record for login
           userLog.isLogin = true;
           userLog.lastLogin = dto.dateTime;
+          userLog.lastAccess = dto.dateTime;
           userLog.deviceName = dto.deviceName;
           userLog.platform = dto.platform;
           userLog.appVersion = dto.appVersion;

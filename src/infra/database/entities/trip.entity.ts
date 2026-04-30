@@ -53,6 +53,7 @@ export enum PassengerType {
 // Add new TripType enum
 export enum TripType {
   NORMAL = 'normal',
+  EMERGENCY = 'emergency',
   FIXED_RATE = 'fixed_rate',
   SAFETY_APPROVAL = 'safety_approval',
 }

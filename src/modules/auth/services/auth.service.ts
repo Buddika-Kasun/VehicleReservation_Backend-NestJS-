@@ -249,6 +249,7 @@ export class AuthService {
   private async canTripApprove(user: any): Promise<boolean> {
   const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
   return user.role === UserRole.SYSADMIN ||
+         user.isTripApprover === true ||
          approvalConfig?.secondaryUserId === user.id || 
          approvalConfig?.safetyUserId === user.id || 
          approvalConfig?.hodId === user.id;

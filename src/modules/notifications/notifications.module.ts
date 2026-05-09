@@ -11,21 +11,25 @@ import { TripNotificationHandler } from './handlers/trip-notification.handler';
 import { UsersService } from '../users/users.service';
 import { UsersModule } from '../users/users.module';
 import { UserFcmToken } from 'src/infra/database/entities/user-fcm-token.entity';
+import { SmsService } from './sms.service';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification, User, UserFcmToken]),
     RedisModule,
     FirebaseModule,
+    HttpModule,
     forwardRef(() => UsersModule)
   ],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
+    SmsService,
     UserNotificationHandler,
     TripNotificationHandler,
     //UsersService,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, SmsService],
 })
 export class NotificationsModule {}

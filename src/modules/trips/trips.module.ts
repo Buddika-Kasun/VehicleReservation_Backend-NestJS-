@@ -16,12 +16,14 @@ import { VehicleRecommendService } from './vehicleRecommend.service';
 import { Department } from 'src/infra/database/entities/department.entity';
 import { TripTimelineService } from './trip-timeline.service';
 import { TripTimeline } from 'src/infra/database/entities/trip-timeline.entity';
+import { ExceedApproval } from 'src/infra/database/entities/exceed-approval.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Trip,
       Approval,
+      ExceedApproval,
       OdometerLog,
       Vehicle,
       User,

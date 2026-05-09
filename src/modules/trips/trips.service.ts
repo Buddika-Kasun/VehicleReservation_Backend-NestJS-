@@ -50,6 +50,7 @@ import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { request } from 'http';
 import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
 import { TripTimelineService } from './trip-timeline.service';
+import { ExceedApproval } from 'src/infra/database/entities/exceed-approval.entity';
 
 @Injectable()
 export class TripsService {
@@ -67,6 +68,8 @@ export class TripsService {
     private readonly tripLocationRepo: Repository<TripLocation>,
     @InjectRepository(Approval)
     private readonly approvalRepo: Repository<Approval>,
+    @InjectRepository(ExceedApproval)
+    private readonly exceedApprovalRepo: Repository<ExceedApproval>,
     @InjectRepository(OdometerLog)
     private readonly odometerLogRepo: Repository<OdometerLog>,
     @InjectRepository(ApprovalConfig)
@@ -1195,6 +1198,7 @@ export class TripsService {
         'selectedGroupUsers',
         'primaryDriver',
         'secondaryDriver',
+        'approval',
       ],
     });
 
@@ -1263,7 +1267,7 @@ export class TripsService {
     //let requiresApproval = true;
     let tripStatus =
       currentTrip.status === TripStatus.DRAFT ? TripStatus.PENDING : currentTrip.status;
-    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? true : false;
+    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? currentTrip.tripType !== TripType.EMERGENCY : false;
 
     // Update trip status
     currentTrip.status = tripStatus;
@@ -1359,6 +1363,13 @@ export class TripsService {
       approvalMessage = isScheduledTrip
         ? 'Scheduled trip submitted for approval'
         : 'Trip submitted for approval';
+    }
+    else if(currentTrip.tripType === TripType.EMERGENCY) {
+      // Handle emergency trip specific logic
+      this.approvalRepo.update(
+        { id: currentTrip.approval?.id }, 
+        { isActive: true }
+      );
     }
 
     // Generate trip instances for scheduled trips
@@ -1516,6 +1527,12 @@ export class TripsService {
     ) {
       throw new BadRequestException(
         this.responseService.error('Fixed rate amount is required for fixed rate trips', 400),
+      );
+    }
+
+    if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY && !createTripDto.tripTypeData.approverId) {
+      throw new BadRequestException(
+        this.responseService.error('Approver ID is required for emergency trips', 400),
       );
     }
 
@@ -1718,9 +1735,42 @@ export class TripsService {
       department: department,
       createdAt: SriLankaTimeUtil.now(),
       updatedAt: SriLankaTimeUtil.now(),
-    });
-
+    }) as Trip;
+ 
     const savedTrip = await this.tripRepo.save(trip);
+    
+    if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY) {
+      // Handle emergency trip specific logic
+      // Create approval record
+      try {
+        const approval = this.approvalRepo.create({
+          trip: { id: savedTrip.id } as Trip,
+          //approver1: createTripDto.tripTypeData.approverId,
+          approver1: { id: createTripDto.tripTypeData.approverId } as User,
+          approver1Status: StatusApproval.PENDING,
+          approver2: null,
+          approver2Status: undefined,
+          safetyApprover: null,
+          safetyApproverStatus: undefined,
+          overallStatus: StatusApproval.PENDING,
+          currentStep: ApproverType.HOD,
+          requireApprover1: true, // Always require HOD approval
+          requireApprover2: false,
+          requireSafetyApprover: false,
+          comments: createTripDto.specialRemarks,
+          isActive: false,
+        }) as Approval;
+
+        const savedApproval = await this.approvalRepo.save(approval);
+  
+        savedTrip.approval = savedApproval;
+        await this.tripRepo.save(savedTrip);
+      }
+      catch (error) {
+        console.error('Error creating approval record:', error);
+      }
+
+    }
 
     try {
       await this.tripTimelineService.initializeTimeline(savedTrip, requester);
@@ -5077,12 +5127,13 @@ export class TripsService {
       .leftJoinAndSelect('trip.vehicle', 'vehicle')
       .leftJoinAndSelect('approval.approver1', 'approver1')
       .leftJoinAndSelect('approval.approver2', 'approver2')
-      .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover');
+      .leftJoinAndSelect('approval.safetyApprover', 'safetyApprover')
+      .where('approval.isActive = :active', { active: true });
 
     // For SYSADMIN: No approver restriction, see ALL approvals
     // For regular users: Only see approvals where they are approver
     if (!isSysAdmin) {
-      queryBuilder.where(
+      queryBuilder.andWhere(
         new Brackets((qb) => {
           qb.where('approval.approver1 = :userId', { userId })
             .orWhere('approval.approver2 = :userId', { userId })
@@ -5754,6 +5805,7 @@ export class TripsService {
         'approval.safetyApprover',
         'requester',
         'vehicle',
+        'vehicle.assignedDriverPrimary',
         'primaryDriver',
       ],
     });
@@ -6195,7 +6247,7 @@ export class TripsService {
   }
 
   private async getApprovalDetails(trip: Trip) {
-    if (!trip.approval) {
+    if (!trip.approval || !trip.approval.isActive) {
       return {
         hasApproval: false,
         message: 'No approval process started',
@@ -6349,7 +6401,7 @@ export class TripsService {
 
     let actualDistance = null;
     let actualDuration = null;
-    if (trip.status == TripStatus.COMPLETED) {
+    if (trip.status == TripStatus.COMPLETED || trip.status == TripStatus.EXCEED) {
       actualDistance = (trip.odometerLog?.endReading - trip.odometerLog?.startReading).toString();
       actualDuration = this.calculateDurationMinutes(
         trip.odometerLog.endRecordedAt,
@@ -6830,7 +6882,7 @@ export class TripsService {
       });
     } else if (statusFilter === 'alreadyRead') {
       queryBuilder.andWhere('trip.status IN (:...statuses)', {
-        statuses: [TripStatus.READ, TripStatus.COMPLETED],
+        statuses: [TripStatus.READ, TripStatus.EXCEED, TripStatus.COMPLETED],
       });
     } else {
       queryBuilder.andWhere('trip.status IN (:...statuses)', {
@@ -6839,6 +6891,7 @@ export class TripsService {
           TripStatus.READ,
           TripStatus.ONGOING,
           TripStatus.COMPLETED,
+          TripStatus.EXCEED,
           TripStatus.FINISHED,
         ],
       });
@@ -7782,6 +7835,7 @@ export class TripsService {
       where: { id: tripId },
       relations: [
         'vehicle',
+        'vehicle.assignedDriverPrimary',
         'vehicle.vehicleType',
         'odometerLog',
         'conflictingTrips',
@@ -7871,6 +7925,7 @@ export class TripsService {
       trip.status = TripStatus.READ;
 
       // Check if there are approved conflicting trips and update their start odometer to 0
+      /*
       if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
         //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'start', 0, user, now);
         await this.updateConflictingTripsOdometer(
@@ -7881,6 +7936,7 @@ export class TripsService {
           now,
         );
       }
+      */
 
       try {
         await this.tripTimelineService.recordMeterReading(trip.id, user, 'start');
@@ -7897,7 +7953,7 @@ export class TripsService {
           userId: userId,
           userName: user.displayname,
           requesterId: trip.requester?.id || null,
-          driverId: trip.primaryDriver?.id || null,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
           passengers: passengers || [],
         });
       } catch (e) {
@@ -7954,8 +8010,28 @@ export class TripsService {
       odometerLog.endRecordedBy = user;
       odometerLog.endRecordedAt = now;
 
-      // Update trip status to COMPLETED
-      trip.status = TripStatus.COMPLETED;
+      const finalEstimateDistance = trip.mileage * 2 + 10;
+      const actualDistance = odometerLog.endReading - odometerLog.startReading;
+      const isDistanceExceed = actualDistance >= finalEstimateDistance;
+
+      if (isDistanceExceed) {
+        trip.status = TripStatus.EXCEED;
+
+        const exceedApproval = this.exceedApprovalRepo.create({ trip: trip }
+        );
+        await this.exceedApprovalRepo.save(exceedApproval);
+
+        // Publish TRIP.EXCEED event
+        await this.eventBus.publish('TRIP', 'EXCEED', {
+          tripId: trip.id,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
+        });
+
+      } else {
+        // Update trip status to COMPLETED
+        trip.status = TripStatus.COMPLETED;
+      }
+
       /*
     trip.cost = (odometerLog.endReading - odometerLog.startReading) * trip.vehicle.vehicleType.costPerKm;
     
@@ -7978,8 +8054,7 @@ export class TripsService {
           const distance = odometerLog.endReading - odometerLog.startReading;
           if (odometerLog.startReading == 0 || odometerLog.endReading == 0) {
             trip.cost = 0;
-          }
-          else {
+          } else {
             trip.cost = distance * trip.vehicle.vehicleType.costPerKm;
           }
           console.log(
@@ -8001,13 +8076,14 @@ export class TripsService {
       }
 
       try {
+
         // Publish TRIP.COMPLETE event
         await this.eventBus.publish('TRIP', 'COMPLETE', {
           tripId: trip.id,
           userId: userId,
           userName: user.displayname,
           requesterId: trip.requester?.id || null,
-          driverId: trip.primaryDriver?.id || null,
+          driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
         });
       } catch (e) {
         console.error('Failed to send notifications', e);

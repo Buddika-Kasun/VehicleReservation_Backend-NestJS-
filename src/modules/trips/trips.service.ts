@@ -50,7 +50,10 @@ import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { request } from 'http';
 import { SriLankaTimeUtil } from 'src/common/utils/sri-lanka-time.util';
 import { TripTimelineService } from './trip-timeline.service';
-import { ExceedApproval } from 'src/infra/database/entities/exceed-approval.entity';
+import {
+  ExceedApproval,
+  ExceedStatusApproval,
+} from 'src/infra/database/entities/exceed-approval.entity';
 
 @Injectable()
 export class TripsService {
@@ -1267,7 +1270,8 @@ export class TripsService {
     //let requiresApproval = true;
     let tripStatus =
       currentTrip.status === TripStatus.DRAFT ? TripStatus.PENDING : currentTrip.status;
-    let requiresApproval = currentTrip.status === TripStatus.DRAFT ? currentTrip.tripType !== TripType.EMERGENCY : false;
+    let requiresApproval =
+      currentTrip.status === TripStatus.DRAFT ? currentTrip.tripType !== TripType.EMERGENCY : false;
 
     // Update trip status
     currentTrip.status = tripStatus;
@@ -1356,20 +1360,19 @@ export class TripsService {
         createTripDtoMock,
         currentTrip.location!,
         currentTrip.mileage,
+        currentTrip.createdAt,
       );
       savedTrip.approval = approval;
+      savedTrip.status =
+        approval.overallStatus.toString() === 'approved' ? TripStatus.APPROVED : savedTrip.status;
       await this.tripRepo.save(savedTrip);
 
       approvalMessage = isScheduledTrip
         ? 'Scheduled trip submitted for approval'
         : 'Trip submitted for approval';
-    }
-    else if(currentTrip.tripType === TripType.EMERGENCY) {
+    } else if (currentTrip.tripType === TripType.EMERGENCY) {
       // Handle emergency trip specific logic
-      this.approvalRepo.update(
-        { id: currentTrip.approval?.id }, 
-        { isActive: true }
-      );
+      this.approvalRepo.update({ id: currentTrip.approval?.id }, { isActive: true });
     }
 
     // Generate trip instances for scheduled trips
@@ -1389,6 +1392,7 @@ export class TripsService {
     const tripWithRelations = await this.tripRepo.findOne({
       where: { id: savedTrip.id },
       relations: [
+        'requester',
         'vehicle',
         'vehicle.assignedDriverPrimary',
         'vehicle.assignedDriverSecondary',
@@ -1427,6 +1431,28 @@ export class TripsService {
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
+    }
+
+    if (tripWithRelations?.status === TripStatus.APPROVED) {
+      let eventData = {
+        isApproved: true,
+        requesterId: tripWithRelations.requester?.id || null,
+        passengers: await this.getPassengersByTripId(tripWithRelations.id),
+        driverId:
+          tripWithRelations.primaryDriver?.id ||
+          tripWithRelations.vehicle?.assignedDriverPrimary?.id ||
+          null,
+      };
+
+      try {
+        // Publish TRIP.APPROVE event
+        await this.eventBus.publish('TRIP', 'APPROVE', {
+          tripId: tripWithRelations.id,
+          eventData: eventData,
+        });
+      } catch (e) {
+        console.error('Failed to send notifications', e);
+      }
     }
 
     return {
@@ -1530,7 +1556,10 @@ export class TripsService {
       );
     }
 
-    if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY && !createTripDto.tripTypeData.approverId) {
+    if (
+      createTripDto.tripTypeData.tripType === TripType.EMERGENCY &&
+      !createTripDto.tripTypeData.approverId
+    ) {
       throw new BadRequestException(
         this.responseService.error('Approver ID is required for emergency trips', 400),
       );
@@ -1736,9 +1765,9 @@ export class TripsService {
       createdAt: SriLankaTimeUtil.now(),
       updatedAt: SriLankaTimeUtil.now(),
     }) as Trip;
- 
+
     const savedTrip = await this.tripRepo.save(trip);
-    
+
     if (createTripDto.tripTypeData.tripType === TripType.EMERGENCY) {
       // Handle emergency trip specific logic
       // Create approval record
@@ -1762,14 +1791,12 @@ export class TripsService {
         }) as Approval;
 
         const savedApproval = await this.approvalRepo.save(approval);
-  
+
         savedTrip.approval = savedApproval;
         await this.tripRepo.save(savedTrip);
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Error creating approval record:', error);
       }
-
     }
 
     try {
@@ -2404,11 +2431,23 @@ export class TripsService {
     requester: User,
     createTripDto: CreateTripDto,
     tripLocation: TripLocation,
-    tripDistance: number,
+    tripDistance?: number,
+    tripCreatedAt?: Date,
   ): Promise<Approval> {
+    // Check if secondary approval is required (based on distance)
+    const shouldSkipHodApproval = await this.isTripDuringExemptHours(
+      tripCreatedAt || new Date(),
+      createTripDto.scheduleData.startTime,
+    );
+
+    const requireApprover1 = !shouldSkipHodApproval;
+
+    let approver1: User | undefined;
+    if (requireApprover1) {
+      approver1 = await this.getDepartmentHOD(tripId);
+    }
     // Get requester's department HOD (approver1)
     //const departmentHOD = await this.getRequesterHOD(requester);
-    const departmentHOD = await this.getDepartmentHOD(tripId);
 
     // Get approval configuration
     const approvalConfig = await this.approvalConfigRepo.findOne({
@@ -2454,18 +2493,23 @@ export class TripsService {
       safetyApprover = approvalConfig.safetyUser;
     }
 
+    let overallStatus = StatusApproval.PENDING;
+    if (!requireApprover1 && !requireApprover2 && !requireSafetyApprover) {
+      overallStatus = StatusApproval.APPROVED;
+    }
+
     // Create approval record
     const approval = this.approvalRepo.create({
       trip: { id: tripId } as Trip,
-      approver1: departmentHOD,
-      approver1Status: StatusApproval.PENDING,
+      approver1: approver1,
+      approver1Status: requireApprover1 ? StatusApproval.PENDING : undefined,
       approver2: approver2,
       approver2Status: requireApprover2 ? StatusApproval.PENDING : undefined,
       safetyApprover: safetyApprover,
       safetyApproverStatus: requireSafetyApprover ? StatusApproval.PENDING : undefined,
-      overallStatus: StatusApproval.PENDING,
+      overallStatus: overallStatus,
       currentStep: ApproverType.HOD,
-      requireApprover1: true, // Always require HOD approval
+      requireApprover1,
       requireApprover2,
       requireSafetyApprover,
       comments: createTripDto.specialRemarks,
@@ -2476,6 +2520,37 @@ export class TripsService {
     //await this.sendApprovalNotifications(savedApproval);
 
     return savedApproval;
+  }
+
+  private async isTripDuringExemptHours(
+    tripCreatedAt: Date,
+    tripStartTime: string, // Format: "HH:mm" or "HH:mm:ss"
+  ): Promise<boolean> {
+    // Extract hour from trip start time
+    const startHour = parseInt(tripStartTime.split(':')[0], 10);
+
+    // Check if start time is between 20:00 and 23:59
+    const isExemptHour = startHour >= 20 && startHour <= 23;
+
+    if (!isExemptHour) {
+      return false;
+    }
+
+    // Check if trip start is on the same day as creation
+    const creationDate = new Date(tripCreatedAt);
+    const creationDay = creationDate.toDateString();
+
+    // Parse trip start time and combine with creation date
+    const [hours, minutes, seconds = '0'] = tripStartTime.split(':');
+    const tripStartDateTime = new Date(creationDate);
+    tripStartDateTime.setHours(parseInt(hours, 10));
+    tripStartDateTime.setMinutes(parseInt(minutes, 10));
+    tripStartDateTime.setSeconds(parseInt(seconds, 10));
+
+    const tripStartDay = tripStartDateTime.toDateString();
+
+    // Only skip HOD approval if trip starts on the same day during exempt hours
+    return creationDay === tripStartDay;
   }
 
   // Helper method to calculate end time
@@ -6162,6 +6237,261 @@ export class TripsService {
     };
   }
 
+  async getAcceptedExceedTrips(user: any, requestDto: TripListRequestDto) {
+    try {
+      // Create base query builder with necessary joins
+      const queryBuilder = this.exceedApprovalRepo
+        .createQueryBuilder('exceedApproval')
+        .leftJoinAndSelect('exceedApproval.trip', 'trip')
+        .leftJoinAndSelect('trip.vehicle', 'vehicle')
+        .leftJoinAndSelect('trip.location', 'location')
+        .leftJoinAndSelect('trip.requester', 'requester')
+        .leftJoinAndSelect('trip.conflictingTrips', 'conflictingTrips')
+        .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
+        .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
+
+        queryBuilder.where('exceedApproval.Status = :status', { 
+          status: ExceedStatusApproval.APPROVED 
+        });
+
+      // Apply search filter if provided
+      if (requestDto.search && requestDto.search.trim() !== '') {
+        const searchTerm = `%${requestDto.search.trim()}%`;
+        const cleanSearch = requestDto.search.trim();
+
+        // Check if search term starts with # for ID search
+        if (cleanSearch.startsWith('#')) {
+          // Extract the part after #
+          const idSearch = cleanSearch.substring(1).trim();
+
+          // If it's a number or partial number
+          if (/^\d+$/.test(idSearch)) {
+            // It's a numeric ID search - use partial matching on ID
+            queryBuilder.andWhere('CAST(trip.id AS TEXT) LIKE :idSearch', {
+              idSearch: `%${idSearch}%`,
+            });
+          } else {
+            // # followed by non-numeric - treat as regular search on other fields
+            queryBuilder.andWhere(
+              new Brackets((qb) => {
+                qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                  .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                  .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                  .orWhere('requester.displayname LIKE :searchTerm')
+                  .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                  .orWhere('vehicle.regNo LIKE :searchTerm')
+                  .orWhere('vehicle.model LIKE :searchTerm');
+              }),
+            );
+          }
+        } else {
+          // Regular search across multiple fields
+          queryBuilder.andWhere(
+            new Brackets((qb) => {
+              qb.where('CAST(trip.id AS TEXT) LIKE :searchTerm', { searchTerm })
+                .orWhere('CAST(trip.startDate AS TEXT) LIKE :searchTerm')
+                .orWhere('CAST(trip.startTime AS TEXT) LIKE :searchTerm')
+                .orWhere('requester.displayname LIKE :searchTerm')
+                .orWhere('CAST(requester.id AS TEXT) LIKE :searchTerm')
+                .orWhere('vehicle.regNo LIKE :searchTerm')
+                .orWhere('vehicle.model LIKE :searchTerm');
+            }),
+          );
+        }
+      }
+
+      // Calculate pagination
+      const skip = (requestDto.page - 1) * requestDto.limit;
+
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting based on sortField and sortOrder
+      if (requestDto.sortField === SortField.ID) {
+        // Sort by trip ID
+        queryBuilder.orderBy('trip.id', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+      } else {
+        // Sort by start date and time (default)
+        // For startTime, we need to consider both date and time
+        queryBuilder
+          .orderBy('trip.startDate', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC')
+          .addOrderBy('trip.startTime', requestDto.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC');
+      }
+
+      // Get paginated results
+      const exceedApprovals = await queryBuilder.skip(skip).take(requestDto.limit).getMany();
+
+      // Extract trips from exceed approvals
+      const trips = exceedApprovals.map(approval => approval.trip).filter(trip => trip !== null);
+
+      // Transform trips to TripCardDto format
+      const tripCards = await Promise.all(
+        trips.map(async (trip) => {
+          try {
+            const tripType = await this.determineTripType(trip, user.userId);
+
+            let instanceCount = 0;
+            let instanceIds: number[] | null = null;
+
+            if (trip.isScheduled && !trip.isInstance) {
+              const instances = await this.tripRepo.find({
+                where: {
+                  masterTripId: trip.id,
+                  isInstance: true,
+                },
+                select: ['id'],
+              });
+
+              instanceCount = instances.length;
+              instanceIds = instances.map((instance) => instance.id);
+            } else if (trip.isInstance && trip.masterTripId) {
+              const allInstances = await this.tripRepo.find({
+                where: {
+                  masterTripId: trip.masterTripId,
+                  isInstance: true,
+                },
+                select: ['id'],
+              });
+
+              instanceCount = allInstances.length;
+              instanceIds = allInstances.map((instance) => instance.id);
+            }
+
+            return {
+              id: trip.id,
+              requesterName: trip.requester?.displayname || 'Unknown',
+              vehicleModel: trip.vehicle?.model || 'Unknown',
+              vehicleRegNo: trip.vehicle?.regNo || 'Unknown',
+              status: trip.status,
+              date: this.formatDateForDB(trip.startDate.toString()),
+              time: trip.startTime?.substring(0, 5) || '00:00',
+              tripUserType: tripType,
+              driverName: trip.vehicle?.assignedDriverPrimary?.displayname,
+              startLocation: trip.location?.startAddress,
+              endLocation: trip.location?.endAddress,
+              isScheduled: trip.isScheduled ?? false,
+              isInstance: trip.isInstance ?? false,
+              masterTripId: trip.masterTripId,
+              instanceDate: trip.instanceDate,
+              instanceCount: instanceCount,
+              instanceIds: instanceIds,
+              repetition: trip.repetition,
+              validTillDate: trip.validTillDate,
+              includeWeekends: trip.includeWeekends ?? false,
+              repeatAfterDays: trip.repeatAfterDays,
+            };
+          } catch (error) {
+            console.error(`Error processing trip ${trip.id}:`, error);
+            return {
+              id: trip.id,
+              requesterName: 'Error loading',
+              vehicleModel: 'Unknown',
+              vehicleRegNo: 'Unknown',
+              status: trip.status || 'unknown',
+              date: this.formatDateForDB(trip.startDate?.toString() || new Date().toISOString()),
+              time: trip.startTime?.substring(0, 5) || '00:00',
+              tripUserType: 'Unknown',
+              driverName: null,
+              startLocation: null,
+              endLocation: null,
+              isScheduled: false,
+              isInstance: false,
+              masterTripId: null,
+              instanceDate: null,
+              instanceCount: 0,
+              instanceIds: null,
+              repetition: null,
+              validTillDate: null,
+              includeWeekends: false,
+              repeatAfterDays: null,
+            };
+          }
+        }),
+      );
+
+      const hasMore = skip + trips.length < total;
+
+      return {
+        success: true,
+        data: {
+          trips: tripCards,
+          total,
+          page: requestDto.page,
+          limit: requestDto.limit,
+          hasMore,
+          sortField: requestDto.sortField,
+          sortOrder: requestDto.sortOrder,
+        },
+        statusCode: 200,
+      };
+    } catch (error) {
+      console.error('Error in getAllTrips:', error);
+
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch trips',
+        statusCode: 500,
+        data: {
+          trips: [],
+          total: 0,
+          page: requestDto.page || 1,
+          limit: requestDto.limit || 10,
+          hasMore: false,
+        },
+      };
+    }
+  }
+
+  async acceptExceedTrip(tripId: number, userId: number) {
+    // Find trip with approval details
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: ['primaryDriver', 'secondaryDriver'],
+    });
+
+    if (!trip) {
+      throw new NotFoundException(this.responseService.error('Trip not found', 404));
+    }
+
+    if (trip.status == TripStatus.COMPLETED) {
+      throw new BadRequestException(this.responseService.error('Trip is already completed', 400));
+    }
+
+    trip.status = TripStatus.COMPLETED;
+    // Save changes
+    const savedTrip = await this.tripRepo.save(trip);
+
+    await this.exceedApprovalRepo.upsert(
+      {
+        trip: { id: tripId },
+        approver: { id: userId },
+        approverApprovedAt: new Date(),
+        Status: ExceedStatusApproval.APPROVED,
+        approverComments: 'Accepted exceed trip after reviewing',
+      },
+      ['trip'], // Conflict target (unique constraint on trip)
+    );
+
+    try {
+      // Publish TRIP.EXCEED_ACCEPT event
+      await this.eventBus.publish('TRIP', 'EXCEED_ACCEPT', {
+        tripId: trip.id,
+        driverId: trip.primaryDriver?.id || trip.vehicle?.assignedDriverPrimary?.id || null,
+      });
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+
+    return {
+      success: true,
+      message: `Trip accepted successfully`,
+      data: {
+        tripId: trip.id,
+      },
+      statusCode: 200,
+    };
+  }
+
   /*
   private async restoreVehicleSeatsForRejection(trip: Trip) {
     // Restore seats that were allocated for this rejected trip
@@ -8017,8 +8347,7 @@ export class TripsService {
       if (isDistanceExceed) {
         trip.status = TripStatus.EXCEED;
 
-        const exceedApproval = this.exceedApprovalRepo.create({ trip: trip }
-        );
+        const exceedApproval = this.exceedApprovalRepo.create({ trip: trip });
         await this.exceedApprovalRepo.save(exceedApproval);
 
         // Publish TRIP.EXCEED event
@@ -8026,7 +8355,6 @@ export class TripsService {
           tripId: trip.id,
           driverId: trip.primaryDriver?.id || trip.vehicle.assignedDriverPrimary?.id || null,
         });
-
       } else {
         // Update trip status to COMPLETED
         trip.status = TripStatus.COMPLETED;
@@ -8076,7 +8404,6 @@ export class TripsService {
       }
 
       try {
-
         // Publish TRIP.COMPLETE event
         await this.eventBus.publish('TRIP', 'COMPLETE', {
           tripId: trip.id,

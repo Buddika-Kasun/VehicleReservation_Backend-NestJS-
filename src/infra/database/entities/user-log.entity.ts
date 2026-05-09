@@ -6,11 +6,13 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   JoinColumn,
+  Unique,
 } from 'typeorm';
 import { User } from './user.entity';
 import { IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 @Entity('user_activity_logs')
+@Unique(['userId'])
 export class UserActivityLog {
   @PrimaryGeneratedColumn()
   id: string;

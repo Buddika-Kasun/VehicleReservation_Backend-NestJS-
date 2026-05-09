@@ -20,7 +20,7 @@ export enum SortOrder {
 }
 
 // Define a type that combines enum values with additional string literals
-export type TripStatusFilter = TripStatus | 'scheduled' | 'normal';
+export type TripStatusFilter = TripStatus | 'scheduled' | 'normal' | 'accepted';
 
 export class TripListRequestDto {
   @ApiProperty({

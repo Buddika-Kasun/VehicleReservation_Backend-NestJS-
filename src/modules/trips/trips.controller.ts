@@ -175,9 +175,7 @@ export class TripsController {
   }
 
   @Get('get-timeline-by-id/:id')
-  @Roles(
-    UserRole.SYSADMIN,
-  )
+  @Roles(UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Get trip timeline by ID' })
   @ApiParam({ name: 'id', description: 'Trip ID', type: Number })
   @ApiResponse({
@@ -486,6 +484,26 @@ export class TripsController {
     @GetUser() user: any,
   ) {
     return await this.tripsService.rejectTrip(tripId, user.userId, rejectDto.rejectionReason);
+  }
+
+  @Post('all-exceed-trips')
+  @Roles(UserRole.SYSADMIN)
+  @ApiBody({ type: TripListRequestDto })
+  async getAllAcceptedExceedTrips(
+    @GetUser() user: any,
+    @Body() tripListRequest: TripListRequestDto,
+  ) {
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    return this.tripsService.getAcceptedExceedTrips(user, tripListRequest);
+  }
+
+  @Post('accept-exceed-trip/:tripId')
+  @Roles(UserRole.SYSADMIN)
+  @ApiOperation({ summary: 'Accept a exceed trip' })
+  async acceptExceedTrip(@Param('tripId') tripId: number, @GetUser() user: any) {
+    return await this.tripsService.acceptExceedTrip(tripId, user.userId);
   }
 
   @Post('for-meter-reading')

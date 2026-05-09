@@ -25,6 +25,7 @@ export class TripNotificationHandler implements OnModuleInit {
     this.eventBus.subscribe(EVENTS.TRIP.START, this.handleTripStarted.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.FINISH, this.handleTripFinished.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.EXCEED, this.handleTripExceed.bind(this));
+    this.eventBus.subscribe(EVENTS.TRIP.EXCEED_ACCEPT, this.handleTripExceedAccept.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.COMPLETE, this.handleTripEndedReading.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.STATUS_CHANGE, this.handleTripStatusChange.bind(this));
     this.eventBus.subscribe(EVENTS.TRIP.JOIN, this.handleTripPassengerJoin.bind(this));
@@ -190,14 +191,16 @@ export class TripNotificationHandler implements OnModuleInit {
   private async handleTripApproved(data: any): Promise<void> {
     const { tripId, userId, eventData } = data;
 
-    await this.notificationsService.create({
-      type: NotificationType.TRIP_APPROVED_BY_APPROVER,
-      userId: String(userId),
-      title: 'Trip Approved',
-      message: `Trip #${tripId} has been approved by you.`,
-      data: { ...data, eventData },
-      priority: NotificationPriority.LOW,
-    });
+    if (userId) {
+      await this.notificationsService.create({
+        type: NotificationType.TRIP_APPROVED_BY_APPROVER,
+        userId: String(userId),
+        title: 'Trip Approved',
+        message: `Trip #${tripId} has been approved by you.`,
+        data: { ...data, eventData },
+        priority: NotificationPriority.LOW,
+      });
+    }
 
     if (eventData.isApproved && eventData.requesterId) {
       await this.notificationsService.create({
@@ -572,6 +575,42 @@ export class TripNotificationHandler implements OnModuleInit {
       message: `Trip #${tripId} exceeded estimated distance by more than 10km. Waiting for approval to complete.`,
       data,
       priority: NotificationPriority.HIGH,
+    });
+  }
+
+  private async handleTripExceedAccept(data: any): Promise<void> {
+    const { tripId, driverId } = data;
+
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_EXCEED,
+      userId: String(driverId),
+      title: 'Trip Distance Exceeded Accepted',
+      message: `Your trip #${tripId} exceeded the estimated distance, but it has been accepted by the Sysadmin.`,
+      data,
+      priority: NotificationPriority.LOW,
+    });
+
+    const supervisors = await this.userService.getTransportSupervisors();
+    for (const supervisor of supervisors) {
+      if (supervisor.id === driverId) continue; // Skip if the supervisor is the one who confirmed
+      await this.notificationsService.create({
+        type: NotificationType.TRIP_EXCEED,
+        userId: String(supervisor.id),
+        title: 'Trip Distance Exceeded Accepted',
+        message: `Exceeded trip #${tripId} has been accepted by the Sysadmin.`,
+        data,
+        priority: NotificationPriority.LOW,
+      });
+    }
+
+    const sysadmin = await this.userService.getSysadmin();
+    await this.notificationsService.create({
+      type: NotificationType.TRIP_EXCEED,
+      userId: String(sysadmin.id),
+      title: 'Trip Distance Exceeded Accepted',
+      message: `Exceeded trip #${tripId} has been accepted by you.`,
+      data,
+      priority: NotificationPriority.LOW,
     });
   }
 

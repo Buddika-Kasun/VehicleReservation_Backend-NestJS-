@@ -36,6 +36,12 @@ export class ChecklistResponseDto {
   @ApiProperty({ type: CheckedByDto })
   checkedBy: CheckedByDto;
 
+  @ApiProperty({ type: CheckedByDto })
+  approvedBy?: CheckedByDto;
+
+  @ApiProperty()
+  comment?: string;
+
   @ApiProperty({
     example: {
       'Tyre condition': { status: 'good', remarks: 'In good condition' },
@@ -46,6 +52,9 @@ export class ChecklistResponseDto {
 
   @ApiProperty({ example: true })
   isSubmitted: boolean;
+
+  @ApiProperty({ example: 'submitted' })
+  status: string;
 
   @ApiProperty()
   createdAt: Date;

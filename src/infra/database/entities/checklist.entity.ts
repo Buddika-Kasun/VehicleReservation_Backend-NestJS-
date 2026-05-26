@@ -14,6 +14,12 @@ import { User } from './user.entity';
 import { Vehicle } from './vehicle.entity';
 import { ChecklistItem } from './checklist-item.entity';
 
+export enum ChecklistStatus {
+  SUBMITTED = 'submitted',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
+
 @Entity('checklists')
 export class Checklist {
   @PrimaryGeneratedColumn()
@@ -40,6 +46,16 @@ export class Checklist {
 
   @Column({ default: false })
   isSubmitted: boolean;
+
+  @Column({ type: 'enum', enum: ChecklistStatus, default: ChecklistStatus.SUBMITTED })
+  status: ChecklistStatus;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'approved_by_id' })
+  approvedBy?: User;
+
+  @Column({ type: 'text', nullable: true })
+  comment?: string;
 
   @OneToMany(() => ChecklistItem, (item) => item.checklist, {
     cascade: true,

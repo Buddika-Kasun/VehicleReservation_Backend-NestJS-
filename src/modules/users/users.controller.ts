@@ -159,6 +159,30 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Post('get-all-by-filtration')
+  @ApiOperation({ summary: 'Get all users by filtration' })
+  @ApiResponse({
+    status: 200,
+    description: `
+      Users retrieved successfully.
+    `,
+  })
+  async getAllByFiltration(@Body() body: any) {
+    return this.usersService.findAllByFiltration(body);
+  }
+
+  @Get('get-full/:id')
+  @ApiOperation({ summary: 'Get full user details by ID' })
+  @ApiResponse({
+    status: 200,
+    description: `
+      User retrieved successfully.
+    `,
+  })
+  async getFullUserById(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.findFullUserById(id);
+  }
+
   @Post('get-all-by-status')
   async getUsersByStatus(@Body() body: { status?: string; page?: number; limit?: number }) {
     const { status, page = 1, limit = 20 } = body;

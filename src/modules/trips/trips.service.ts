@@ -2435,16 +2435,26 @@ export class TripsService {
     tripCreatedAt?: Date,
   ): Promise<Approval> {
     // Check if secondary approval is required (based on distance)
+
+    let hodComment = null;
+    /*
     const shouldSkipHodApproval = await this.isTripDuringExemptHours(
       tripCreatedAt || new Date(),
       createTripDto.scheduleData.startTime,
     );
+    */
+
+    const shouldSkipHodApproval = tripDistance ? ((tripDistance * 2) < 13): false;
 
     const requireApprover1 = !shouldSkipHodApproval;
 
     let approver1: User | undefined;
     if (requireApprover1) {
       approver1 = await this.getDepartmentHOD(tripId);
+    }
+    else {
+      //hodComment = "Night trip (8PM-12AM) - No HOD approval needed";
+      hodComment = "13 KM less trip - No HOD approval needed";
     }
     // Get requester's department HOD (approver1)
     //const departmentHOD = await this.getRequesterHOD(requester);
@@ -2503,6 +2513,7 @@ export class TripsService {
       trip: { id: tripId } as Trip,
       approver1: approver1,
       approver1Status: requireApprover1 ? StatusApproval.PENDING : undefined,
+      approver1Comments: hodComment,
       approver2: approver2,
       approver2Status: requireApprover2 ? StatusApproval.PENDING : undefined,
       safetyApprover: safetyApprover,
@@ -6600,7 +6611,11 @@ export class TripsService {
               approvedAt: approval.approver1ApprovedAt,
               comments: approval.approver1Comments,
             }
-          : null,
+          //: null,
+          : { 
+              id: -1,
+              comments: approval.approver1Comments 
+            },
         secondary: approval.approver2
           ? {
               id: approval.approver2.id,

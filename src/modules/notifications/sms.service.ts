@@ -12,7 +12,7 @@ export class SmsService {
   private readonly apiUrl: string;
 
   constructor(private configService: ConfigService, private httpService: HttpService) {
-    this.apiToken = this.configService.get('TEXT_LK_API_TOKEN');
+    this.apiToken = this.configService.get('TEXT_LK_API_TOKEN', 'null');
     this.senderId = this.configService.get('TEXT_LK_SENDER_ID', 'Notify');
     this.apiUrl = this.configService.get('TEXT_LK_API_URL', 'https://app.text.lk/api/v3');
   }

@@ -12,12 +12,13 @@ export class UsersLogService {
     private readonly responseService: ResponseService,
   ) {}
 
+  /*
   async updateUserLog(dto: TrackUserActivityDto, reqUser: any) {
     const userId = reqUser.userId;
 
     try {
       // Find existing user log
-      let userLog = await this.userLogRepo.findOne({ where: { userId } });
+      const userLog = await this.userLogRepo.findOne({ where: { userId } });
 
       if (dto.isLogin) {
         // Handle LOGIN action
@@ -81,4 +82,55 @@ export class UsersLogService {
       return this.responseService.error('Failed to update user activity', 500);
     }
   }
+  */
+
+  async updateUserLog(dto: TrackUserActivityDto, reqUser: any) {
+    const userId = reqUser.userId;
+
+    try {
+      // Use upsert pattern
+      const existingLog = await this.userLogRepo.findOne({ where: { userId: userId } });
+
+      if (existingLog) {
+        // Update existing
+        if (dto.isLogin) {
+          existingLog.isLogin = true;
+          existingLog.lastLogin = dto.dateTime;
+          existingLog.lastAccess = dto.dateTime;
+        } else {
+          if (!existingLog.isLogin) {
+            return this.responseService.error('User has not logged in yet', 401);
+          }
+          existingLog.lastAccess = dto.dateTime;
+        }
+        existingLog.deviceName = dto.deviceName;
+        existingLog.platform = dto.platform;
+        existingLog.appVersion = dto.appVersion;
+
+        await this.userLogRepo.save(existingLog);
+      } else {
+        // Create new
+        const newLog = this.userLogRepo.create({
+          userId:userId,
+          isLogin: dto.isLogin || false,
+          lastLogin: dto.isLogin ? dto.dateTime : null,
+          lastAccess: dto.dateTime,
+          deviceName: dto.deviceName,
+          platform: dto.platform,
+          appVersion: dto.appVersion,
+        });
+        await this.userLogRepo.save(newLog);
+      }
+
+      return this.responseService.success('User activity updated successfully');
+    } catch (error) {
+      // Handle duplicate key error (PostgreSQL error code 23505)
+      if (error.code === '23505') {
+        // Retry or handle gracefully
+        return this.updateUserLog(dto, reqUser); // Simple retry
+      }
+      return this.responseService.error('Failed to update user activity', 500);
+    }
+  }
+
 }

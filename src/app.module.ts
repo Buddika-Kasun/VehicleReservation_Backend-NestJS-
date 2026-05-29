@@ -32,6 +32,7 @@ import { WsModule } from './ws/ws.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ChecklistModule } from './modules/checklist/checklist.module';
 import { UpdatesModule } from './modules/updates/updates.module';
+import { SavedLocationModule } from './modules/saved-location/saved-location.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { UpdatesModule } from './modules/updates/updates.module';
     DashboardModule,
     ChecklistModule,
     UpdatesModule,
+    SavedLocationModule,
   ],
 })
 export class AppModule {}

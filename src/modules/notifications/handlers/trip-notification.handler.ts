@@ -546,7 +546,7 @@ export class TripNotificationHandler implements OnModuleInit {
     const { tripId, driverId } = data;
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_EXCEED,
+      type: NotificationType.TRIP_EXCEED_FOR_DRIVER,
       userId: String(driverId),
       title: 'Trip Distance Exceeded',
       message: `You have been assigned as driver for trip #${tripId} exceeded estimated distance by more than 10km.`,
@@ -558,7 +558,7 @@ export class TripNotificationHandler implements OnModuleInit {
     for (const supervisor of supervisors) {
       if (supervisor.id === driverId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
-        type: NotificationType.TRIP_EXCEED,
+        type: NotificationType.TRIP_EXCEED_FOR_DRIVER,
         userId: String(supervisor.id),
         title: 'Trip Distance Exceeded',
         message: `Trip #${tripId} exceeded estimated distance by more than 10km.`,
@@ -582,7 +582,7 @@ export class TripNotificationHandler implements OnModuleInit {
     const { tripId, driverId } = data;
 
     await this.notificationsService.create({
-      type: NotificationType.TRIP_EXCEED,
+      type: NotificationType.TRIP_EXCEED_FOR_DRIVER,
       userId: String(driverId),
       title: 'Trip Distance Exceeded Accepted',
       message: `Your trip #${tripId} exceeded the estimated distance, but it has been accepted by the Sysadmin.`,
@@ -594,7 +594,7 @@ export class TripNotificationHandler implements OnModuleInit {
     for (const supervisor of supervisors) {
       if (supervisor.id === driverId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
-        type: NotificationType.TRIP_EXCEED,
+        type: NotificationType.TRIP_EXCEED_FOR_DRIVER,
         userId: String(supervisor.id),
         title: 'Trip Distance Exceeded Accepted',
         message: `Exceeded trip #${tripId} has been accepted by the Sysadmin.`,

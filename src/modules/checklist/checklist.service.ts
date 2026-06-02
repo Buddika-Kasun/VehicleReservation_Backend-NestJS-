@@ -13,6 +13,7 @@ import { User } from 'src/infra/database/entities/user.entity';
 import { ChecklistSubmitRequestDto } from './dto/checklist-request.dto';
 import { ChecklistResponseDto } from './dto/checklist-response.dto';
 import { ChecklistItem } from 'src/infra/database/entities/checklist-item.entity';
+import { EventBusService } from 'src/infra/redis/event-bus.service';
 
 @Injectable()
 export class ChecklistService {
@@ -25,6 +26,7 @@ export class ChecklistService {
     private vehicleRepository: Repository<Vehicle>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly eventBus: EventBusService,
   ) {}
 
   async getChecklistByDate(vehicleId: number, dateString: string): Promise<ChecklistResponseDto> {
@@ -85,6 +87,31 @@ export class ChecklistService {
     return count > 0;
   }
 
+  async checklistApproved(vehicleId: number, dateString: string): Promise<number> {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    const checklists = await this.checklistRepository.find({
+      where: {
+        vehicle: { id: vehicleId },
+        checklistDate: date,
+      },
+      select: ['status'], // Only select status for efficiency
+    });
+
+    if (checklists.length === 0) {
+      return 0; // No checklist found
+    }
+
+    const hasApproved = checklists.some(
+      (checklist) => checklist.status === ChecklistStatus.APPROVED,
+    );
+
+    return hasApproved ? 2 : 1; // 2 if approved, 1 if exists but not approved
+  }
+
   async approveChecklist(id: number, approvedById: number, comment?: string) {
     const checklist = await this.checklistRepository.findOne({
       where: { id },
@@ -95,11 +122,35 @@ export class ChecklistService {
       throw new NotFoundException(`Checklist with ID ${id} not found`);
     }
 
+    const user = await this.userRepository.findOne({
+      where: { id: approvedById },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${approvedById} not found`);
+    }
+
     checklist.status = ChecklistStatus.APPROVED;
     checklist.approvedBy = { id: approvedById } as User;
     checklist.comment = comment;
 
     const updatedChecklist = await this.checklistRepository.save(checklist);
+
+    // Publish VEHICLE.CHECKLIST_APPROVED event
+    try {
+      await this.eventBus.publish('VEHICLE', 'CHECKLIST_APPROVED', {
+        vehicleId: checklist.vehicle.id,
+        vehicleRegNo: checklist.vehicle.regNo,
+        approverId: user.id,
+        approverName: user.displayname,
+        approverRole: user.role,
+        checklistId: updatedChecklist?.id,
+        checklistDate: updatedChecklist?.checklistDate,
+        driverId: checklist.checkedBy?.id,
+        driverName: checklist.checkedBy?.displayname,
+      });
+    } catch (e) {
+      console.error('Failed to send checklist approved notification', e);
+    }
 
     return {
       success: true,
@@ -117,11 +168,35 @@ export class ChecklistService {
       throw new NotFoundException(`Checklist with ID ${id} not found`);
     }
 
+    const user = await this.userRepository.findOne({
+      where: { id: rejectedById },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${rejectedById} not found`);
+    }
+
     checklist.status = ChecklistStatus.REJECTED;
     checklist.approvedBy = { id: rejectedById } as User;
     checklist.comment = comment;
 
     const updatedChecklist = await this.checklistRepository.save(checklist);
+
+    // Publish VEHICLE.CHECKLIST_REJECTED event
+    try {
+      await this.eventBus.publish('VEHICLE', 'CHECKLIST_REJECTED', {
+        vehicleId: checklist.vehicle.id,
+        vehicleRegNo: checklist.vehicle.regNo,
+        approverId: user.id,
+        approverName: user.displayname,
+        approverRole: user.role,
+        checklistId: updatedChecklist?.id,
+        checklistDate: updatedChecklist?.checklistDate,
+        driverId: checklist.checkedBy?.id,
+        driverName: checklist.checkedBy?.displayname,
+      });
+    } catch (e) {
+      console.error('Failed to send checklist rejected notification', e);
+    }
 
     return {
       success: true,
@@ -153,6 +228,7 @@ export class ChecklistService {
     // Get vehicle
     const vehicle = await this.vehicleRepository.findOne({
       where: { id: checklistDto.vehicleId },
+      relations: ['assignedDriverPrimary'],
     });
     if (!vehicle) {
       throw new NotFoundException(`Vehicle with ID ${checklistDto.vehicleId} not found`);
@@ -206,6 +282,23 @@ export class ChecklistService {
       where: { id: savedChecklist.id },
       relations: ['vehicle', 'checkedBy', 'items'],
     });
+
+    // Publish VEHICLE.CHECKLIST_SUBMITTED event
+    try {
+      await this.eventBus.publish('VEHICLE', 'CHECKLIST_SUBMITTED', {
+        vehicleId: vehicle.id,
+        vehicleRegNo: vehicle.regNo,
+        checkById: user.id,
+        checkByName: user.displayname,
+        checkByRole: user.role,
+        driverId: vehicle.assignedDriverPrimary.id,
+        driverName: vehicle.assignedDriverPrimary.displayname,
+        checklistId: completeChecklist?.id,
+        checklistDate: completeChecklist?.checklistDate,
+      });
+    } catch (e) {
+      console.error('Failed to send checklist submitted notification', e);
+    }
 
     return this.mapToResponseDto(completeChecklist);
   }

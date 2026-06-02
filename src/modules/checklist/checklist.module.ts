@@ -7,10 +7,12 @@ import { Checklist } from 'src/infra/database/entities/checklist.entity';
 import { Vehicle } from 'src/infra/database/entities/vehicle.entity';
 import { User } from 'src/infra/database/entities/user.entity';
 import { ChecklistItem } from 'src/infra/database/entities/checklist-item.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Checklist, ChecklistItem, Vehicle, User]),
+    NotificationsModule,
   ],
   controllers: [ChecklistController],
   providers: [ChecklistService],

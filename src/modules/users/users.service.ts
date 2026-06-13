@@ -1,5 +1,9 @@
-
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, ILike, Not, Repository } from 'typeorm';
 import { Status, User, UserRole } from 'src/infra/database/entities/user.entity';
@@ -15,12 +19,17 @@ import { ApproveUserDto } from './dto/approve-user.dto';
 import { authenticate } from 'passport';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { ApprovalConfigService } from '../approval/approvalConfig.service';
+import { UserActivityLog } from 'src/infra/database/entities/user-log.entity';
+import { platform } from 'os';
+import { app } from 'firebase-admin';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(UserActivityLog)
+    private readonly userLogRepo: Repository<UserActivityLog>,
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private approvalConfigService: ApprovalConfigService,
@@ -368,12 +377,185 @@ export class UsersService {
       order: { id: 'DESC' },
     });
 
-    const sanitizedUsers = sanitizeUsers(users);
+    const sanitizedUsers = await Promise.all(
+      users.map(async (user) => {
+        const sanitizedUser = sanitizeUser(user);
+
+        const [canUserCreate, canTripApprove] = await Promise.all([
+          this.canUserCreate(user),
+          this.canTripApprove(user),
+        ]);
+
+        const userWithPermissions = {
+          ...sanitizedUser,
+          permissions: {
+            canUserCreate,
+            canTripApprove,
+          },
+        };
+
+        return userWithPermissions;
+      }),
+    );
 
     return this.responseService.success('Users retrieved successfully', {
       users: sanitizedUsers,
-      total: sanitizeUsers.length,
+      total: sanitizedUsers.length,
     });
+  }
+
+  async findAllByFiltration(body: any) {
+    try {
+      // Create base query builder with necessary joins
+      const queryBuilder = this.userRepo
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.company', 'company')
+        .leftJoinAndSelect('user.department', 'department')
+        .where('user.username != :username', { username: 'buddikakasun' });
+
+      // Apply department filter if provided
+      if (body.departmentId) {
+        queryBuilder.andWhere('department.id = :departmentId', {
+          departmentId: body.departmentId,
+        });
+      }
+
+      // Map frontend role to enum
+      if (body.role) {
+        const roleMapping: Record<string, UserRole> = {
+          'System Admin': UserRole.SYSADMIN,
+          Employee: UserRole.EMPLOYEE,
+          HOD: UserRole.ADMIN,
+          HR: UserRole.HR,
+          'Transport Supervisor': UserRole.SUPERVISOR,
+          Security: UserRole.SECURITY,
+          Driver: UserRole.DRIVER,
+        };
+
+        const userRole = roleMapping[body.role];
+        if (userRole) {
+          queryBuilder.andWhere('user.role = :filterRole', { filterRole: userRole });
+        }
+      }
+
+      // Apply search filter if provided
+      if (body.search && body.search.trim() !== '') {
+        const searchTerm = `%${body.search.trim()}%`;
+
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('user.displayname ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.email ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.username ILIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(user.id AS TEXT) ILIKE :searchTerm', { searchTerm });
+          }),
+        );
+      }
+
+      // Calculate pagination
+      const page = parseInt(body.page) || 1;
+      const limit = parseInt(body.limit) || 20;
+      const skip = (page - 1) * limit;
+
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting based on sort parameter
+      if (body.sort === 'asc') {
+        queryBuilder.orderBy('user.displayname', 'ASC');
+      } else if (body.sort === 'desc') {
+        queryBuilder.orderBy('user.displayname', 'DESC');
+      } else {
+        // Default sort by ID descending
+        queryBuilder.orderBy('user.id', 'DESC');
+      }
+
+      // Get paginated results
+      const users = await queryBuilder.skip(skip).take(limit).getMany();
+
+      // Process permissions for each user
+      const sanitizedUsers = users.map((user) => ({
+        id: user.id,
+        displayname: user.displayname,
+        role: user.role,
+        departmentName: user.department?.name || null,
+      }));
+
+      const hasMore = skip + users.length < total;
+
+      return {
+        success: true,
+        data: {
+          users: sanitizedUsers,
+          total,
+          page: page,
+          limit: limit,
+          hasMore,
+          sort: body.sort || 'desc',
+        },
+        statusCode: 200,
+      };
+    } catch (error) {
+      console.error('Error in findAllByFiltration:', error);
+
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch users',
+        statusCode: 500,
+        data: {
+          users: [],
+          total: 0,
+          page: parseInt(body.page) || 1,
+          limit: parseInt(body.limit) || 20,
+          hasMore: false,
+        },
+      };
+    }
+  }
+
+  async findFullUserById(id: number) {
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['company', 'department'],
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const userLogs = await this.userLogRepo.findOne({
+      where: { user: { id } },
+    });
+
+    const sanitizedUser = sanitizeUser(user);
+
+    const [canUserCreate, canTripApprove] = await Promise.all([
+      this.canUserCreate(user),
+      this.canTripApprove(user),
+    ]);
+
+    const userData = {
+      ...sanitizedUser,
+      permissions: {
+        canUserCreate,
+        canTripApprove,
+      },
+      activityLogs: {
+        lastLogin: userLogs?.lastLogin,
+        lastAccess: userLogs?.lastAccess,
+        device: userLogs?.deviceName,
+        platform: userLogs?.platform,
+        appVersion: userLogs?.appVersion,
+        canLogin: userLogs?.isLogin,
+      },
+    };
+
+    return {
+      success: true,
+      statusCode: 200,
+      data: {
+        user: userData,
+      },
+    };
   }
 
   async findAllByStatus(status?: string, page: number = 1, limit: number = 20) {
@@ -847,41 +1029,38 @@ export class UsersService {
 
   private async canTripApprove(user: any): Promise<boolean> {
     const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
-    return user.role === UserRole.SYSADMIN ||
-           user.isTripApprover === true ||
-           approvalConfig?.secondaryUserId === user.id || 
-           approvalConfig?.safetyUserId === user.id || 
-           approvalConfig?.hodId === user.id;
+    return (
+      user.role === UserRole.SYSADMIN ||
+      user.isTripApprover === true ||
+      approvalConfig?.secondaryUserId === user.id ||
+      approvalConfig?.safetyUserId === user.id ||
+      approvalConfig?.hodId === user.id
+    );
   }
 
   async initialUserData(id: number) {
-
     const user = await this.userRepo.findOne({ where: { id } });
 
     if (user) {
       const sanitizedUser: UserData = sanitizeUser(user);
-  
+
       const [canUserCreate, canTripApprove] = await Promise.all([
         this.canUserCreate(user),
-        this.canTripApprove(user)
+        this.canTripApprove(user),
       ]);
-  
+
       const userWithPermissions = {
         ...sanitizedUser,
         permissions: {
           canUserCreate,
-          canTripApprove
-        }
+          canTripApprove,
+        },
       };
-      
-      return this.responseService.success(
-        'User data retrieved successfully',
-        {
-          user: userWithPermissions
-        }
-      );
-    }
-    else {
+
+      return this.responseService.success('User data retrieved successfully', {
+        user: userWithPermissions,
+      });
+    } else {
       this.responseService.error('User not found', 404);
     }
   }
@@ -1055,4 +1234,3 @@ export class UsersService {
     });
   }
 }
-

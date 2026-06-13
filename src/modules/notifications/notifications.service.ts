@@ -67,7 +67,8 @@ export class NotificationsService {
       .createQueryBuilder('notification')
       .where('notification.userId = :userId', { userId })
       .andWhere('notification.isActive = :isActive', { isActive })
-      .orderBy('notification.createdAt', 'DESC')
+      .orderBy('notification.read', 'ASC') // false (unread) comes before true (read)
+      .addOrderBy('notification.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
 

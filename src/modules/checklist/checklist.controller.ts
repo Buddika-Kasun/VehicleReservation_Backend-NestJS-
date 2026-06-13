@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpException,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -64,6 +65,64 @@ export class ChecklistController {
     return await this.checklistService.getChecklistByDate(vehicleId, date);
   }
 
+  @Get('get-by-id/:id')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.SYSADMIN,
+    UserRole.HR,
+    UserRole.DRIVER,
+    UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+    UserRole.EMPLOYEE,
+  )
+  @ApiOperation({ summary: 'Get checklist by id' })
+  @ApiParam({ name: 'id', type: Number, description: 'Checklist ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Checklist retrieved successfully',
+    type: ChecklistResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Checklist not found' })
+  async getChecklistById(@Param('id', ParseIntPipe) id: number) {
+    return await this.checklistService.getChecklistById(id);
+  }
+
+  @Post('approve/:id')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Approve a checklist' })
+  @ApiParam({ name: 'id', type: Number, description: 'Checklist ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Checklist approved successfully',
+    type: ChecklistResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Checklist not found' })
+  async approveChecklist(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: any,
+    @Body() approvalDto: any,
+  ) {
+    return await this.checklistService.approveChecklist(id, user.userId, approvalDto.comment);
+  }
+
+  @Post('reject/:id')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({ summary: 'Reject a checklist' })
+  @ApiParam({ name: 'id', type: Number, description: 'Checklist ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Checklist rejected successfully',
+    type: ChecklistResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Checklist not found' })
+  async rejectChecklist(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: any,
+    @Body() rejectionDto: any,
+  ) {
+    return await this.checklistService.rejectChecklist(id, user.userId, rejectionDto.comment);
+  }
+
   @Get('vehicle/:vehicleId/date/:date/exists')
   @Roles(
     UserRole.ADMIN,
@@ -94,20 +153,12 @@ export class ChecklistController {
     @Param('vehicleId', ParseIntPipe) vehicleId: number,
     @Param('date') date: string,
   ) {
-    const exists = await this.checklistService.checklistExists(
-      vehicleId,
-      date,
-    );
+    const exists = await this.checklistService.checklistExists(vehicleId, date);
     return { exists };
   }
 
   @Post('submit')
-  @Roles(
-    UserRole.ADMIN,
-    UserRole.SYSADMIN,
-    UserRole.DRIVER,
-    UserRole.SUPERVISOR,
-  )
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.DRIVER, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Submit a new checklist' })
   @ApiResponse({
     status: 201,
@@ -116,10 +167,7 @@ export class ChecklistController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Checklist already exists for date' })
-  async submitChecklist(
-    @Body() checklistDto: ChecklistSubmitRequestDto,
-    @GetUser() user: any,
-  ) {
+  async submitChecklist(@Body() checklistDto: ChecklistSubmitRequestDto, @GetUser() user: any) {
     // Verify user is the same as checkedById
     if (user.userId !== checklistDto.checkedById) {
       throw new HttpException(
@@ -131,13 +179,44 @@ export class ChecklistController {
     return await this.checklistService.submitChecklist(checklistDto);
   }
 
-  @Get('vehicle/:vehicleId/history')
+  @Post('all-checklist')
   @Roles(
     UserRole.ADMIN,
     UserRole.SYSADMIN,
     UserRole.HR,
+    UserRole.DRIVER,
     UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+    UserRole.EMPLOYEE,
+    UserRole.DRIVER,
   )
+  async getAllChecklists(@GetUser() user: any, @Body() checkListReq: any) {
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    return this.checklistService.getAllChecklists(user, checkListReq);
+  }
+
+  @Post('all-vehicles-checklists')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.SYSADMIN,
+    UserRole.HR,
+    UserRole.DRIVER,
+    UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+    UserRole.EMPLOYEE,
+    UserRole.DRIVER,
+  )
+  async getAllVehiclesChecklists(@GetUser() user: any, @Body() checkListReq: any) {
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    return this.checklistService.getAllVehiclesChecklists(user, checkListReq);
+  }
+
+  @Get('vehicle/:vehicleId/history')
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get checklist history for a vehicle' })
   @ApiParam({ name: 'vehicleId', type: Number, description: 'Vehicle ID' })
   @ApiQuery({
@@ -186,13 +265,7 @@ export class ChecklistController {
   }
 
   @Get('user/:userId/history')
-  @Roles(
-    UserRole.ADMIN,
-    UserRole.SYSADMIN,
-    UserRole.HR,
-    UserRole.DRIVER,
-    UserRole.SUPERVISOR,
-  )
+  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Get checklist history for a user' })
   @ApiParam({ name: 'userId', type: Number, description: 'User ID' })
   @ApiQuery({
@@ -215,10 +288,6 @@ export class ChecklistController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return await this.checklistService.getUserChecklistHistory(
-      userId,
-      startDate,
-      endDate,
-    );
+    return await this.checklistService.getUserChecklistHistory(userId, startDate, endDate);
   }
 }

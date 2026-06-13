@@ -157,6 +157,40 @@ export class ChecklistController {
     return { exists };
   }
 
+  @Get('vehicle/:vehicleId/date/:date/approved')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.SYSADMIN,
+    UserRole.HR,
+    UserRole.DRIVER,
+    UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+  )
+  @ApiOperation({ summary: 'Check if checklist is approved for date' })
+  @ApiParam({ name: 'vehicleId', type: Number, description: 'Vehicle ID' })
+  @ApiParam({
+    name: 'date',
+    type: String,
+    description: 'Date in YYYY-MM-DD format',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Checklist approval status checked',
+    schema: {
+      type: 'object',
+      properties: {
+        approval: { type: 'boolean' },
+      },
+    },
+  })
+  async checkChecklistApproved(
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Param('date') date: string,
+  ) {
+    const approved = await this.checklistService.checklistApproved(vehicleId, date);
+    return { approved };
+  }
+
   @Post('submit')
   @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.DRIVER, UserRole.SUPERVISOR)
   @ApiOperation({ summary: 'Submit a new checklist' })

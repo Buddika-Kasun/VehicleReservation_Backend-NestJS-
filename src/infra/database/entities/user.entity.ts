@@ -44,10 +44,10 @@ export class User {
   profilePicture?: string;
 
   @Index()
-  @Column({ length: 100, unique: true, nullable:true })
+  @Column({ length: 100, unique: true, nullable: true })
   email?: string;
 
-  @Column({ length: 20, nullable: true, unique:true })
+  @Column({ length: 20, nullable: true, unique: true })
   phone: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.EMPLOYEE })
@@ -62,8 +62,11 @@ export class User {
   @Column({ default: false })
   isActive: boolean;
 
-  @Column({ default: false})
+  @Column({ default: false })
   isTripApprover: boolean;
+
+  @Column({ default: false })
+  isSafetyApprover: boolean;
 
   @Column({ type: 'enum', enum: Status, default: Status.PENDING })
   isApproved: Status;
@@ -71,10 +74,10 @@ export class User {
   @Column({ nullable: true })
   fcmToken: string;
 
-  @OneToMany(() => Trip, t => t.requester)
+  @OneToMany(() => Trip, (t) => t.requester)
   trips: Trip[];
 
-  @OneToMany(() => Feedback, f => f.submittedBy)
+  @OneToMany(() => Feedback, (f) => f.submittedBy)
   feedbacks: Feedback[];
 
   @CreateDateColumn()

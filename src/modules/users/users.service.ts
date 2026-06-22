@@ -280,6 +280,25 @@ export class UsersService {
     }
   }
 
+  async getSafetyApprovers(): Promise<User[]> {
+    try {
+      // Get users SUPERVISOR role
+      const safetyApprovers = await this.userRepo
+        .createQueryBuilder('user')
+        .where('user.isActive = :isActive', { isActive: true })
+        .andWhere('user.isApproved = :approved', { approved: Status.APPROVED })
+        .andWhere('(user.isSafetyApprover = :isSafetyApprover)', {
+          isSafetyApprover: true,
+        })
+        .getMany();
+
+      return safetyApprovers;
+    } catch (error) {
+      //this.logger.error('Error fetching safetyApprovers:', error);
+      throw error;
+    }
+  }
+
   async getSysadmin(): Promise<User> {
     try {
       // Get users SYSADMIN role
@@ -799,6 +818,50 @@ export class UsersService {
     });
   }
 
+  async findAllBySafetyApprovalSearching(search?: string) {
+    // Create query builder
+    const queryBuilder = this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .leftJoinAndSelect('user.department', 'department')
+      //.where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .where('user.role IN (:...roles)', {
+        roles: [UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYEE, UserRole.SUPERVISOR],
+      })
+      .andWhere('user.isApproved = :status', { status: Status.APPROVED })
+      .andWhere('user.isSafetyApprover = :safetyApproverStatus', { safetyApproverStatus: false }) // Add this line
+      .orderBy('user.createdAt', 'DESC')
+      .take(10); // limit
+
+    // Add search conditions if search term is provided
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('user.displayname ILIKE :search', { search: searchTerm })
+            .orWhere('user.email ILIKE :search', { search: searchTerm })
+            .orWhere('user.username ILIKE :search', { search: searchTerm });
+        }),
+      );
+    }
+
+    // Execute query
+    const users = await queryBuilder.getMany();
+
+    // Transform to minimal user data
+    const minimalUsers = users.map((user) => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department?.name,
+    }));
+
+    return this.responseService.success('Users retrieved successfully', {
+      users: minimalUsers,
+      total: minimalUsers.length,
+    });
+  }
+
   async setUserApprove(id: number, state: boolean, reqUser: User) {
     const user = await this.userRepo.findOne({
       where: { id: id },
@@ -855,6 +918,30 @@ export class UsersService {
     });
   }
 
+  async setSafetyApproveUser(id: number, state: boolean, reqUser: User) {
+    const user = await this.userRepo.findOne({
+      where: { id: id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(this.responseService.error('User not found', 404));
+    }
+
+    user.isSafetyApprover = state;
+
+    const savedUser = await this.userRepo.save(user);
+
+    const minimalUser = {
+      id: savedUser.id,
+      displayName: savedUser.displayname,
+      isSafetyApprover: savedUser.isSafetyApprover,
+    };
+
+    return this.responseService.success('User approved successfully', {
+      user: minimalUser,
+    });
+  }
+
   async findAllByApproval() {
     const users = await this.userRepo.find({
       where: { authenticationLevel: 3, role: Not(UserRole.SYSADMIN) },
@@ -878,6 +965,26 @@ export class UsersService {
   async findAllByTripApproval() {
     const users = await this.userRepo.find({
       where: { isTripApprover: true },
+      relations: ['company', 'department'],
+      order: { id: 'DESC' },
+    });
+
+    const minimalUsers = users.map((user) => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      departmentName: user.department.name,
+    }));
+
+    return this.responseService.success('Users retrieved successfully', {
+      users: minimalUsers,
+      total: minimalUsers.length,
+    });
+  }
+
+  async findAllBySafetyApproval() {
+    const users = await this.userRepo.find({
+      where: { isSafetyApprover: true },
       relations: ['company', 'department'],
       order: { id: 'DESC' },
     });
@@ -1038,15 +1145,25 @@ export class UsersService {
     );
   }
 
+  private async canSafetyApprove(user: any): Promise<boolean> {
+    const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
+    return (
+      user.role === UserRole.SYSADMIN ||
+      user.isSafetyApprover === true ||
+      approvalConfig?.safetyUserId === user.id
+    );
+  }
+
   async initialUserData(id: number) {
     const user = await this.userRepo.findOne({ where: { id } });
 
     if (user) {
       const sanitizedUser: UserData = sanitizeUser(user);
 
-      const [canUserCreate, canTripApprove] = await Promise.all([
+      const [canUserCreate, canTripApprove, canSafetyApprove] = await Promise.all([
         this.canUserCreate(user),
         this.canTripApprove(user),
+        this.canSafetyApprove(user),
       ]);
 
       const userWithPermissions = {
@@ -1054,6 +1171,7 @@ export class UsersService {
         permissions: {
           canUserCreate,
           canTripApprove,
+          canSafetyApprove,
         },
       };
 

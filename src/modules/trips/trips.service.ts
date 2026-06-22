@@ -1412,9 +1412,9 @@ export class TripsService {
       if (savedTrip.approval?.approver2) {
         approvers.push(savedTrip.approval.approver2);
       }
-      if (savedTrip.approval?.safetyApprover) {
-        approvers.push(savedTrip.approval.safetyApprover);
-      }
+      // if (savedTrip.approval?.safetyApprover) {
+      //   approvers.push(savedTrip.approval.safetyApprover);
+      // }
 
       // Publish TRIP.CONFIRM event
       await this.eventBus.publish('TRIP', 'CONFIRM', {
@@ -1428,6 +1428,7 @@ export class TripsService {
             : conformer.role,
         userName: conformer.displayname,
         approvers: approvers,
+        wantSafetyApprove: savedTrip.approval?.requireSafetyApprover,
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
@@ -2516,7 +2517,7 @@ export class TripsService {
       approver1Comments: hodComment,
       approver2: approver2,
       approver2Status: requireApprover2 ? StatusApproval.PENDING : undefined,
-      safetyApprover: safetyApprover,
+      // safetyApprover: safetyApprover,
       safetyApproverStatus: requireSafetyApprover ? StatusApproval.PENDING : undefined,
       overallStatus: overallStatus,
       currentStep: ApproverType.HOD,
@@ -5219,13 +5220,24 @@ export class TripsService {
     // For SYSADMIN: No approver restriction, see ALL approvals
     // For regular users: Only see approvals where they are approver
     if (!isSysAdmin) {
-      queryBuilder.andWhere(
+      if (user.isSafetyApprover == true) {
+        queryBuilder.andWhere(
         new Brackets((qb) => {
           qb.where('approval.approver1 = :userId', { userId })
             .orWhere('approval.approver2 = :userId', { userId })
-            .orWhere('approval.safetyApprover = :userId', { userId });
+            .orWhere('approval.requireSafetyApprover = :require', { require: true });
         }),
       );
+      }
+      else {
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('approval.approver1 = :userId', { userId })
+              .orWhere('approval.approver2 = :userId', { userId })
+              .orWhere('approval.safetyApprover = :userId', { userId });
+          }),
+        );
+      }
     }
 
     // Apply time filter
@@ -5387,8 +5399,13 @@ export class TripsService {
         ) {
           return true;
         }
+        // if (
+        //   approval.safetyApprover?.id === userId &&
+        //   approval.safetyApproverStatus === StatusApproval.PENDING
+        // ) {
         if (
-          approval.safetyApprover?.id === userId &&
+          approval.requireSafetyApprover == true &&
+          user.isSafetyApprover == true &&
           approval.safetyApproverStatus === StatusApproval.PENDING
         ) {
           return true;
@@ -5948,7 +5965,12 @@ export class TripsService {
       }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
       //} else if (approval.safetyApprover?.id === userId) {
-      if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+        isAuthorized = true;
+        approverTypes.push(ApproverType.SAFETY);
+      }
+
+      if (approval.requireSafetyApprover == true && approver.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -5987,7 +6009,9 @@ export class TripsService {
           approval.approver2Status = StatusApproval.APPROVED;
           approval.approver2ApprovedAt = now;
           approval.approver2Comments = comment;
-        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        } else if (approverType === ApproverType.SAFETY) {
+          approval.safetyApprover = approver;
           approval.safetyApproverStatus = StatusApproval.APPROVED;
           approval.safetyApproverApprovedAt = now;
           approval.safetyApproverComments = comment;
@@ -6008,6 +6032,7 @@ export class TripsService {
       requesterId: null,
       passengers: [],
       driverId: null,
+      isSafetyApprove: false,
     };
     // If fully approved, update trip status
     if (approval.overallStatus.toString() === 'approved') {
@@ -6034,6 +6059,7 @@ export class TripsService {
           } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
             await this.tripTimelineService.recordApproval(savedTrip, approver, 2);
           } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+            eventData.isSafetyApprove = true;
             await this.tripTimelineService.recordApproval(savedTrip, approver, 'safety');
           }
         }
@@ -6047,6 +6073,7 @@ export class TripsService {
       await this.eventBus.publish('TRIP', 'APPROVE', {
         tripId: trip.id,
         userId: userId,
+        userName: approver.displayname,
         eventData: eventData,
       });
     } catch (e) {
@@ -6136,7 +6163,12 @@ export class TripsService {
         isAuthorized = true;
         approverTypes.push(ApproverType.SECONDARY);
       }
-      if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+        isAuthorized = true;
+        approverTypes.push(ApproverType.SAFETY);
+      }
+
+      if (approval.requireSafetyApprover == true && rejector.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -6171,7 +6203,9 @@ export class TripsService {
           approval.approver2Comments = isSysAdmin
             ? `Rejected by SYSADMIN: ${rejectionReason}`
             : rejectionReason;
-        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        } else if (approverType === ApproverType.SAFETY) {
+          approval.safetyApprover = rejector;
           approval.safetyApproverStatus = StatusApproval.REJECTED;
           approval.safetyApproverComments = isSysAdmin
             ? `Rejected by SYSADMIN: ${rejectionReason}`

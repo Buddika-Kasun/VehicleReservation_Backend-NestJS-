@@ -63,6 +63,9 @@ export class Checklist {
   })
   items: ChecklistItem[];
 
+  @Column({ default: 1 })
+  version: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

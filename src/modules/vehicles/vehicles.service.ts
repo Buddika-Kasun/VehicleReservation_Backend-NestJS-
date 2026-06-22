@@ -597,6 +597,23 @@ Scan Date: ${new Date().toLocaleDateString()}
           if (!c.checklistDate) return false;
           return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
         }) || false;
+
+        let checklistStatus = "draft";
+        if (todayChecked) {
+          const matchingChecklists = v.checklists?.filter((c) => {
+            if (!c.checklistDate) return false;
+            return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+          });
+
+          // Sort by version number to get the latest
+          matchingChecklists.sort((a, b) => (a.version || 0) - (b.version || 0));
+
+          // Get the last matching checklist
+          const lastChecklist = matchingChecklists?.[matchingChecklists.length - 1];
+
+          // Get the status from the last checklist
+          checklistStatus = lastChecklist?.status || 'draft';
+        }
         
         // Create response object WITHOUT checklists
         const vehicleResponse = {
@@ -615,7 +632,8 @@ Scan Date: ${new Date().toLocaleDateString()}
           company: v.company,
           assignedDriverPrimary: v.assignedDriverPrimary,
           assignedDriverSecondary: v.assignedDriverSecondary,
-          todayChecked: todayChecked // Add this flag
+          todayChecked: todayChecked, // Add this flag
+          checklistStatus: checklistStatus,
         };
         
         return vehicleResponse;
@@ -648,6 +666,25 @@ Scan Date: ${new Date().toLocaleDateString()}
         if (!c.checklistDate) return false;
         return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
       }) || false;
+
+      console.log("vehicle checklist count: ", v.checklists.length);
+
+      let checklistStatus = 'draft';
+      if (todayChecked) {
+        const matchingChecklists = v.checklists?.filter((c) => {
+          if (!c.checklistDate) return false;
+          return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+        });
+
+        // Sort by version number to get the latest
+        matchingChecklists.sort((a, b) => (a.version || 0) - (b.version || 0));
+
+        // Get the last matching checklist
+        const lastChecklist = matchingChecklists?.[matchingChecklists.length - 1];
+
+        // Get the status from the last checklist
+        checklistStatus = lastChecklist?.status || 'draft';
+      }
       
       // Create response object WITHOUT checklists
       const vehicleResponse = {
@@ -666,7 +703,8 @@ Scan Date: ${new Date().toLocaleDateString()}
         company: v.company,
         assignedDriverPrimary: v.assignedDriverPrimary,
         assignedDriverSecondary: v.assignedDriverSecondary,
-        todayChecked: todayChecked // Add this flag
+        todayChecked: todayChecked, // Add this flag
+        checklistStatus: checklistStatus,
       };
       
       return vehicleResponse;

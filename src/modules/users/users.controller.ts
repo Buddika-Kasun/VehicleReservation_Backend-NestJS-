@@ -256,6 +256,16 @@ export class UsersController {
     return this.usersService.findAllByTripApproval();
   }
 
+  @Get('get-user-by-safety-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllBySafetyApproval() {
+    return this.usersService.findAllBySafetyApproval();
+  }
+
   @Get('can-create-trip')
   @ApiOperation({ summary: 'Check if user can create a new trip' })
   @ApiResponse({
@@ -291,6 +301,16 @@ export class UsersController {
     return this.usersService.findAllByTripApprovalSearching(search);
   }
 
+  @Get('search-safety-approval')
+  @ApiOperation({ summary: 'Search users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllBySafetyApprovalSearching(@Query('query') search: string) {
+    return this.usersService.findAllBySafetyApprovalSearching(search);
+  }
+
   @Put('set-approval/:id')
   @ApiOperation({ summary: 'Set approval' })
   @ApiParam({ name: 'id', description: 'User ID' })
@@ -319,6 +339,21 @@ export class UsersController {
     @Body('state') state: boolean,
   ) {
     return this.usersService.setTripsApproveUser(id, state, reqUser);
+  }
+
+  @Put('set-safety-approval/:id')
+  @ApiOperation({ summary: 'Set safety approval' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'User trip approval change successfully.',
+  })
+  async setSafetyApproveUser(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() reqUser: User,
+    @Body('state') state: boolean,
+  ) {
+    return this.usersService.setSafetyApproveUser(id, state, reqUser);
   }
 
   @Get('profile')

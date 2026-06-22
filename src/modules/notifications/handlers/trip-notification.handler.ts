@@ -1,7 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EventBusService } from 'src/infra/redis/event-bus.service';
 import { NotificationsService } from '../notifications.service';
-import { NotificationType, NotificationPriority } from 'src/infra/database/entities/notification.entity';
+import {
+  NotificationType,
+  NotificationPriority,
+} from 'src/infra/database/entities/notification.entity';
 import { EVENTS } from 'src/common/constants/events.constants';
 import { UsersService } from 'src/modules/users/users.service';
 
@@ -74,7 +77,7 @@ export class TripNotificationHandler implements OnModuleInit {
   }
 
   private async handleTripConfirm(data: any): Promise<void> {
-    const { tripId, userId, approvers, userName, userRole } = data;
+    const { tripId, userId, approvers, userName, userRole, wantSafetyApprove } = data;
 
     await this.notificationsService.create({
       type: NotificationType.TRIP_CONFIRMED,
@@ -112,6 +115,22 @@ export class TripNotificationHandler implements OnModuleInit {
             priority: NotificationPriority.HIGH,
           });
         }
+      }
+    }
+
+    if (wantSafetyApprove) {
+      const safetyApprovers = await this.userService.getSafetyApprovers();
+
+      for (const safetyApprover of safetyApprovers) {
+        if (safetyApprover.id === userId) continue; // Skip if the supervisor is the one who confirmed
+        await this.notificationsService.create({
+          type: NotificationType.TRIP_CONFIRMED_FOR_APPROVAL,
+          userId: String(safetyApprover.id),
+          title: 'New Trip Approval',
+          message: `Trip #${tripId} has been confirmed by ${userName}(TRANSPORT SUPERVISOR) and is awaiting safety approval.`,
+          data,
+          priority: NotificationPriority.HIGH,
+        });
       }
     }
   }
@@ -189,7 +208,7 @@ export class TripNotificationHandler implements OnModuleInit {
   }
 
   private async handleTripApproved(data: any): Promise<void> {
-    const { tripId, userId, eventData } = data;
+    const { tripId, userId, userName, eventData } = data;
 
     if (userId) {
       await this.notificationsService.create({
@@ -200,6 +219,22 @@ export class TripNotificationHandler implements OnModuleInit {
         data: { ...data, eventData },
         priority: NotificationPriority.LOW,
       });
+    }
+
+    if (eventData.isSafetyApprove) {
+      const safetyApprovers = await this.userService.getSafetyApprovers();
+
+      for (const safetyApprover of safetyApprovers) {
+        if (safetyApprover.id === userId) continue; // Skip if the supervisor is the one who confirmed
+        await this.notificationsService.create({
+          type: NotificationType.TRIP_APPROVED_BY_APPROVER,
+          userId: String(safetyApprover.id),
+          title: 'Trip Approved',
+          message: `Trip #${tripId} has been approved by ${userName}(SAFETY APPROVER).`,
+          data,
+          priority: NotificationPriority.HIGH,
+        });
+      }
     }
 
     if (eventData.isApproved && eventData.requesterId) {
@@ -320,16 +355,31 @@ export class TripNotificationHandler implements OnModuleInit {
       });
     }
 
-    if (userId !== safetyApproverId) {
+    // if (userId !== safetyApproverId) {
+    //   await this.notificationsService.create({
+    //     type: NotificationType.TRIP_REJECTED_BY_APPROVER,
+    //     userId: String(safetyApproverId),
+    //     title: 'Trip Rejected',
+    //     message: `Trip #${tripId} has been rejected by ${userName}(${userRole}), Reason: ${rejectionReason}`,
+    //     data: data,
+    //     priority: NotificationPriority.MEDIUM,
+    //   });
+    // }
+
+    const safetyApprovers = await this.userService.getSafetyApprovers();
+
+    for (const safetyApprover of safetyApprovers) {
+      if (safetyApprover.id === userId) continue; // Skip if the supervisor is the one who confirmed
       await this.notificationsService.create({
         type: NotificationType.TRIP_REJECTED_BY_APPROVER,
-        userId: String(safetyApproverId),
+        userId: String(safetyApprover.id),
         title: 'Trip Rejected',
-        message: `Trip #${tripId} has been rejected by ${userName}(${userRole}), Reason: ${rejectionReason}`,
-        data: data,
-        priority: NotificationPriority.MEDIUM,
+        message: `Trip #${tripId} has been Rejected by ${userName}(${userRole}), Reason: ${rejectionReason}.`,
+        data,
+        priority: NotificationPriority.HIGH,
       });
     }
+
   }
 
   private async handleTripStartedReading(data: any): Promise<void> {

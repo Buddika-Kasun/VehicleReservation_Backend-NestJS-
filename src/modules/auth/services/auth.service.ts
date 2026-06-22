@@ -13,7 +13,7 @@ import { ApprovalConfigService } from 'src/modules/approval/approvalConfig.servi
 @Injectable()
 export class AuthService {
   constructor(
-    private usersService: UsersService, 
+    private usersService: UsersService,
     private approvalConfigService: ApprovalConfigService,
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -27,10 +27,7 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException(
-        this.responseService.error(
-          'Invalid username or password',
-          401
-        )
+        this.responseService.error('Invalid username or password', 401),
       );
     }
 
@@ -38,71 +35,64 @@ export class AuthService {
 
     if (!isPasswordValid) {
       throw new UnauthorizedException(
-        this.responseService.error(
-          'Invalid username or password',
-          401
-        )
+        this.responseService.error('Invalid username or password', 401),
       );
-    }    
+    }
 
     if (user.isApproved != Status.APPROVED) {
       throw new UnauthorizedException(
         this.responseService.error(
           'Your account is pending approval, Please contact administrator.',
-          401
-        )
+          401,
+        ),
       );
     }
 
     const { password, ...result } = user as any;
     return result;
-
   }
 
   async login(dto: LoginDto): Promise<LoginResponseDto> {
-
     const user = await this.validateUser(dto.username, dto.password);
 
-    console.log("user : ", user);
+    console.log('user : ', user);
 
-    const payload = { 
-      sub: user.id, 
-      email: user.email, 
-      role: user.role, 
-      username: user.username 
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      username: user.username,
     };
 
-    const accessToken = this.generateAccessToken(payload)
+    const accessToken = this.generateAccessToken(payload);
 
-    const refreshToken = this.generateRefreshToken(payload)
+    const refreshToken = this.generateRefreshToken(payload);
 
     // Update stored refresh token
     this.storeRefreshToken(user.id, refreshToken);
 
     const sanitizedUser: UserData = sanitizeUser(user);
 
-    const [canUserCreate, canTripApprove] = await Promise.all([
+    const [canUserCreate, canTripApprove, canSafetyApprove] = await Promise.all([
       this.canUserCreate(user),
-      this.canTripApprove(user)
+      this.canTripApprove(user),
+      this.canSafetyApprove(user),
     ]);
 
     const userWithPermissions = {
       ...sanitizedUser,
       permissions: {
         canUserCreate,
-        canTripApprove
-      }
+        canTripApprove,
+        canSafetyApprove,
+      },
     };
-    
-    return this.responseService.success(
-      'Login successful',
-      {
-        accessToken,
-        refreshToken,
-        user: userWithPermissions
-      }
-    );
 
+    return this.responseService.success('Login successful', {
+      accessToken,
+      refreshToken,
+      user: userWithPermissions,
+    });
   }
 
   async verifyPasswordReset(data: any) {
@@ -111,10 +101,7 @@ export class AuthService {
 
       if (!username || !mobile) {
         throw new BadRequestException(
-          this.responseService.error(
-            'Username and mobile number are required',
-            400
-          )
+          this.responseService.error('Username and mobile number are required', 400),
         );
       }
 
@@ -123,10 +110,7 @@ export class AuthService {
 
       if (!user) {
         throw new BadRequestException(
-          this.responseService.error(
-            'Username and mobile number do not match any user',
-            400
-          )
+          this.responseService.error('Username and mobile number do not match any user', 400),
         );
       }
 
@@ -135,8 +119,8 @@ export class AuthService {
         throw new BadRequestException(
           this.responseService.error(
             'Your account is pending approval. Please contact administrator.',
-            400
-          )
+            400,
+          ),
         );
       }
 
@@ -147,20 +131,14 @@ export class AuthService {
           userId: user.id,
           username: user.username,
           mobile: user.phone,
-          displayName: user.displayname
-        }
+          displayName: user.displayname,
+        },
       );
-
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        this.responseService.error(
-          'Failed to verify user',
-          400
-        )
-      );
+      throw new BadRequestException(this.responseService.error('Failed to verify user', 400));
     }
   }
 
@@ -169,43 +147,25 @@ export class AuthService {
       const { username, mobile, newPassword, confirmPassword } = data;
 
       if (!username || !mobile || !newPassword || !confirmPassword) {
-        throw new BadRequestException(
-          this.responseService.error(
-            'All fields are required',
-            400
-          )
-        );
+        throw new BadRequestException(this.responseService.error('All fields are required', 400));
       }
 
       // Find user
       const user = await this.usersService.findByUsernameAndMobile(username, mobile);
 
       if (!user) {
-        throw new BadRequestException(
-          this.responseService.error(
-            'User not found',
-            400
-          )
-        );
+        throw new BadRequestException(this.responseService.error('User not found', 400));
       }
 
       // Check if passwords match
       if (newPassword !== confirmPassword) {
-        throw new BadRequestException(
-          this.responseService.error(
-            'Passwords do not match',
-            400
-          )
-        );
+        throw new BadRequestException(this.responseService.error('Passwords do not match', 400));
       }
 
       // Check password length
       if (newPassword.length < 6) {
         throw new BadRequestException(
-          this.responseService.error(
-            'Password must be at least 6 characters',
-            400
-          )
+          this.responseService.error('Password must be at least 6 characters', 400),
         );
       }
 
@@ -213,10 +173,7 @@ export class AuthService {
       const isSamePassword = await compare(newPassword, user.passwordHash);
       if (isSamePassword) {
         throw new BadRequestException(
-          this.responseService.error(
-            'New password cannot be the same as old password',
-            400
-          )
+          this.responseService.error('New password cannot be the same as old password', 400),
         );
       }
 
@@ -230,47 +187,47 @@ export class AuthService {
       this.refreshTokens.delete(user.id);
 
       return this.responseService.success(
-        'Password reset successful. You can now login with your new password.'
+        'Password reset successful. You can now login with your new password.',
       );
-
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        this.responseService.error(
-          'Failed to reset password',
-          400
-        )
-      );
+      throw new BadRequestException(this.responseService.error('Failed to reset password', 400));
     }
   }
 
   private async canTripApprove(user: any): Promise<boolean> {
-  const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
-  return user.role === UserRole.SYSADMIN ||
-         user.isTripApprover === true ||
-         approvalConfig?.secondaryUserId === user.id || 
-         approvalConfig?.safetyUserId === user.id || 
-         approvalConfig?.hodId === user.id;
-}
+    const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
+    return (
+      user.role === UserRole.SYSADMIN ||
+      user.isTripApprover === true ||
+      approvalConfig?.secondaryUserId === user.id ||
+      approvalConfig?.safetyUserId === user.id ||
+      approvalConfig?.hodId === user.id
+    );
+  }
 
-private async canUserCreate(user: any): Promise<boolean> {
-  // Your existing logic, make it async if needed
-  const allowedRoles = [UserRole.HR, UserRole.SYSADMIN];
-  if (allowedRoles.includes(user.role)) return true;
-  if (user.role === UserRole.EMPLOYEE && user.authenticationLevel === 3) return true;
-  return false;
-}
+  private async canSafetyApprove(user: any): Promise<boolean> {
+    const approvalConfig = await this.approvalConfigService.findMenuApprovalForAuth(user.id);
+    return (
+      user.role === UserRole.SYSADMIN ||
+      user.isSafetyApprover === true ||
+      approvalConfig?.safetyUserId === user.id
+    );
+  }
+
+  private async canUserCreate(user: any): Promise<boolean> {
+    // Your existing logic, make it async if needed
+    const allowedRoles = [UserRole.HR, UserRole.SYSADMIN];
+    if (allowedRoles.includes(user.role)) return true;
+    if (user.role === UserRole.EMPLOYEE && user.authenticationLevel === 3) return true;
+    return false;
+  }
 
   async refreshToken(refreshToken: string) {
     if (!refreshToken) {
-      throw new BadRequestException(
-        this.responseService.error(
-          'Refresh token is required',
-          401,
-        )
-      );
+      throw new BadRequestException(this.responseService.error('Refresh token is required', 401));
     }
 
     try {
@@ -362,7 +319,7 @@ private async canUserCreate(user: any): Promise<boolean> {
       //secret: this.configService.get('JWT_REFRESH_SECRET') || 'supersecretrefreshkey',
     });
   }
-  
+
   // Method to store refresh token when user logs in
   private storeRefreshToken(userId: number, refreshToken: string) {
     this.refreshTokens.set(userId, refreshToken);
@@ -371,9 +328,6 @@ private async canUserCreate(user: any): Promise<boolean> {
   // Method to revoke refresh token (on logout)
   async revokeRefreshToken(userId: number): Promise<LogoutResponseDto> {
     this.refreshTokens.delete(userId);
-    return this.responseService.success(
-      'Logged out successfully',
-    )
+    return this.responseService.success('Logged out successfully');
   }
-
 }

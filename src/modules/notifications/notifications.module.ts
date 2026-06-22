@@ -13,6 +13,7 @@ import { UsersModule } from '../users/users.module';
 import { UserFcmToken } from 'src/infra/database/entities/user-fcm-token.entity';
 import { SmsService } from './sms.service';
 import { HttpModule } from '@nestjs/axios';
+import { VehicleNotificationHandler } from './handlers/vehicle-notification.handler';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HttpModule } from '@nestjs/axios';
     SmsService,
     UserNotificationHandler,
     TripNotificationHandler,
+    VehicleNotificationHandler,
     //UsersService,
   ],
   exports: [NotificationsService, SmsService],

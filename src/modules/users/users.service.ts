@@ -423,6 +423,7 @@ export class UsersService {
     });
   }
 
+  /*
   async findAllByFiltration(body: any) {
     try {
       // Create base query builder with necessary joins
@@ -530,6 +531,251 @@ export class UsersService {
         },
       };
     }
+  }
+    */
+  async findAllByFiltration(body: any) {
+    try {
+      // Create base query builder with necessary joins
+      const queryBuilder = this.userRepo
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.company', 'company')
+        .leftJoinAndSelect('user.department', 'department')
+        .where('user.username != :username', { username: 'buddikakasun' });
+
+      // Apply department filter if provided
+      if (body.departmentId) {
+        queryBuilder.andWhere('department.id = :departmentId', {
+          departmentId: body.departmentId,
+        });
+      }
+
+      // Map frontend role to enum
+      if (body.role) {
+        const roleMapping: Record<string, UserRole> = {
+          'System Admin': UserRole.SYSADMIN,
+          Employee: UserRole.EMPLOYEE,
+          HOD: UserRole.ADMIN,
+          HR: UserRole.HR,
+          'Transport Supervisor': UserRole.SUPERVISOR,
+          Security: UserRole.SECURITY,
+          Driver: UserRole.DRIVER,
+        };
+
+        const userRole = roleMapping[body.role];
+        if (userRole) {
+          queryBuilder.andWhere('user.role = :filterRole', { filterRole: userRole });
+        }
+      }
+
+      // Apply search filter if provided
+      if (body.search && body.search.trim() !== '') {
+        const searchTerm = `%${body.search.trim()}%`;
+
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('user.displayname ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.email ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.username ILIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(user.id AS TEXT) ILIKE :searchTerm', { searchTerm });
+          }),
+        );
+      }
+
+      // Apply version filter
+      if (body.version && body.version !== 'all') {
+        // Get the latest version for each user using a more efficient approach
+        const latestVersionsPerUser = await this.userLogRepo
+          .createQueryBuilder('userLog')
+          .select('DISTINCT ON ("userLog"."userId") "userLog"."userId"', 'userId')
+          .addSelect('"userLog"."appVersion"', 'appVersion')
+          .where('userLog.appVersion IS NOT NULL')
+          .andWhere('userLog.appVersion != :empty', { empty: '' })
+          .orderBy('"userLog"."userId"')
+          .addOrderBy('"userLog"."createdAt"', 'DESC')
+          .getRawMany();
+
+        // Create a map of user ID -> latest version
+        const userLatestVersion = new Map<number, string>();
+        latestVersionsPerUser.forEach((item) => {
+          userLatestVersion.set(Number(item.userId), item.appVersion);
+        });
+
+        // Get all distinct versions from the latest versions
+        const allLatestVersions = Array.from(
+          new Set(latestVersionsPerUser.map((item) => item.appVersion)),
+        );
+
+        // Separate web and semantic versions
+        const webVersions = allLatestVersions.filter((v) => v === 'web');
+        const semanticVersions = allLatestVersions
+          .filter((v) => v !== 'web')
+          .sort((a, b) => this.compareVersions(a, b));
+
+        // Get the highest semantic version
+        const highestSemanticVersion =
+          semanticVersions.length > 0 ? semanticVersions[semanticVersions.length - 1] : null;
+
+        let targetUserIds: number[] = [];
+
+        if (body.version === 'latest') {
+          // Latest includes: 'web' AND the highest semantic version
+          const latestVersionsSet = new Set<string>();
+
+          if (webVersions.length > 0) {
+            latestVersionsSet.add('web');
+          }
+
+          if (highestSemanticVersion) {
+            latestVersionsSet.add(highestSemanticVersion);
+          }
+
+          // Get user IDs whose latest version is in the latest versions set
+          userLatestVersion.forEach((version, userId) => {
+            if (latestVersionsSet.has(version)) {
+              targetUserIds.push(userId);
+            }
+          });
+        } else if (body.version === 'old') {
+          // Old includes: versions lower than the highest semantic version (excluding 'web')
+          const oldVersionsSet = new Set<string>();
+
+          allLatestVersions.forEach((version) => {
+            if (
+              version !== 'web' &&
+              version !== highestSemanticVersion &&
+              (highestSemanticVersion
+                ? this.compareVersions(version, highestSemanticVersion) < 0
+                : true)
+            ) {
+              oldVersionsSet.add(version);
+            }
+          });
+
+          // Get user IDs whose latest version is in the old versions set
+          userLatestVersion.forEach((version, userId) => {
+            if (oldVersionsSet.has(version)) {
+              targetUserIds.push(userId);
+            }
+          });
+        }
+
+        // Remove duplicates from targetUserIds
+        targetUserIds = Array.from(new Set(targetUserIds));
+
+        // Apply the user ID filter
+        if (targetUserIds.length > 0) {
+          queryBuilder.andWhere('user.id IN (:...targetUserIds)', { targetUserIds });
+        } else {
+          queryBuilder.andWhere('1 = 0');
+        }
+      }
+
+      // Calculate pagination
+      const page = parseInt(body.page) || 1;
+      const limit = parseInt(body.limit) || 20;
+      const skip = (page - 1) * limit;
+
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting
+      if (body.sort === 'asc') {
+        queryBuilder.orderBy('user.displayname', 'ASC');
+      } else if (body.sort === 'desc') {
+        queryBuilder.orderBy('user.displayname', 'DESC');
+      } else {
+        queryBuilder.orderBy('user.id', 'DESC');
+      }
+
+      // Get paginated results
+      const users = await queryBuilder.skip(skip).take(limit).getMany();
+
+      // Get latest version for each user
+      const userIds = users.map((user) => user.id);
+      let userVersions = new Map();
+
+      if (userIds.length > 0) {
+        const versions = await this.userLogRepo
+          .createQueryBuilder('userLog')
+          .select('userLog.userId', 'userId')
+          .addSelect('userLog.appVersion', 'appVersion')
+          .where('userLog.userId IN (:...userIds)', { userIds })
+          .andWhere('userLog.appVersion IS NOT NULL')
+          .andWhere('userLog.appVersion != :empty', { empty: '' })
+          .orderBy('userLog.createdAt', 'DESC')
+          .getRawMany();
+
+        // Get the latest version for each user
+        const latestVersionMap = new Map();
+        versions.forEach((v) => {
+          if (!latestVersionMap.has(v.userId)) {
+            latestVersionMap.set(v.userId, v.appVersion);
+          }
+        });
+
+        userVersions = latestVersionMap;
+      }
+
+      // Process users with their versions
+      const sanitizedUsers = users.map((user) => ({
+        id: user.id,
+        displayname: user.displayname,
+        role: user.role,
+        departmentName: user.department?.name || null,
+        version: userVersions.get(user.id) || 'N/A',
+      }));
+
+      const hasMore = skip + users.length < total;
+
+      return {
+        success: true,
+        data: {
+          users: sanitizedUsers,
+          total,
+          page: page,
+          limit: limit,
+          hasMore,
+          sort: body.sort || 'desc',
+        },
+        statusCode: 200,
+      };
+    } catch (error) {
+      console.error('Error in findAllByFiltration:', error);
+
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch users',
+        statusCode: 500,
+        data: {
+          users: [],
+          total: 0,
+          page: parseInt(body.page) || 1,
+          limit: parseInt(body.limit) || 20,
+          hasMore: false,
+        },
+      };
+    }
+  }
+
+  // Helper method to compare semantic versions
+  private compareVersions(a: string, b: string): number {
+    // Remove any non-numeric prefixes like 'v'
+    const cleanA = a.replace(/^v/, '');
+    const cleanB = b.replace(/^v/, '');
+
+    const partsA = cleanA.split('.').map(Number);
+    const partsB = cleanB.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const numA = partsA[i] || 0;
+      const numB = partsB[i] || 0;
+
+      if (numA !== numB) {
+        return numA - numB;
+      }
+    }
+
+    return 0;
   }
 
   async findFullUserById(id: number) {

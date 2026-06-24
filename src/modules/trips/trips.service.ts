@@ -1868,7 +1868,8 @@ export class TripsService {
   private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
     const startDate = new Date(scheduleData.startDate);
     const today = new Date();
-    today.setDate(today.getDate() + 1);
+    // today.setDate(today.getDate() + 1);
+    today.setDate(today.getDate());
 
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);

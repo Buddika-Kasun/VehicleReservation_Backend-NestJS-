@@ -547,9 +547,10 @@ export class UsersService {
 
     const sanitizedUser = sanitizeUser(user);
 
-    const [canUserCreate, canTripApprove] = await Promise.all([
+    const [canUserCreate, canTripApprove, canSafetyApprove] = await Promise.all([
       this.canUserCreate(user),
       this.canTripApprove(user),
+      this.canSafetyApprove(user),
     ]);
 
     const userData = {
@@ -557,6 +558,7 @@ export class UsersService {
       permissions: {
         canUserCreate,
         canTripApprove,
+        canSafetyApprove,
       },
       activityLogs: {
         lastLogin: userLogs?.lastLogin,

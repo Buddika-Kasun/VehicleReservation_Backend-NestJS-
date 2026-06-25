@@ -998,7 +998,7 @@ export class TripsService {
 
     // Generate trip instances for scheduled trips
     if (isScheduledTrip) {
-      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData);
+      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData, TripStatus.PENDING);
     }
 
     // Reload trip with relations
@@ -1385,7 +1385,10 @@ export class TripsService {
         includeWeekends: currentTrip.schedule.includeWeekends,
         repeatAfterDays: currentTrip.schedule.repeatAfterDays,
       };
-      tripInstances = await this.generateTripInstances(savedTrip, scheduleData);
+
+      const instanceStatus = savedTrip.status.toString() === 'approved' ? TripStatus.APPROVED : savedTrip.status;
+
+      tripInstances = await this.generateTripInstances(savedTrip, scheduleData, instanceStatus);
     }
 
     // Reload trip with relations
@@ -1901,6 +1904,7 @@ export class TripsService {
   private async generateTripInstances(
     masterTrip: Trip,
     scheduleData: ScheduleDataDto,
+    instanceStatus: TripStatus,
   ): Promise<Trip[]> {
     const { repetition, startDate, validTillDate, includeWeekends, repeatAfterDays } = scheduleData;
 
@@ -1937,7 +1941,7 @@ export class TripsService {
         startDate: instanceDate.toISOString().split('T')[0],
         startTime: masterTrip.startTime,
         repetition: RepetitionType.ONCE,
-        status: TripStatus.PENDING,
+        status: instanceStatus,
         isScheduled: false,
         isInstance: true,
         masterTripId: masterTrip.id,

@@ -8446,10 +8446,10 @@ export class TripsService {
       }
 
       // Check if there are approved conflicting trips and update their end odometer to 0
-      if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
-        //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
-        await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', reading, user, now);
-      }
+      // if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      //   //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+      //   await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', reading, user, now);
+      // }
 
       try {
         await this.tripTimelineService.recordMeterReading(trip.id, user, 'end');

@@ -1212,18 +1212,18 @@ export class TripsService {
     // Check if it's a scheduled trip
     const isScheduledTrip = currentTrip.isScheduled;
 
-    // For scheduled trips, validate schedule
-    if (isScheduledTrip && currentTrip.schedule) {
-      const scheduleData = {
-        startDate: currentTrip.schedule.startDate.toString(),
-        startTime: currentTrip.schedule.startTime,
-        repetition: currentTrip.schedule.repetition,
-        validTillDate: currentTrip.schedule.validTillDate?.toString(),
-        includeWeekends: currentTrip.schedule.includeWeekends,
-        repeatAfterDays: currentTrip.schedule.repeatAfterDays,
-      };
-      //await this.validateScheduleData(scheduleData);
-    }
+    // // For scheduled trips, validate schedule
+    // if (isScheduledTrip && currentTrip.schedule) {
+    //   const scheduleData = {
+    //     startDate: currentTrip.schedule.startDate.toString(),
+    //     startTime: currentTrip.schedule.startTime,
+    //     repetition: currentTrip.schedule.repetition,
+    //     validTillDate: currentTrip.schedule.validTillDate?.toString(),
+    //     includeWeekends: currentTrip.schedule.includeWeekends,
+    //     repeatAfterDays: currentTrip.schedule.repeatAfterDays,
+    //   };
+    //   //await this.validateScheduleData(scheduleData);
+    // }
 
     // Get passenger count from existing trip
     const passengerCount = currentTrip.passengerCount;
@@ -2037,6 +2037,21 @@ export class TripsService {
           current.setMonth(current.getMonth() + 1);
         }
         break;
+
+      case RepetitionType.CUSTOM:
+        // For custom repetition, use repeatAfterDays as the interval
+      const customInterval = repeatAfterDays || 1;
+      
+      // Skip the start date
+      current.setDate(current.getDate() + customInterval);
+
+      while (current <= end) {
+        if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
+          dates.push(new Date(current));
+        }
+        current.setDate(current.getDate() + customInterval);
+      }
+      break;
     }
 
     return dates;

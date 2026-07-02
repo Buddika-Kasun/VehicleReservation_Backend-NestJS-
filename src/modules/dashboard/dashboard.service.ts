@@ -569,7 +569,7 @@ private async getCurrentMonthCost(
     .leftJoin('trip.department', 'department')
     .select('COALESCE(SUM(trip.cost), 0)', 'totalCost')
     .where('trip.status = :status', { status: TripStatus.COMPLETED })
-    .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
+    .andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
       monthStart,
       monthEnd,
     });
@@ -600,7 +600,7 @@ private async getPreviousMonthCost(
     .leftJoin('trip.department', 'department')
     .select('COALESCE(SUM(trip.cost), 0)', 'totalCost')
     .where('trip.status = :status', { status: TripStatus.COMPLETED })
-    .andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
+    .andWhere('trip.startDate BETWEEN :monthStart AND :monthEnd', {
       monthStart,
       monthEnd,
     });
@@ -722,7 +722,7 @@ private async getCostCentersForDepartments(departmentIds: number[]): Promise<Cos
       .createQueryBuilder('trip')
       .select('SUM(trip.cost)', 'tripCost')
       .where('trip.status = :status', { status: TripStatus.COMPLETED })
-      .andWhere('trip.updatedAt BETWEEN :start AND :end', {
+      .andWhere('trip.startDate BETWEEN :start AND :end', {
         start: startDate,
         end: endDate,
       })

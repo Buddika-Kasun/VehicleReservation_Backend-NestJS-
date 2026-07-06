@@ -6249,6 +6249,38 @@ export class TripsService {
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
 
+    if (trip.isScheduled && !trip.isInstance) {
+      try {
+        const result = await this.tripRepo
+          .createQueryBuilder()
+          .update(Trip)
+          .set({
+            status: TripStatus.REJECTED,
+            updatedAt: new Date(),
+          })
+          .where('masterTripId = :masterTripId', { masterTripId: trip.id })
+          .andWhere('isInstance = :isInstance', { isInstance: true })
+          .andWhere('status NOT IN (:...excludedStatuses)', { 
+            excludedStatuses: [
+              TripStatus.REJECTED, 
+              TripStatus.APPROVED, 
+              TripStatus.COMPLETED, 
+              TripStatus.FINISHED
+            ] 
+          })
+          .execute();
+
+        const instanceUpdateCount = result.affected || 0;
+        
+        if (instanceUpdateCount > 0) {
+          console.log(`✅ Rejected ${instanceUpdateCount} instance trips for master trip ${trip.id}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to reject instance trips:', error);
+        // Continue with main rejection even if instances fail
+      }
+    }
+
     try {
       await this.tripTimelineService.recordRejection(trip.id, rejector);
     } catch (e) {

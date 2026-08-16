@@ -2505,12 +2505,14 @@ export class TripsService {
 
     // Check if safety approval is required (based on restricted hours)
     const requireSafetyApprover =
-      isSafetyApprovalTrip ||
-      (await this.isDuringRestrictedHours(
-        createTripDto.scheduleData.startTime,
-        endTime,
-        approvalConfig,
-      ));
+      !shouldSkipHodApproval && (
+        isSafetyApprovalTrip ||
+        (await this.isDuringRestrictedHours(
+          createTripDto.scheduleData.startTime,
+          endTime,
+          approvalConfig,
+        ))
+      );
 
     // Get approver2 from config if required
     let approver2: User | undefined;

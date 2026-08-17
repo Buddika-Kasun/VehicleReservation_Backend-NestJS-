@@ -483,7 +483,7 @@ export class TripsController {
     @Body() rejectDto: { rejectionReason?: string },
     @GetUser() user: any,
   ) {
-    return await this.tripsService.rejectTrip(tripId, user.userId, rejectDto.rejectionReason);
+    return await this.tripsService.rejectTrip(tripId, user.userId, rejectDto.rejectionReason!);
   }
 
   @Post('all-exceed-trips')
@@ -503,7 +503,24 @@ export class TripsController {
   @Roles(UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Accept a exceed trip' })
   async acceptExceedTrip(@Param('tripId') tripId: number, @GetUser() user: any) {
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
     return await this.tripsService.acceptExceedTrip(tripId, user.userId);
+  }
+
+  @Post('update-exceed-trip-end-odometer/:tripId')
+  @Roles(UserRole.SYSADMIN)
+  @ApiOperation({ summary: 'Update a exceed trip end odometer' })
+  async updateExceedTripEndOdometer(
+    @Param('tripId') tripId: number,
+    @GetUser() user: any,
+    @Body('newEndValue') newEndValue: number, // Specify the body parameter name
+  ) {
+    if (!user || !user.userId) {
+      throw new ForbiddenException('User not authenticated');
+    }
+    return await this.tripsService.updateExceedTripEndOdometer(tripId, user.userId, newEndValue);
   }
 
   @Post('for-meter-reading')

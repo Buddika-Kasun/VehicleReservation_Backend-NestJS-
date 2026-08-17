@@ -58,6 +58,43 @@ export class ChecklistService {
     return this.mapToResponseDto(checklist);
   }
 
+  async getAllChecklistsByDate(
+    vehicleId: number,
+    dateString: string,
+  ): Promise<ChecklistResponseDto[]> {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    // Check if vehicle exists
+    const vehicle = await this.vehicleRepository.findOne({
+      where: { id: vehicleId },
+    });
+    if (!vehicle) {
+      throw new NotFoundException(`Vehicle with ID ${vehicleId} not found`);
+    }
+
+    // Get all checklists for this vehicle on this date
+    const checklists = await this.checklistRepository.find({
+      where: {
+        vehicle: { id: vehicleId },
+        checklistDate: date,
+      },
+      relations: ['vehicle', 'checkedBy', 'items', 'approvedBy'],
+      order: {
+        id: 'ASC', // Order by ID ascending to get versions in order (oldest first)
+      },
+    });
+
+    if (!checklists || checklists.length === 0) {
+      throw new NotFoundException(`No checklists found for vehicle ${vehicleId} on ${dateString}`);
+    }
+
+    // Map each checklist to response DTO
+    return checklists.map((checklist) => this.mapToResponseDto(checklist));
+  }
+
   async getChecklistById(id: number): Promise<ChecklistResponseDto> {
     const checklist = await this.checklistRepository.findOne({
       where: { id },
@@ -205,6 +242,8 @@ export class ChecklistService {
   }
 
   async submitChecklist(checklistDto: ChecklistSubmitRequestDto): Promise<ChecklistResponseDto> {
+    let version = 1;
+
     // Validate date
     const checklistDate = new Date(checklistDto.checklistDate);
     if (isNaN(checklistDate.getTime())) {
@@ -217,12 +256,16 @@ export class ChecklistService {
         vehicle: { id: checklistDto.vehicleId },
         checklistDate,
       },
+      order: {
+        version: 'DESC', // Get the highest version
+      },
     });
 
     if (existingChecklist) {
-      throw new ConflictException(
-        `Checklist already exists for vehicle ${checklistDto.vehicleId} on ${checklistDto.checklistDate}`,
-      );
+      // throw new ConflictException(
+      //   `Checklist already exists for vehicle ${checklistDto.vehicleId} on ${checklistDto.checklistDate}`,
+      // );
+      version = existingChecklist.version + 1;
     }
 
     // Get vehicle
@@ -259,6 +302,7 @@ export class ChecklistService {
       checkedBy: user,
       isSubmitted: true,
       status: ChecklistStatus.SUBMITTED,
+      version: version,
     });
 
     const savedChecklist = await this.checklistRepository.save(checklist);
@@ -534,12 +578,13 @@ export class ChecklistService {
 
       const allVehicles = await vehiclesQueryBuilder.getMany();
 
-      // Build checklist query
+      // Build checklist query - get ALL checklists including multiple versions
       const queryBuilder = this.checklistRepository
         .createQueryBuilder('checklist')
         .leftJoinAndSelect('checklist.vehicle', 'vehicle')
         .leftJoinAndSelect('checklist.checkedBy', 'checkedBy')
-        .leftJoinAndSelect('checklist.approvedBy', 'approvedBy');
+        .leftJoinAndSelect('checklist.approvedBy', 'approvedBy')
+        .orderBy('checklist.version', 'DESC'); // Order by version descending to get latest first
 
       // Apply time filter for checklist date
       if (requestDto.timeFilter && requestDto.timeFilter !== 'all') {
@@ -577,35 +622,60 @@ export class ChecklistService {
       // Get all checklists matching filters
       const checklists = await queryBuilder.getMany();
 
-      // Create a map of vehicleId to checklist
-      const checklistMap = new Map();
+      // Create a map of vehicleId to array of checklists (all versions)
+      const checklistsMap = new Map();
       checklists.forEach((checklist) => {
         if (checklist.vehicle) {
-          checklistMap.set(checklist.vehicle.id, checklist);
+          const vehicleId = checklist.vehicle.id;
+          if (!checklistsMap.has(vehicleId)) {
+            checklistsMap.set(vehicleId, []);
+          }
+          checklistsMap.get(vehicleId).push(checklist);
         }
       });
 
       // Transform to response format
       const allChecklistCards = allVehicles.map((vehicle) => {
-        const checklist = checklistMap.get(vehicle.id);
+        const vehicleChecklists = checklistsMap.get(vehicle.id) || [];
 
-        if (checklist) {
+        // Get the latest checklist (first one since we ordered by version DESC)
+        const latestChecklist = vehicleChecklists.length > 0 ? vehicleChecklists[0] : null;
+
+        // Get all versions for this vehicle
+        const allVersions = vehicleChecklists
+          .map((c) => ({
+            version: c.version || 0,
+            status: c.status,
+            id: c.id.toString(),
+            isSubmitted: c.isSubmitted,
+            createdAt: c.createdAt,
+            comment: c.comment,
+          }))
+          .sort((a, b) => (a.version || 0) - (b.version || 0));
+
+        if (latestChecklist) {
           // Vehicle has a checklist
           return {
-            id: checklist.id.toString(),
-            vehicleId: checklist.vehicle?.id.toString() || vehicle.id.toString(),
-            vehicleRegNo: checklist.vehicleRegNo || vehicle.regNo,
-            checklistDate: checklist.checklistDate,
-            checkedBy: checklist.checkedBy
+            id: latestChecklist.id.toString(),
+            vehicleId: latestChecklist.vehicle?.id.toString() || vehicle.id.toString(),
+            vehicleRegNo: latestChecklist.vehicleRegNo || vehicle.regNo,
+            checklistDate: latestChecklist.checklistDate,
+            checkedBy: latestChecklist.checkedBy
               ? {
-                  id: checklist.checkedBy.id.toString(),
-                  name: checklist.checkedBy.displayname || checklist.checkedBy.username,
-                  role: checklist.checkedBy.role,
+                  id: latestChecklist.checkedBy.id.toString(),
+                  name: latestChecklist.checkedBy.displayname || latestChecklist.checkedBy.username,
+                  role: latestChecklist.checkedBy.role,
                 }
               : null,
-            createdAt: checklist.createdAt,
-            isSubmitted: checklist.isSubmitted || false,
-            status: checklist.status,
+            createdAt: latestChecklist.createdAt,
+            isSubmitted: latestChecklist.isSubmitted || false,
+            status: latestChecklist.status,
+            version: latestChecklist.version || 0, // Add version number
+            // allVersions: allVersions, // Add all versions for reference
+            totalVersions: vehicleChecklists.length, // Total number of versions
+            latestVersion: vehicleChecklists.length, // Latest version number
+            latestVersionStatus: latestChecklist.status, // Status of latest version
+            hasMultipleVersions: vehicleChecklists.length > 1,
           };
         } else {
           // Vehicle has no checklist
@@ -618,6 +688,12 @@ export class ChecklistService {
             createdAt: null,
             isSubmitted: false,
             status: null,
+            version: 0,
+            // allVersions: [],
+            totalVersions: 0,
+            latestVersion: 0,
+            latestVersionStatus: null,
+            hasMultipleVersions: false,
           };
         }
       });
@@ -644,6 +720,19 @@ export class ChecklistService {
           const comparison = nameA.localeCompare(nameB);
           return requestDto.sortOrder === 'asc' ? comparison : -comparison;
         });
+      } else if (requestDto.sortField === 'status') {
+        paginatedChecklists.sort((a, b) => {
+          const statusA = a.status || '';
+          const statusB = b.status || '';
+          const comparison = statusA.localeCompare(statusB);
+          return requestDto.sortOrder === 'asc' ? comparison : -comparison;
+        });
+      } else if (requestDto.sortField === 'version') {
+        paginatedChecklists.sort((a, b) => {
+          const versionA = a.version || 0;
+          const versionB = b.version || 0;
+          return requestDto.sortOrder === 'asc' ? versionA - versionB : versionB - versionA;
+        });
       } else {
         // Default sort by checklistDate (submitted ones first, then draft)
         paginatedChecklists.sort((a, b) => {
@@ -661,6 +750,13 @@ export class ChecklistService {
 
       const hasMore = skip + paginatedChecklists.length < total;
 
+      // Add summary statistics
+      const vehiclesWithChecklists = allChecklistCards.filter((c) => c.id !== '').length;
+      const vehiclesWithoutChecklists = allChecklistCards.filter((c) => c.id === '').length;
+      const vehiclesWithMultipleVersions = allChecklistCards.filter(
+        (c) => c.hasMultipleVersions,
+      ).length;
+
       return {
         success: true,
         data: {
@@ -672,6 +768,13 @@ export class ChecklistService {
           hasMore,
           sortField: requestDto.sortField || 'checklistDate',
           sortOrder: requestDto.sortOrder || 'desc',
+          summary: {
+            totalVehicles: allVehicles.length,
+            vehiclesWithChecklists,
+            vehiclesWithoutChecklists,
+            vehiclesWithMultipleVersions,
+            totalVersions: totalChecklists,
+          },
         },
         statusCode: 200,
       };
@@ -689,6 +792,13 @@ export class ChecklistService {
           page: parseInt(requestDto.page) || 1,
           limit: parseInt(requestDto.limit) || 10,
           hasMore: false,
+          summary: {
+            totalVehicles: 0,
+            vehiclesWithChecklists: 0,
+            vehiclesWithoutChecklists: 0,
+            vehiclesWithMultipleVersions: 0,
+            totalVersions: 0,
+          },
         },
       };
     }
@@ -806,6 +916,7 @@ export class ChecklistService {
       responses,
       isSubmitted: checklist.isSubmitted,
       status: checklist.status,
+      version: checklist.version,
       createdAt: checklist.createdAt,
       updatedAt: checklist.updatedAt,
     };

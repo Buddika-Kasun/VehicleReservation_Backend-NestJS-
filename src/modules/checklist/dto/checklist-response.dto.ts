@@ -57,6 +57,9 @@ export class ChecklistResponseDto {
   status: string;
 
   @ApiProperty()
+  version?: number;
+
+  @ApiProperty()
   createdAt: Date;
 
   @ApiProperty()

@@ -65,6 +65,35 @@ export class ChecklistController {
     return await this.checklistService.getChecklistByDate(vehicleId, date);
   }
 
+  @Get('vehicle/:vehicleId/date/:date/all')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.SYSADMIN,
+    UserRole.HR,
+    UserRole.DRIVER,
+    UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+  )
+  @ApiOperation({ summary: 'Get all checklist versions by vehicle and date' })
+  @ApiParam({ name: 'vehicleId', type: Number, description: 'Vehicle ID' })
+  @ApiParam({
+    name: 'date',
+    type: String,
+    description: 'Date in YYYY-MM-DD format',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'All checklists retrieved successfully',
+    type: [ChecklistResponseDto],
+  })
+  @ApiResponse({ status: 404, description: 'No checklists found' })
+  async getAllChecklistsByDate(
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Param('date') date: string,
+  ) {
+    return await this.checklistService.getAllChecklistsByDate(vehicleId, date);
+  }
+
   @Get('get-by-id/:id')
   @Roles(
     UserRole.ADMIN,

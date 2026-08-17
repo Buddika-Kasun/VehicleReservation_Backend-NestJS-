@@ -32,15 +32,12 @@ export class VehicleService {
         margin: 2,
         color: {
           dark: '#000000',
-          light: '#FFFFFF'
-        }
+          light: '#FFFFFF',
+        },
       });
     } catch (error) {
       throw new InternalServerErrorException(
-        this.responseService.error(
-          'Failed to generate QR code',
-          500
-        )
+        this.responseService.error('Failed to generate QR code', 500),
       );
     }
   }
@@ -49,75 +46,52 @@ export class VehicleService {
   async createVehicle(createVehicleDto: CreateVehicleDto) {
     // Check if registration number already exists
     const existingVehicle = await this.vehicleRepository.findOne({
-      where: { regNo: createVehicleDto.regNo }
+      where: { regNo: createVehicleDto.regNo },
     });
 
     if (existingVehicle) {
       throw new ConflictException(
-        this.responseService.error(
-          'Vehicle with this registration number already exists.',
-          409
-        )
+        this.responseService.error('Vehicle with this registration number already exists.', 409),
       );
     }
 
-    const companies = await this.companyRepository.find({ where: {isActive: true}});
+    const companies = await this.companyRepository.find({ where: { isActive: true } });
     const company = companies[0];
 
     if (!company) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Company not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Company not found.', 404));
     }
 
     let assignedDriverPrimary: User | null = null;
     if (createVehicleDto.assignedDriverPrimaryId) {
       assignedDriverPrimary = await this.userRepository.findOne({
-        where: { id: createVehicleDto.assignedDriverPrimaryId }
+        where: { id: createVehicleDto.assignedDriverPrimaryId },
       });
 
       if (!assignedDriverPrimary) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Primary driver not found.',
-            404
-          )
-        );
+        throw new NotFoundException(this.responseService.error('Primary driver not found.', 404));
       }
     }
 
     let assignedDriverSecondary: User | null = null;
     if (createVehicleDto.assignedDriverSecondaryId) {
       assignedDriverSecondary = await this.userRepository.findOne({
-        where: { id: createVehicleDto.assignedDriverSecondaryId }
+        where: { id: createVehicleDto.assignedDriverSecondaryId },
       });
 
       if (!assignedDriverSecondary) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Secondary driver not found.',
-            404
-          )
-        );
+        throw new NotFoundException(this.responseService.error('Secondary driver not found.', 404));
       }
     }
 
     let vehicleType: CostConfiguration | null = null;
     if (createVehicleDto.vehicleTypeId) {
       vehicleType = await this.costConfigurationRepository.findOne({
-        where: { id: createVehicleDto.vehicleTypeId }
+        where: { id: createVehicleDto.vehicleTypeId },
       });
 
       if (!vehicleType) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Vehicle type not found.',
-            404
-          )
-        );
+        throw new NotFoundException(this.responseService.error('Vehicle type not found.', 404));
       }
     }
 
@@ -141,11 +115,11 @@ export class VehicleService {
       createdAt: savedVehicle.createdAt.toISOString(),
       updatedAt: savedVehicle.updatedAt.toISOString(),
       type: savedVehicle.vehicleType,
-      action: 'view-details'
+      action: 'view-details',
     };
 
     // Format as readable text instead of JSON
-  const qrCodeText = `
+    const qrCodeText = `
 VEHICLE INFORMATION
 ──────────────────
 ID: ${savedVehicle.id}
@@ -170,12 +144,9 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // TODO publish event
 
-    return this.responseService.created(
-      'Vehicle created successfully.',
-      {
-        vehicle: savedVehicleQr
-      }
-    );
+    return this.responseService.created('Vehicle created successfully.', {
+      vehicle: savedVehicleQr,
+    });
   }
 
   // Get all vehicles with filtering and pagination
@@ -184,7 +155,7 @@ Scan Date: ${new Date().toLocaleDateString()}
     limit = 10,
     companyId?: number,
     isActive?: boolean,
-    search?: string
+    search?: string,
   ) {
     const skip = (page - 1) * limit;
     const query = this.vehicleRepository
@@ -204,7 +175,7 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     if (search) {
       query.andWhere('(vehicle.regNo LIKE :search OR vehicle.model LIKE :search)', {
-        search: `%${search}%`
+        search: `%${search}%`,
       });
     }
 
@@ -214,18 +185,15 @@ Scan Date: ${new Date().toLocaleDateString()}
       .orderBy('vehicle.createdAt', 'DESC')
       .getManyAndCount();
 
-    return this.responseService.success(
-      'Vehicles retrieved successfully.',
-      {
-        vehicles,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      }
-    );
+    return this.responseService.success('Vehicles retrieved successfully.', {
+      vehicles,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   }
 
   // Get vehicle by ID
@@ -237,56 +205,56 @@ Scan Date: ${new Date().toLocaleDateString()}
         'assignedDriverPrimary',
         'assignedDriverSecondary',
         'trips',
-        'odometerLogs'
-      ]
+        'odometerLogs',
+      ],
     });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
-    return this.responseService.success(
-      'Vehicle retrieved successfully.',
-      {
-        vehicle
-      }
-    );
+    return this.responseService.success('Vehicle retrieved successfully.', {
+      vehicle,
+    });
   }
 
   // FR-03.2: Edit vehicle details
   async updateVehicle(id: number, updateVehicleDto: UpdateVehicleDto) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id },
-      relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary']
+      relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'vehicleType'],
     });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
     // Check if registration number is being changed and if new one already exists
     if (updateVehicleDto.regNo && updateVehicleDto.regNo !== vehicle.regNo) {
       const existingVehicle = await this.vehicleRepository.findOne({
-        where: { regNo: updateVehicleDto.regNo }
+        where: { regNo: updateVehicleDto.regNo },
       });
 
       if (existingVehicle) {
         throw new ConflictException(
-          this.responseService.error(
-            'Vehicle with this registration number already exists.',
-            409
-          )
+          this.responseService.error('Vehicle with this registration number already exists.', 409),
         );
+      }
+    }
+
+    // Update vehicle type if changed
+    if (updateVehicleDto.vehicleTypeId !== undefined) {
+      if (updateVehicleDto.vehicleTypeId === null) {
+        vehicle.vehicleType = null;
+      } else if (updateVehicleDto.vehicleTypeId !== vehicle.vehicleType?.id) {
+        const vehicleType = await this.costConfigurationRepository.findOne({
+          where: { id: updateVehicleDto.vehicleTypeId },
+        });
+
+        if (!vehicleType) {
+          throw new NotFoundException(this.responseService.error('Vehicle type not found.', 404));
+        }
+        vehicle.vehicleType = vehicleType;
       }
     }
 
@@ -296,16 +264,11 @@ Scan Date: ${new Date().toLocaleDateString()}
         vehicle.assignedDriverPrimary = null;
       } else if (updateVehicleDto.assignedDriverPrimaryId !== vehicle.assignedDriverPrimary?.id) {
         const driver = await this.userRepository.findOne({
-          where: { id: updateVehicleDto.assignedDriverPrimaryId }
+          where: { id: updateVehicleDto.assignedDriverPrimaryId },
         });
 
         if (!driver) {
-          throw new NotFoundException(
-            this.responseService.error(
-              'Primary driver not found.',
-              404
-            )
-          );
+          throw new NotFoundException(this.responseService.error('Primary driver not found.', 404));
         }
         vehicle.assignedDriverPrimary = driver;
       }
@@ -315,17 +278,16 @@ Scan Date: ${new Date().toLocaleDateString()}
     if (updateVehicleDto.assignedDriverSecondaryId !== undefined) {
       if (updateVehicleDto.assignedDriverSecondaryId === null) {
         vehicle.assignedDriverSecondary = null;
-      } else if (updateVehicleDto.assignedDriverSecondaryId !== vehicle.assignedDriverSecondary?.id) {
+      } else if (
+        updateVehicleDto.assignedDriverSecondaryId !== vehicle.assignedDriverSecondary?.id
+      ) {
         const driver = await this.userRepository.findOne({
-          where: { id: updateVehicleDto.assignedDriverSecondaryId }
+          where: { id: updateVehicleDto.assignedDriverSecondaryId },
         });
 
         if (!driver) {
           throw new NotFoundException(
-            this.responseService.error(
-              'Secondary driver not found.',
-              404
-            )
+            this.responseService.error('Secondary driver not found.', 404),
           );
         }
         vehicle.assignedDriverSecondary = driver;
@@ -345,37 +307,26 @@ Scan Date: ${new Date().toLocaleDateString()}
       console.error('Failed to send vehicle update notification', e);
     }
 
-    return this.responseService.success(
-      'Vehicle updated successfully.',
-      {
-        vehicle: updatedVehicle
-      }
-    );
+    return this.responseService.success('Vehicle updated successfully.', {
+      vehicle: updatedVehicle,
+    });
   }
 
   // FR-03.2: Delete vehicle
   async deleteVehicle(id: number) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id },
-      relations: ['trips', 'assignedDriverPrimary', 'assignedDriverSecondary']
+      relations: ['trips', 'assignedDriverPrimary', 'assignedDriverSecondary'],
     });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
     // Check if vehicle has trips
     if (vehicle.trips && vehicle.trips.length > 0) {
       throw new BadRequestException(
-        this.responseService.error(
-          'Cannot delete vehicle with associated trips.',
-          400
-        )
+        this.responseService.error('Cannot delete vehicle with associated trips.', 400),
       );
     }
 
@@ -383,34 +334,25 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // Notify drivers
     try {
-      
       //TODO publish event
     } catch (e) {
       console.error('Failed to send vehicle deletion notification', e);
     }
 
-    return this.responseService.success(
-      'Vehicle deleted successfully.',
-      {
-        deletedVehicleId: id
-      }
-    );
+    return this.responseService.success('Vehicle deleted successfully.', {
+      deletedVehicleId: id,
+    });
   }
 
   // FR-03.3: Assign drivers to vehicles
   async assignDrivers(assignDriverDto: AssignDriverDto) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id: assignDriverDto.vehicleId },
-      relations: ['assignedDriverPrimary', 'assignedDriverSecondary']
+      relations: ['assignedDriverPrimary', 'assignedDriverSecondary'],
     });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
     if (assignDriverDto.primaryDriverId !== undefined) {
@@ -418,16 +360,11 @@ Scan Date: ${new Date().toLocaleDateString()}
         vehicle.assignedDriverPrimary = null;
       } else {
         const primaryDriver = await this.userRepository.findOne({
-          where: { id: assignDriverDto.primaryDriverId }
+          where: { id: assignDriverDto.primaryDriverId },
         });
 
         if (!primaryDriver) {
-          throw new NotFoundException(
-            this.responseService.error(
-              'Primary driver not found.',
-              404
-            )
-          );
+          throw new NotFoundException(this.responseService.error('Primary driver not found.', 404));
         }
         vehicle.assignedDriverPrimary = primaryDriver;
       }
@@ -438,15 +375,12 @@ Scan Date: ${new Date().toLocaleDateString()}
         vehicle.assignedDriverSecondary = null;
       } else {
         const secondaryDriver = await this.userRepository.findOne({
-          where: { id: assignDriverDto.secondaryDriverId }
+          where: { id: assignDriverDto.secondaryDriverId },
         });
 
         if (!secondaryDriver) {
           throw new NotFoundException(
-            this.responseService.error(
-              'Secondary driver not found.',
-              404
-            )
+            this.responseService.error('Secondary driver not found.', 404),
           );
         }
         vehicle.assignedDriverSecondary = secondaryDriver;
@@ -460,18 +394,14 @@ Scan Date: ${new Date().toLocaleDateString()}
 
     // Notify drivers
     try {
-            //TODO publish event
-
+      //TODO publish event
     } catch (e) {
       console.error('Failed to send driver assignment notification', e);
     }
 
-    return this.responseService.success(
-      'Drivers assigned successfully.',
-      {
-        vehicle: updatedVehicle
-      }
-    );
+    return this.responseService.success('Drivers assigned successfully.', {
+      vehicle: updatedVehicle,
+    });
   }
 
   // Toggle vehicle status
@@ -479,12 +409,7 @@ Scan Date: ${new Date().toLocaleDateString()}
     const vehicle = await this.vehicleRepository.findOne({ where: { id } });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
     vehicle.isActive = !vehicle.isActive;
@@ -493,8 +418,8 @@ Scan Date: ${new Date().toLocaleDateString()}
     return this.responseService.success(
       `Vehicle ${updatedVehicle.isActive ? 'activated' : 'deactivated'} successfully.`,
       {
-        vehicle: updatedVehicle
-      }
+        vehicle: updatedVehicle,
+      },
     );
   }
 
@@ -503,38 +428,30 @@ Scan Date: ${new Date().toLocaleDateString()}
     const vehicle = await this.vehicleRepository.findOne({ where: { id } });
 
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found.',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found.', 404));
     }
 
     if (odometerReading < vehicle.odometerLastReading) {
       throw new BadRequestException(
         this.responseService.error(
           'New odometer reading cannot be less than the current reading.',
-          400
-        )
+          400,
+        ),
       );
     }
 
     vehicle.odometerLastReading = odometerReading;
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
 
-    return this.responseService.success(
-      'Odometer reading updated successfully.',
-      {
-        vehicle: updatedVehicle
-      }
-    );
+    return this.responseService.success('Odometer reading updated successfully.', {
+      vehicle: updatedVehicle,
+    });
   }
 
   // Get vehicles by company
   async getCompanyVehicles(companyId: number, isActive?: boolean) {
     const whereCondition: any = { company: { id: companyId } };
-    
+
     if (isActive !== undefined) {
       whereCondition.isActive = isActive;
     }
@@ -542,16 +459,13 @@ Scan Date: ${new Date().toLocaleDateString()}
     const vehicles = await this.vehicleRepository.find({
       where: whereCondition,
       relations: ['assignedDriverPrimary', 'assignedDriverSecondary'],
-      order: { regNo: 'ASC' }
+      order: { regNo: 'ASC' },
     });
 
-    return this.responseService.success(
-      'Company vehicles retrieved successfully.',
-      {
-        vehicles,
-        total: vehicles.length
-      }
-    );
+    return this.responseService.success('Company vehicles retrieved successfully.', {
+      vehicles,
+      total: vehicles.length,
+    });
   }
 
   // Get available vehicles (without assigned drivers)
@@ -567,37 +481,49 @@ Scan Date: ${new Date().toLocaleDateString()}
       query.andWhere('vehicle.companyId = :companyId', { companyId });
     }
 
-    const vehicles = await query
-      .orderBy('vehicle.regNo', 'ASC')
-      .getMany();
+    const vehicles = await query.orderBy('vehicle.regNo', 'ASC').getMany();
 
-    return this.responseService.success(
-      'Available vehicles retrieved successfully.',
-      {
-        vehicles,
-        total: vehicles.length
-      }
-    );
+    return this.responseService.success('Available vehicles retrieved successfully.', {
+      vehicles,
+      total: vehicles.length,
+    });
   }
 
   // Get vehicles by driver
   async getDriverVehicles(driverId: number, currentUser: any) {
-    
     const today = new Date().toISOString().split('T')[0];
-    
+
     if (currentUser?.role == UserRole.SYSADMIN || driverId == -1) {
       const allVehicles = await this.vehicleRepository.find({
         relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'checklists'],
-        order: { regNo: 'ASC' }
+        order: { regNo: 'ASC' },
       });
 
-      const vehiclesWithCheck = allVehicles.map(v => {
+      const vehiclesWithCheck = allVehicles.map((v) => {
         // Check if today's checklist exists BEFORE removing checklists
-        const todayChecked = v.checklists?.some(c => {
-          if (!c.checklistDate) return false;
-          return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
-        }) || false;
-        
+        const todayChecked =
+          v.checklists?.some((c) => {
+            if (!c.checklistDate) return false;
+            return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+          }) || false;
+
+        let checklistStatus = 'draft';
+        if (todayChecked) {
+          const matchingChecklists = v.checklists?.filter((c) => {
+            if (!c.checklistDate) return false;
+            return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+          });
+
+          // Sort by version number to get the latest
+          matchingChecklists.sort((a, b) => (a.version || 0) - (b.version || 0));
+
+          // Get the last matching checklist
+          const lastChecklist = matchingChecklists?.[matchingChecklists.length - 1];
+
+          // Get the status from the last checklist
+          checklistStatus = lastChecklist?.status || 'draft';
+        }
+
         // Create response object WITHOUT checklists
         const vehicleResponse = {
           id: v.id,
@@ -615,40 +541,58 @@ Scan Date: ${new Date().toLocaleDateString()}
           company: v.company,
           assignedDriverPrimary: v.assignedDriverPrimary,
           assignedDriverSecondary: v.assignedDriverSecondary,
-          todayChecked: todayChecked // Add this flag
+          todayChecked: todayChecked, // Add this flag
+          checklistStatus: checklistStatus,
         };
-        
+
         return vehicleResponse;
       });
 
-      return this.responseService.success(
-        'All vehicles retrieved for sysadmin.',
-        {
-          primaryVehicles: vehiclesWithCheck,
-          secondaryVehicles: [],
-          total: allVehicles.length,
-          primaryTotal: vehiclesWithCheck.length,
-          secondaryTotal: 0
-        }
-      );
+      return this.responseService.success('All vehicles retrieved for sysadmin.', {
+        primaryVehicles: vehiclesWithCheck,
+        secondaryVehicles: [],
+        total: allVehicles.length,
+        primaryTotal: vehiclesWithCheck.length,
+        secondaryTotal: 0,
+      });
     }
 
     const vehicles = await this.vehicleRepository.find({
       where: [
         { assignedDriverPrimary: { id: driverId } },
-        { assignedDriverSecondary: { id: driverId } }
+        { assignedDriverSecondary: { id: driverId } },
       ],
       relations: ['company', 'assignedDriverPrimary', 'assignedDriverSecondary', 'checklists'],
-      order: { regNo: 'ASC' }
+      order: { regNo: 'ASC' },
     });
 
-    const vehiclesWithCheck = vehicles.map(v => {
+    const vehiclesWithCheck = vehicles.map((v) => {
       // Check if today's checklist exists BEFORE removing checklists
-      const todayChecked = v.checklists?.some(c => {
-        if (!c.checklistDate) return false;
-        return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
-      }) || false;
-      
+      const todayChecked =
+        v.checklists?.some((c) => {
+          if (!c.checklistDate) return false;
+          return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+        }) || false;
+
+      console.log('vehicle checklist count: ', v.checklists.length);
+
+      let checklistStatus = 'draft';
+      if (todayChecked) {
+        const matchingChecklists = v.checklists?.filter((c) => {
+          if (!c.checklistDate) return false;
+          return new Date(c.checklistDate).toISOString().split('T')[0] === today && c.isSubmitted;
+        });
+
+        // Sort by version number to get the latest
+        matchingChecklists.sort((a, b) => (a.version || 0) - (b.version || 0));
+
+        // Get the last matching checklist
+        const lastChecklist = matchingChecklists?.[matchingChecklists.length - 1];
+
+        // Get the status from the last checklist
+        checklistStatus = lastChecklist?.status || 'draft';
+      }
+
       // Create response object WITHOUT checklists
       const vehicleResponse = {
         id: v.id,
@@ -666,50 +610,38 @@ Scan Date: ${new Date().toLocaleDateString()}
         company: v.company,
         assignedDriverPrimary: v.assignedDriverPrimary,
         assignedDriverSecondary: v.assignedDriverSecondary,
-        todayChecked: todayChecked // Add this flag
+        todayChecked: todayChecked, // Add this flag
+        checklistStatus: checklistStatus,
       };
-      
+
       return vehicleResponse;
     });
 
-    const primaryVehicles = vehiclesWithCheck.filter(v => 
-      v.assignedDriverPrimary?.id === driverId
+    const primaryVehicles = vehiclesWithCheck.filter(
+      (v) => v.assignedDriverPrimary?.id === driverId,
     );
 
-    const secondaryVehicles = vehiclesWithCheck.filter(v => 
-      v.assignedDriverSecondary?.id === driverId
+    const secondaryVehicles = vehiclesWithCheck.filter(
+      (v) => v.assignedDriverSecondary?.id === driverId,
     );
 
-    return this.responseService.success(
-      'Driver vehicles retrieved successfully.',
-      {
-        primaryVehicles,
-        secondaryVehicles,
-        total: vehicles.length,
-        primaryTotal: primaryVehicles.length,
-        secondaryTotal: secondaryVehicles.length
-      }
-    );
+    return this.responseService.success('Driver vehicles retrieved successfully.', {
+      primaryVehicles,
+      secondaryVehicles,
+      total: vehicles.length,
+      primaryTotal: primaryVehicles.length,
+      secondaryTotal: secondaryVehicles.length,
+    });
   }
 
   async updateVehiclePicture(id: number, file: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException(
-        this.responseService.error(
-          'No file uploaded', 
-          400
-        )
-      );
+      throw new BadRequestException(this.responseService.error('No file uploaded', 400));
     }
 
     const vehicle = await this.vehicleRepository.findOne({ where: { id } });
     if (!vehicle) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Vehicle not found', 
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
     }
 
     // Delete old vehicle picture if exists
@@ -717,7 +649,7 @@ Scan Date: ${new Date().toLocaleDateString()}
       const fs = require('fs');
       const path = require('path');
       const oldFilePath = path.join(process.cwd(), vehicle.vehicleImage);
-      
+
       if (fs.existsSync(oldFilePath)) {
         fs.unlinkSync(oldFilePath);
       }
@@ -727,19 +659,16 @@ Scan Date: ${new Date().toLocaleDateString()}
     vehicle.vehicleImage = `uploads/vehicles/${file.filename}`;
     const updatedVehicle = await this.vehicleRepository.save(vehicle);
 
-    return this.responseService.success(
-      'Vehicle picture updated successfully',
-      {
-        vehicle: updatedVehicle,
-        picture: {
-          filename: file.filename,
-          originalname: file.originalname,
-          size: file.size,
-          mimetype: file.mimetype,
-          path: vehicle.vehicleImage,
-        }
-      }
-    );
+    return this.responseService.success('Vehicle picture updated successfully', {
+      vehicle: updatedVehicle,
+      picture: {
+        filename: file.filename,
+        originalname: file.originalname,
+        size: file.size,
+        mimetype: file.mimetype,
+        path: vehicle.vehicleImage,
+      },
+    });
   }
 
   // Optional: Get vehicle picture
@@ -750,5 +679,4 @@ Scan Date: ${new Date().toLocaleDateString()}
     }
     return vehicle.vehicleImage;
   }
-
 }

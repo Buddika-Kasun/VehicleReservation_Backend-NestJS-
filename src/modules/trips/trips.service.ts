@@ -998,7 +998,7 @@ export class TripsService {
 
     // Generate trip instances for scheduled trips
     if (isScheduledTrip) {
-      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData);
+      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData, TripStatus.PENDING);
     }
 
     // Reload trip with relations
@@ -1212,18 +1212,18 @@ export class TripsService {
     // Check if it's a scheduled trip
     const isScheduledTrip = currentTrip.isScheduled;
 
-    // For scheduled trips, validate schedule
-    if (isScheduledTrip && currentTrip.schedule) {
-      const scheduleData = {
-        startDate: currentTrip.schedule.startDate.toString(),
-        startTime: currentTrip.schedule.startTime,
-        repetition: currentTrip.schedule.repetition,
-        validTillDate: currentTrip.schedule.validTillDate?.toString(),
-        includeWeekends: currentTrip.schedule.includeWeekends,
-        repeatAfterDays: currentTrip.schedule.repeatAfterDays,
-      };
-      //await this.validateScheduleData(scheduleData);
-    }
+    // // For scheduled trips, validate schedule
+    // if (isScheduledTrip && currentTrip.schedule) {
+    //   const scheduleData = {
+    //     startDate: currentTrip.schedule.startDate.toString(),
+    //     startTime: currentTrip.schedule.startTime,
+    //     repetition: currentTrip.schedule.repetition,
+    //     validTillDate: currentTrip.schedule.validTillDate?.toString(),
+    //     includeWeekends: currentTrip.schedule.includeWeekends,
+    //     repeatAfterDays: currentTrip.schedule.repeatAfterDays,
+    //   };
+    //   //await this.validateScheduleData(scheduleData);
+    // }
 
     // Get passenger count from existing trip
     const passengerCount = currentTrip.passengerCount;
@@ -1385,7 +1385,10 @@ export class TripsService {
         includeWeekends: currentTrip.schedule.includeWeekends,
         repeatAfterDays: currentTrip.schedule.repeatAfterDays,
       };
-      tripInstances = await this.generateTripInstances(savedTrip, scheduleData);
+
+      const instanceStatus = savedTrip.status.toString() === 'approved' ? TripStatus.APPROVED : savedTrip.status;
+
+      tripInstances = await this.generateTripInstances(savedTrip, scheduleData, instanceStatus);
     }
 
     // Reload trip with relations
@@ -1412,9 +1415,9 @@ export class TripsService {
       if (savedTrip.approval?.approver2) {
         approvers.push(savedTrip.approval.approver2);
       }
-      if (savedTrip.approval?.safetyApprover) {
-        approvers.push(savedTrip.approval.safetyApprover);
-      }
+      // if (savedTrip.approval?.safetyApprover) {
+      //   approvers.push(savedTrip.approval.safetyApprover);
+      // }
 
       // Publish TRIP.CONFIRM event
       await this.eventBus.publish('TRIP', 'CONFIRM', {
@@ -1428,6 +1431,7 @@ export class TripsService {
             : conformer.role,
         userName: conformer.displayname,
         approvers: approvers,
+        wantSafetyApprove: savedTrip.approval?.requireSafetyApprover,
       });
     } catch (e) {
       console.error('Failed to send notifications', e);
@@ -1867,7 +1871,8 @@ export class TripsService {
   private async validateScheduleData(scheduleData: ScheduleDataDto): Promise<void> {
     const startDate = new Date(scheduleData.startDate);
     const today = new Date();
-    today.setDate(today.getDate() + 1);
+    // today.setDate(today.getDate() + 1);
+    today.setDate(today.getDate());
 
     startDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
@@ -1899,6 +1904,7 @@ export class TripsService {
   private async generateTripInstances(
     masterTrip: Trip,
     scheduleData: ScheduleDataDto,
+    instanceStatus: TripStatus,
   ): Promise<Trip[]> {
     const { repetition, startDate, validTillDate, includeWeekends, repeatAfterDays } = scheduleData;
 
@@ -1935,7 +1941,7 @@ export class TripsService {
         startDate: instanceDate.toISOString().split('T')[0],
         startTime: masterTrip.startTime,
         repetition: RepetitionType.ONCE,
-        status: TripStatus.PENDING,
+        status: instanceStatus,
         isScheduled: false,
         isInstance: true,
         masterTripId: masterTrip.id,
@@ -2031,6 +2037,21 @@ export class TripsService {
           current.setMonth(current.getMonth() + 1);
         }
         break;
+
+      case RepetitionType.CUSTOM:
+        // For custom repetition, use repeatAfterDays as the interval
+      const customInterval = repeatAfterDays || 1;
+      
+      // Skip the start date
+      current.setDate(current.getDate() + customInterval);
+
+      while (current <= end) {
+        if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
+          dates.push(new Date(current));
+        }
+        current.setDate(current.getDate() + customInterval);
+      }
+      break;
     }
 
     return dates;
@@ -2516,7 +2537,7 @@ export class TripsService {
       approver1Comments: hodComment,
       approver2: approver2,
       approver2Status: requireApprover2 ? StatusApproval.PENDING : undefined,
-      safetyApprover: safetyApprover,
+      // safetyApprover: safetyApprover,
       safetyApproverStatus: requireSafetyApprover ? StatusApproval.PENDING : undefined,
       overallStatus: overallStatus,
       currentStep: ApproverType.HOD,
@@ -5219,13 +5240,24 @@ export class TripsService {
     // For SYSADMIN: No approver restriction, see ALL approvals
     // For regular users: Only see approvals where they are approver
     if (!isSysAdmin) {
-      queryBuilder.andWhere(
+      if (user.isSafetyApprover == true) {
+        queryBuilder.andWhere(
         new Brackets((qb) => {
           qb.where('approval.approver1 = :userId', { userId })
             .orWhere('approval.approver2 = :userId', { userId })
-            .orWhere('approval.safetyApprover = :userId', { userId });
+            .orWhere('approval.requireSafetyApprover = :require', { require: true });
         }),
       );
+      }
+      else {
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('approval.approver1 = :userId', { userId })
+              .orWhere('approval.approver2 = :userId', { userId })
+              .orWhere('approval.safetyApprover = :userId', { userId });
+          }),
+        );
+      }
     }
 
     // Apply time filter
@@ -5387,8 +5419,13 @@ export class TripsService {
         ) {
           return true;
         }
+        // if (
+        //   approval.safetyApprover?.id === userId &&
+        //   approval.safetyApproverStatus === StatusApproval.PENDING
+        // ) {
         if (
-          approval.safetyApprover?.id === userId &&
+          approval.requireSafetyApprover == true &&
+          user.isSafetyApprover == true &&
           approval.safetyApproverStatus === StatusApproval.PENDING
         ) {
           return true;
@@ -5948,7 +5985,12 @@ export class TripsService {
       }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
       //} else if (approval.safetyApprover?.id === userId) {
-      if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+        isAuthorized = true;
+        approverTypes.push(ApproverType.SAFETY);
+      }
+
+      if (approval.requireSafetyApprover == true && approver.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -5987,7 +6029,9 @@ export class TripsService {
           approval.approver2Status = StatusApproval.APPROVED;
           approval.approver2ApprovedAt = now;
           approval.approver2Comments = comment;
-        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        } else if (approverType === ApproverType.SAFETY) {
+          approval.safetyApprover = approver;
           approval.safetyApproverStatus = StatusApproval.APPROVED;
           approval.safetyApproverApprovedAt = now;
           approval.safetyApproverComments = comment;
@@ -6008,6 +6052,7 @@ export class TripsService {
       requesterId: null,
       passengers: [],
       driverId: null,
+      isSafetyApprove: false,
     };
     // If fully approved, update trip status
     if (approval.overallStatus.toString() === 'approved') {
@@ -6034,6 +6079,7 @@ export class TripsService {
           } else if (approverType === ApproverType.SECONDARY && approval.approver2) {
             await this.tripTimelineService.recordApproval(savedTrip, approver, 2);
           } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+            eventData.isSafetyApprove = true;
             await this.tripTimelineService.recordApproval(savedTrip, approver, 'safety');
           }
         }
@@ -6047,6 +6093,7 @@ export class TripsService {
       await this.eventBus.publish('TRIP', 'APPROVE', {
         tripId: trip.id,
         userId: userId,
+        userName: approver.displayname,
         eventData: eventData,
       });
     } catch (e) {
@@ -6136,7 +6183,12 @@ export class TripsService {
         isAuthorized = true;
         approverTypes.push(ApproverType.SECONDARY);
       }
-      if (approval.safetyApprover?.id === userId) {
+      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+        isAuthorized = true;
+        approverTypes.push(ApproverType.SAFETY);
+      }
+
+      if (approval.requireSafetyApprover == true && rejector.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -6171,7 +6223,9 @@ export class TripsService {
           approval.approver2Comments = isSysAdmin
             ? `Rejected by SYSADMIN: ${rejectionReason}`
             : rejectionReason;
-        } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+        } else if (approverType === ApproverType.SAFETY) {
+          approval.safetyApprover = rejector;
           approval.safetyApproverStatus = StatusApproval.REJECTED;
           approval.safetyApproverComments = isSysAdmin
             ? `Rejected by SYSADMIN: ${rejectionReason}`
@@ -6194,6 +6248,38 @@ export class TripsService {
     // Save changes
     await this.approvalRepo.save(approval);
     await this.tripRepo.save(trip);
+
+    if (trip.isScheduled && !trip.isInstance) {
+      try {
+        const result = await this.tripRepo
+          .createQueryBuilder()
+          .update(Trip)
+          .set({
+            status: TripStatus.REJECTED,
+            updatedAt: new Date(),
+          })
+          .where('masterTripId = :masterTripId', { masterTripId: trip.id })
+          .andWhere('isInstance = :isInstance', { isInstance: true })
+          .andWhere('status NOT IN (:...excludedStatuses)', { 
+            excludedStatuses: [
+              TripStatus.REJECTED, 
+              TripStatus.APPROVED, 
+              TripStatus.COMPLETED, 
+              TripStatus.FINISHED
+            ] 
+          })
+          .execute();
+
+        const instanceUpdateCount = result.affected || 0;
+        
+        if (instanceUpdateCount > 0) {
+          console.log(`✅ Rejected ${instanceUpdateCount} instance trips for master trip ${trip.id}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to reject instance trips:', error);
+        // Continue with main rejection even if instances fail
+      }
+    }
 
     try {
       await this.tripTimelineService.recordRejection(trip.id, rejector);
@@ -8407,10 +8493,10 @@ export class TripsService {
       }
 
       // Check if there are approved conflicting trips and update their end odometer to 0
-      if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
-        //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
-        await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', reading, user, now);
-      }
+      // if (trip.conflictingTrips && trip.conflictingTrips.length > 0) {
+      //   //await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', 0, user, now);
+      //   await this.updateConflictingTripsOdometer(trip.conflictingTrips, 'end', reading, user, now);
+      // }
 
       try {
         await this.tripTimelineService.recordMeterReading(trip.id, user, 'end');

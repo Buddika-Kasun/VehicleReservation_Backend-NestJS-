@@ -8516,11 +8516,11 @@ export class TripsService {
         );
       }
 
-      // Validate start reading cannot be more than vehicle's last odometer reading + 100
-      if (reading > (Math.floor(vehicleLastReading) + 100)) {
+      // Validate start reading cannot be more than vehicle's last odometer reading + 500
+      if (reading > (Math.floor(vehicleLastReading) + 500)) {
         return new BadRequestException(
           this.responseService.error(
-            `Invalid start odometer reading: ${reading} km is too high. The vehicle's last recorded reading is ${vehicleLastReading} km, and the reading cannot exceed it by more than 100 km.`,
+            `Invalid start odometer reading: ${reading} km is too high. The vehicle's last recorded reading is ${vehicleLastReading} km, and the reading cannot exceed it by more than 500 km.`,
             400,
           ),
         );
@@ -8625,11 +8625,11 @@ export class TripsService {
         );
       }
 
-      if (reading > (expectedEndReading + 100)) {
+      if (reading > (expectedEndReading + 500)) {
         return new BadRequestException(
           this.responseService.error(
             `End odometer reading (${reading} km) is too high. ` +
-              `Maximum allowed: ${expectedEndReading + 100} km. Please check the odometer.`,
+              `Maximum allowed: ${expectedEndReading + 500} km. Please check the odometer.`,
             400,
           ),
         );

@@ -998,7 +998,11 @@ export class TripsService {
 
     // Generate trip instances for scheduled trips
     if (isScheduledTrip) {
-      tripInstances = await this.generateTripInstances(savedTrip, createTripDto.scheduleData, TripStatus.PENDING);
+      tripInstances = await this.generateTripInstances(
+        savedTrip,
+        createTripDto.scheduleData,
+        TripStatus.PENDING,
+      );
     }
 
     // Reload trip with relations
@@ -1386,7 +1390,8 @@ export class TripsService {
         repeatAfterDays: currentTrip.schedule.repeatAfterDays,
       };
 
-      const instanceStatus = savedTrip.status.toString() === 'approved' ? TripStatus.APPROVED : savedTrip.status;
+      const instanceStatus =
+        savedTrip.status.toString() === 'approved' ? TripStatus.APPROVED : savedTrip.status;
 
       tripInstances = await this.generateTripInstances(savedTrip, scheduleData, instanceStatus);
     }
@@ -2040,18 +2045,18 @@ export class TripsService {
 
       case RepetitionType.CUSTOM:
         // For custom repetition, use repeatAfterDays as the interval
-      const customInterval = repeatAfterDays || 1;
-      
-      // Skip the start date
-      current.setDate(current.getDate() + customInterval);
+        const customInterval = repeatAfterDays || 1;
 
-      while (current <= end) {
-        if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
-          dates.push(new Date(current));
-        }
+        // Skip the start date
         current.setDate(current.getDate() + customInterval);
-      }
-      break;
+
+        while (current <= end) {
+          if (includeWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
+            dates.push(new Date(current));
+          }
+          current.setDate(current.getDate() + customInterval);
+        }
+        break;
     }
 
     return dates;
@@ -2465,17 +2470,16 @@ export class TripsService {
     );
     */
 
-    const shouldSkipHodApproval = tripDistance ? ((tripDistance * 2) < 13): false;
+    const shouldSkipHodApproval = tripDistance ? tripDistance * 2 < 13 : false;
 
     const requireApprover1 = !shouldSkipHodApproval;
 
     let approver1: User | undefined;
     if (requireApprover1) {
       approver1 = await this.getDepartmentHOD(tripId);
-    }
-    else {
+    } else {
       //hodComment = "Night trip (8PM-12AM) - No HOD approval needed";
-      hodComment = "13 KM less trip - No HOD approval needed";
+      hodComment = '13 KM less trip - No HOD approval needed';
     }
     // Get requester's department HOD (approver1)
     //const departmentHOD = await this.getRequesterHOD(requester);
@@ -2505,12 +2509,13 @@ export class TripsService {
 
     // Check if safety approval is required (based on restricted hours)
     const requireSafetyApprover =
-      isSafetyApprovalTrip ||
-      (await this.isDuringRestrictedHours(
-        createTripDto.scheduleData.startTime,
-        endTime,
-        approvalConfig,
-      ));
+      !shouldSkipHodApproval &&
+      (isSafetyApprovalTrip ||
+        (await this.isDuringRestrictedHours(
+          createTripDto.scheduleData.startTime,
+          endTime,
+          approvalConfig,
+        )));
 
     // Get approver2 from config if required
     let approver2: User | undefined;
@@ -5242,14 +5247,13 @@ export class TripsService {
     if (!isSysAdmin) {
       if (user.isSafetyApprover == true) {
         queryBuilder.andWhere(
-        new Brackets((qb) => {
-          qb.where('approval.approver1 = :userId', { userId })
-            .orWhere('approval.approver2 = :userId', { userId })
-            .orWhere('approval.requireSafetyApprover = :require', { require: true });
-        }),
-      );
-      }
-      else {
+          new Brackets((qb) => {
+            qb.where('approval.approver1 = :userId', { userId })
+              .orWhere('approval.approver2 = :userId', { userId })
+              .orWhere('approval.requireSafetyApprover = :require', { require: true });
+          }),
+        );
+      } else {
         queryBuilder.andWhere(
           new Brackets((qb) => {
             qb.where('approval.approver1 = :userId', { userId })
@@ -5814,6 +5818,14 @@ export class TripsService {
         department: trip.requester?.department?.name,
       },
 
+      // Odometer info
+      odometerLog: trip.odometerLog
+        ? {
+            start: trip.odometerLog.startReading,
+            end: trip.odometerLog.endReading,
+          }
+        : null,
+
       // Vehicle info (without driver details in main object)
       vehicle: trip.vehicle
         ? {
@@ -5985,12 +5997,19 @@ export class TripsService {
       }
       //} else if (approval.currentStep === ApproverType.SAFETY && approval.safetyApprover?.id === userId) {
       //} else if (approval.safetyApprover?.id === userId) {
-      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+      if (
+        approval.safetyApprover?.id === userId &&
+        approval.safetyApproverStatus == StatusApproval.PENDING
+      ) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
 
-      if (approval.requireSafetyApprover == true && approver.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
+      if (
+        approval.requireSafetyApprover == true &&
+        approver.isSafetyApprover == true &&
+        approval.safetyApproverStatus == StatusApproval.PENDING
+      ) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -6029,7 +6048,7 @@ export class TripsService {
           approval.approver2Status = StatusApproval.APPROVED;
           approval.approver2ApprovedAt = now;
           approval.approver2Comments = comment;
-        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
         } else if (approverType === ApproverType.SAFETY) {
           approval.safetyApprover = approver;
           approval.safetyApproverStatus = StatusApproval.APPROVED;
@@ -6183,12 +6202,19 @@ export class TripsService {
         isAuthorized = true;
         approverTypes.push(ApproverType.SECONDARY);
       }
-      if (approval.safetyApprover?.id === userId && approval.safetyApproverStatus == StatusApproval.PENDING) {
+      if (
+        approval.safetyApprover?.id === userId &&
+        approval.safetyApproverStatus == StatusApproval.PENDING
+      ) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
 
-      if (approval.requireSafetyApprover == true && rejector.isSafetyApprover == true && approval.safetyApproverStatus == StatusApproval.PENDING) {
+      if (
+        approval.requireSafetyApprover == true &&
+        rejector.isSafetyApprover == true &&
+        approval.safetyApproverStatus == StatusApproval.PENDING
+      ) {
         isAuthorized = true;
         approverTypes.push(ApproverType.SAFETY);
       }
@@ -6223,7 +6249,7 @@ export class TripsService {
           approval.approver2Comments = isSysAdmin
             ? `Rejected by SYSADMIN: ${rejectionReason}`
             : rejectionReason;
-        // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
+          // } else if (approverType === ApproverType.SAFETY && approval.safetyApprover) {
         } else if (approverType === ApproverType.SAFETY) {
           approval.safetyApprover = rejector;
           approval.safetyApproverStatus = StatusApproval.REJECTED;
@@ -6260,20 +6286,22 @@ export class TripsService {
           })
           .where('masterTripId = :masterTripId', { masterTripId: trip.id })
           .andWhere('isInstance = :isInstance', { isInstance: true })
-          .andWhere('status NOT IN (:...excludedStatuses)', { 
+          .andWhere('status NOT IN (:...excludedStatuses)', {
             excludedStatuses: [
-              TripStatus.REJECTED, 
-              TripStatus.APPROVED, 
-              TripStatus.COMPLETED, 
-              TripStatus.FINISHED
-            ] 
+              TripStatus.REJECTED,
+              TripStatus.APPROVED,
+              TripStatus.COMPLETED,
+              TripStatus.FINISHED,
+            ],
           })
           .execute();
 
         const instanceUpdateCount = result.affected || 0;
-        
+
         if (instanceUpdateCount > 0) {
-          console.log(`✅ Rejected ${instanceUpdateCount} instance trips for master trip ${trip.id}`);
+          console.log(
+            `✅ Rejected ${instanceUpdateCount} instance trips for master trip ${trip.id}`,
+          );
         }
       } catch (error) {
         console.error('❌ Failed to reject instance trips:', error);
@@ -6347,9 +6375,9 @@ export class TripsService {
         .leftJoinAndSelect('trip.linkedTrips', 'linkedTrips')
         .leftJoinAndSelect('trip.selectedGroupUsers', 'selectedGroupUsers');
 
-        queryBuilder.where('exceedApproval.Status = :status', { 
-          status: ExceedStatusApproval.APPROVED 
-        });
+      queryBuilder.where('exceedApproval.Status = :status', {
+        status: ExceedStatusApproval.APPROVED,
+      });
 
       // Apply search filter if provided
       if (requestDto.search && requestDto.search.trim() !== '') {
@@ -6419,7 +6447,9 @@ export class TripsService {
       const exceedApprovals = await queryBuilder.skip(skip).take(requestDto.limit).getMany();
 
       // Extract trips from exceed approvals
-      const trips = exceedApprovals.map(approval => approval.trip).filter(trip => trip !== null);
+      const trips = exceedApprovals
+        .map((approval) => approval.trip)
+        .filter((trip) => trip !== null);
 
       // Transform trips to TripCardDto format
       const tripCards = await Promise.all(
@@ -6589,6 +6619,144 @@ export class TripsService {
     };
   }
 
+  async updateExceedTripEndOdometer(tripId: number, userId: number, newEndValue: number) {
+    try {
+      return await this.tripRepo.manager.transaction(async (manager) => {
+        // 1. Get trip
+        const trip = await manager.findOne(Trip, {
+          where: { id: tripId },
+          relations: ['vehicle', 'vehicle.vehicleType'],
+        });
+
+        if (!trip) {
+          throw new NotFoundException(this.responseService.error('Trip not found', 404));
+        }
+
+        if (trip.status !== TripStatus.EXCEED) {
+          throw new BadRequestException(
+            this.responseService.error('Trip must be in EXCEED status', 400),
+          );
+        }
+
+        // 2. Get odometer log
+        const odometerLog = await manager.findOne(OdometerLog, {
+          where: { trip: { id: tripId } },
+        });
+
+        if (!odometerLog) {
+          throw new NotFoundException(this.responseService.error('Odometer log not found', 404));
+        }
+
+        if (!odometerLog.startReading) {
+          throw new BadRequestException(
+            this.responseService.error('Start odometer reading must be recorded first', 400),
+          );
+        }
+
+        const newEndValueNum = Number(newEndValue);
+        const startReading = Number(odometerLog.startReading);
+
+        if (isNaN(newEndValueNum) || newEndValueNum <= startReading) {
+          throw new BadRequestException(
+            this.responseService.error(
+              `End odometer (${newEndValueNum}) must be greater than start (${startReading})`,
+              400,
+            ),
+          );
+        }
+
+        // 3. Get vehicle
+        const vehicle = await manager.findOne(Vehicle, {
+          where: { id: trip.vehicle?.id },
+          relations: ['vehicleType'],
+        });
+
+        if (!vehicle) {
+          throw new NotFoundException(this.responseService.error('Vehicle not found', 404));
+        }
+
+        // 4. Calculate values
+        const currentOdometer = Number(vehicle.odometerLastReading || 0);
+        const previousEnd = Number(odometerLog.endReading || 0);
+        const odometerChange = newEndValueNum - previousEnd;
+        const newOdometer = Math.round((currentOdometer + odometerChange) * 100) / 100;
+
+        if (newOdometer < 0) {
+          throw new BadRequestException(
+            this.responseService.error('Vehicle odometer cannot be negative', 400),
+          );
+        }
+
+        // 5. Update using repositories with explicit entities
+        await manager.update(Vehicle, vehicle.id, {
+          odometerLastReading: newOdometer,
+        });
+
+        await manager.update(OdometerLog, odometerLog.id, {
+          endReading: newEndValueNum,
+        });
+
+        // 6. Calculate cost
+        let cost = 0;
+        if (trip.tripType !== TripType.FIXED_RATE) {
+          const costPerKm = Number(vehicle.vehicleType?.costPerKm || 0);
+          if (costPerKm > 0 && odometerLog.startReading > 0) {
+            const distance = newEndValueNum - Number(odometerLog.startReading);
+            if (distance > 0) {
+              cost = Math.round(distance * costPerKm * 100) / 100;
+            }
+          }
+        }
+
+        await manager.update(Trip, trip.id, {
+          cost: cost,
+        });
+
+        // 7. Verify updates
+        const verifyTrip = await manager.findOne(Trip, { where: { id: tripId } });
+        const verifyOdometerLog = await manager.findOne(OdometerLog, {
+          where: { id: odometerLog.id },
+        });
+        const verifyVehicle = await manager.findOne(Vehicle, {
+          where: { id: vehicle.id },
+        });
+
+        console.log('🔍 Verification:', {
+          tripCost: verifyTrip?.cost,
+          odometerEnd: verifyOdometerLog?.endReading,
+          vehicleOdometer: verifyVehicle?.odometerLastReading,
+        });
+
+        return {
+          success: true,
+          message: 'Trip end odometer updated successfully',
+          data: {
+            tripId: trip.id,
+            tripStatus: verifyTrip?.status,
+            previousEndReading: previousEnd,
+            newEndReading: newEndValueNum,
+            vehicleOdometer: verifyVehicle?.odometerLastReading,
+            startReading: verifyOdometerLog?.startReading,
+            endReading: verifyOdometerLog?.endReading,
+            distance:
+              verifyOdometerLog?.endReading && verifyOdometerLog?.startReading
+                ? Math.round(
+                    (Number(verifyOdometerLog.endReading) -
+                      Number(verifyOdometerLog.startReading)) *
+                      100,
+                  ) / 100
+                : 0,
+            cost: verifyTrip?.cost || 0,
+          },
+          statusCode: 200,
+        };
+      });
+    } catch (error) {
+      console.error('❌ Error:', error);
+      throw error;
+    }
+  }
+
   /*
   private async restoreVehicleSeatsForRejection(trip: Trip) {
     // Restore seats that were allocated for this rejected trip
@@ -6697,10 +6865,10 @@ export class TripsService {
               approvedAt: approval.approver1ApprovedAt,
               comments: approval.approver1Comments,
             }
-          //: null,
-          : { 
+          : //: null,
+            {
               id: -1,
-              comments: approval.approver1Comments 
+              comments: approval.approver1Comments,
             },
         secondary: approval.approver2
           ? {
@@ -8272,6 +8440,7 @@ export class TripsService {
         'conflictingTrips',
         'requester',
         'primaryDriver',
+        'location',
       ],
     });
 
@@ -8341,7 +8510,17 @@ export class TripsService {
       if (reading < vehicleLastReading) {
         return new BadRequestException(
           this.responseService.error(
-            `Start odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `Invalid start odometer reading: reading(${reading} km) cannot be less than vehicle's last recorded reading (${vehicleLastReading} km)`,
+            400,
+          ),
+        );
+      }
+
+      // Validate start reading cannot be more than vehicle's last odometer reading + 500
+      if (reading > (Math.floor(vehicleLastReading) + 500)) {
+        return new BadRequestException(
+          this.responseService.error(
+            `Invalid start odometer reading: ${reading} km is too high. The vehicle's last recorded reading is ${vehicleLastReading} km, and the reading cannot exceed it by more than 500 km.`,
             400,
           ),
         );
@@ -8426,7 +8605,31 @@ export class TripsService {
       if (reading < vehicleLastReading) {
         return new BadRequestException(
           this.responseService.error(
-            `End odometer reading (${reading}) cannot be less than vehicle's last recorded reading (${vehicleLastReading})`,
+            `Invalid end odometer reading: reading(${reading} km) cannot be less than vehicle's last recorded reading (${vehicleLastReading} km)`,
+            400,
+          ),
+        );
+      }
+
+      const estimatedDistance = Math.round((trip.location.distance * 2) || 0);
+      const expectedEndReading = Math.round(odometerLog.startReading) + estimatedDistance;
+      // console.log("Estimated distance: " + estimatedDistance + ", expected end reading: " + expectedEndReading + ", max: " + (expectedEndReading + 100));
+
+      // Validate end reading cannot be more than estimate distance + 100
+      if (reading < vehicleLastReading) {
+        return new BadRequestException(
+          this.responseService.error(
+            `Invalid end odometer reading: reading(${reading} km) cannot be less than vehicle's last recorded reading (${vehicleLastReading} km)`,
+            400,
+          ),
+        );
+      }
+
+      if (reading > (expectedEndReading + 500)) {
+        return new BadRequestException(
+          this.responseService.error(
+            `End odometer reading (${reading} km) is too high. ` +
+              `Maximum allowed: ${expectedEndReading + 500} km. Please check the odometer.`,
             400,
           ),
         );

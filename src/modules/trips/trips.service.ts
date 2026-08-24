@@ -3711,6 +3711,26 @@ export class TripsService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     */
 
+    // Apply time filter - Check if it's a date string first
+    const timeFilter = requestDto.timeFilter;
+
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
     switch (requestDto.timeFilter) {
       /*
       case 'today':
@@ -3751,6 +3771,7 @@ export class TripsService {
         // No date filter
         break;
     }
+  }
 
     // Apply status filter if provided
     if (requestDto.statusFilter) {
@@ -4103,6 +4124,26 @@ export class TripsService {
 
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+      // Apply time filter - Check if it's a date string first
+    const timeFilter = requestDto.timeFilter;
+
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
       switch (requestDto.timeFilter) {
         case 'today':
           queryBuilder.andWhere('DATE(trip.startDate) = DATE(:today)', {
@@ -4129,6 +4170,7 @@ export class TripsService {
           // No date filter
           break;
       }
+    }
 
       // Apply status filter if provided
       if (requestDto.statusFilter) {
@@ -4371,6 +4413,26 @@ export class TripsService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     */
 
+    // Apply time filter - Check if it's a date string first
+    const timeFilter = requestDto.timeFilter;
+
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.createdAt BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
     switch (requestDto.timeFilter) {
       /*
       case 'today':
@@ -4433,6 +4495,7 @@ export class TripsService {
         // No date filter
         break;
     }
+  }
 
     // Apply status filter if provided
     if (requestDto.statusFilter) {
@@ -5277,8 +5340,28 @@ export class TripsService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     */
 
-    switch (filterDto.timeFilter) {
-      /*
+    // Apply time filter - Check if it's a date string first
+    const timeFilter = filterDto.timeFilter;
+
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.updatedAt BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
+      switch (filterDto.timeFilter) {
+        /*
       case 'today':
         //queryBuilder.andWhere('trip.createdAt = :date', { date: this.formatDateForDB(startOfToday.toISOString()) });
         queryBuilder.andWhere('DATE(trip.createdAt) = DATE(:today)', {
@@ -5296,39 +5379,41 @@ export class TripsService {
         });
         break;
       */
-      case 'today':
-        /*
+        case 'today':
+          /*
         queryBuilder.andWhere('DATE(trip.updatedAt) = DATE(:today)', {
           //today: this.formatDateForDB(now.toISOString())
           today: SriLankaTimeUtil.todayDateStr(),
         });
         */
-        const todayStart = SriLankaTimeUtil.startOfDay();
-        const todayEnd = SriLankaTimeUtil.endOfDay();
+          const todayStart = SriLankaTimeUtil.startOfDay();
+          const todayEnd = SriLankaTimeUtil.endOfDay();
+          console.log(todayStart, todayEnd);
 
-        queryBuilder.andWhere('trip.updatedAt BETWEEN :start AND :end', {
-          start: todayStart,
-          end: todayEnd,
-        });
-        break;
-      case 'week':
-        const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
-        queryBuilder.andWhere('trip.updatedAt BETWEEN :weekStart AND :weekEnd', {
-          weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
-          weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
-        });
-        break;
-      case 'month':
-        const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
-        queryBuilder.andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
-          monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
-          monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
-        });
-        break;
-      case 'all':
-      default:
-        // No date filter
-        break;
+          queryBuilder.andWhere('trip.updatedAt BETWEEN :start AND :end', {
+            start: todayStart,
+            end: todayEnd,
+          });
+          break;
+        case 'week':
+          const weekRange = SriLankaTimeUtil.getCurrentWeekRange();
+          queryBuilder.andWhere('trip.updatedAt BETWEEN :weekStart AND :weekEnd', {
+            weekStart: SriLankaTimeUtil.toDBDate(weekRange.start),
+            weekEnd: SriLankaTimeUtil.toDBDate(weekRange.end),
+          });
+          break;
+        case 'month':
+          const monthRange = SriLankaTimeUtil.getCurrentMonthRange();
+          queryBuilder.andWhere('trip.updatedAt BETWEEN :monthStart AND :monthEnd', {
+            monthStart: SriLankaTimeUtil.toDBDate(monthRange.start),
+            monthEnd: SriLankaTimeUtil.toDBDate(monthRange.end),
+          });
+          break;
+        case 'all':
+        default:
+          // No date filter
+          break;
+      }
     }
 
     // Apply status filter if provided
@@ -7496,6 +7581,23 @@ export class TripsService {
       });
     }
 
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
     // Apply time filter
     switch (timeFilter) {
       /*
@@ -7535,6 +7637,7 @@ export class TripsService {
         });
         break;
     }
+  }
 
     // Apply search filter
     if (search && search.trim() !== '') {
@@ -8517,7 +8620,7 @@ export class TripsService {
       }
 
       // Validate start reading cannot be more than vehicle's last odometer reading + 500
-      if (reading > (Math.floor(vehicleLastReading) + 500)) {
+      if (reading > Math.floor(vehicleLastReading) + 500) {
         return new BadRequestException(
           this.responseService.error(
             `Invalid start odometer reading: ${reading} km is too high. The vehicle's last recorded reading is ${vehicleLastReading} km, and the reading cannot exceed it by more than 500 km.`,
@@ -8611,7 +8714,7 @@ export class TripsService {
         );
       }
 
-      const estimatedDistance = Math.round((trip.location.distance * 2) || 0);
+      const estimatedDistance = Math.round(trip.location.distance * 2 || 0);
       const expectedEndReading = Math.round(odometerLog.startReading) + estimatedDistance;
       // console.log("Estimated distance: " + estimatedDistance + ", expected end reading: " + expectedEndReading + ", max: " + (expectedEndReading + 100));
 
@@ -8625,7 +8728,7 @@ export class TripsService {
         );
       }
 
-      if (reading > (expectedEndReading + 500)) {
+      if (reading > expectedEndReading + 500) {
         return new BadRequestException(
           this.responseService.error(
             `End odometer reading (${reading} km) is too high. ` +
@@ -9066,6 +9169,26 @@ export class TripsService {
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // Apply time filter - Check if it's a date string first
+    const timeFilter = requestDto.timeFilter;
+
+    // Check if timeFilter is a date string in YYYY-MM-DD format
+    const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(timeFilter);
+
+    if (isDateString) {
+      console.log("Yes, date string")
+      // Handle specific date filter using SriLankaTimeUtil
+      const selectedDate = SriLankaTimeUtil.parse(timeFilter);
+
+      // Get start and end of day in Sri Lanka timezone
+      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
+      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
+
+      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
+        start: startOfDay,
+        end: endOfDay,
+      });
+    } else {
     switch (requestDto.timeFilter) {
       /*
     case 'today':
@@ -9109,6 +9232,7 @@ export class TripsService {
         // No date filter for 'all'
         break;
     }
+  }
 
     // Apply status filter if provided
     if (requestDto.statusFilter && requestDto.statusFilter !== 'all') {

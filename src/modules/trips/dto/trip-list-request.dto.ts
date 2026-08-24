@@ -23,15 +23,22 @@ export enum SortOrder {
 export type TripStatusFilter = TripStatus | 'scheduled' | 'normal' | 'accepted';
 
 export class TripListRequestDto {
+  // @ApiProperty({
+  //   description: 'Time filter for trips',
+  //   enum: TimeFilter,
+  //   example: TimeFilter.TODAY,
+  // })
+  // @IsEnum(TimeFilter)
+  // timeFilter: TimeFilter;
   @ApiProperty({
-    description: 'Time filter for trips',
-    enum: TimeFilter,
-    example: TimeFilter.TODAY,
+    description:
+      'Time filter for trips - can be "today", "week", "month", "all", or a date string (YYYY-MM-DD)',
+    example: 'today',
+    required: true,
   })
-  @IsEnum(TimeFilter)
-  timeFilter: TimeFilter;
+  @IsString()
+  timeFilter: string;
 
- 
   @ApiProperty({
     description: 'Status filter for trips (optional)',
     enum: [...Object.values(TripStatus), 'scheduled'],
@@ -49,7 +56,7 @@ export class TripListRequestDto {
   @IsOptional()
   @IsString()
   search?: string;
-  
+
   @ApiProperty({
     description: 'Field to sort by',
     enum: SortField,

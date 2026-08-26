@@ -3722,13 +3722,8 @@ export class TripsService {
       // Handle specific date filter using SriLankaTimeUtil
       const selectedDate = SriLankaTimeUtil.parse(timeFilter);
 
-      // Get start and end of day in Sri Lanka timezone
-      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
-      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
-
-      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
-        start: startOfDay,
-        end: endOfDay,
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+        date: selectedDate,
       });
     } else {
     switch (requestDto.timeFilter) {
@@ -4135,13 +4130,8 @@ export class TripsService {
       // Handle specific date filter using SriLankaTimeUtil
       const selectedDate = SriLankaTimeUtil.parse(timeFilter);
 
-      // Get start and end of day in Sri Lanka timezone
-      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
-      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
-
-      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
-        start: startOfDay,
-        end: endOfDay,
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+        date: selectedDate
       });
     } else {
       switch (requestDto.timeFilter) {
@@ -7589,13 +7579,8 @@ export class TripsService {
       // Handle specific date filter using SriLankaTimeUtil
       const selectedDate = SriLankaTimeUtil.parse(timeFilter);
 
-      // Get start and end of day in Sri Lanka timezone
-      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
-      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
-
-      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
-        start: startOfDay,
-        end: endOfDay,
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+        date: selectedDate,
       });
     } else {
     // Apply time filter
@@ -9180,13 +9165,8 @@ export class TripsService {
       // Handle specific date filter using SriLankaTimeUtil
       const selectedDate = SriLankaTimeUtil.parse(timeFilter);
 
-      // Get start and end of day in Sri Lanka timezone
-      const startOfDay = SriLankaTimeUtil.startOfDay(selectedDate);
-      const endOfDay = SriLankaTimeUtil.endOfDay(selectedDate);
-
-      queryBuilder.andWhere('trip.startDate BETWEEN :start AND :end', {
-        start: startOfDay,
-        end: endOfDay,
+      queryBuilder.andWhere('DATE(trip.startDate) = DATE(:date)', {
+        date: selectedDate,
       });
     } else {
     switch (requestDto.timeFilter) {

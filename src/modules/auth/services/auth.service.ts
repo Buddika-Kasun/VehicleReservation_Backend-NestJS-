@@ -22,6 +22,49 @@ export class AuthService {
 
   private refreshTokens = new Map<number, string>(); // In production, use Redis
 
+  async validateAccessToken(token: string) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_ACCESS_SECRET, // <-- use the same secret your login uses
+      });
+    } catch {
+      throw new UnauthorizedException({
+        success: false,
+        message: 'Invalid or expired token.',
+        statusCode: 401,
+      });
+    }
+
+    // Depending on your payload shape, the user id might be `sub`, `userId`, `id`
+    const userId = payload.sub ?? payload.userId ?? payload.id;
+    if (!userId) {
+      throw new UnauthorizedException({
+        success: false,
+        message: 'Token payload missing user id.',
+        statusCode: 401,
+      });
+    }
+
+    // Load user (also verifies the user still exists and is active)
+    const found = await this.usersService.findById(userId);
+    const user = found?.data?.user;
+    if (!user || user.isActive === false) {
+      throw new UnauthorizedException({
+        success: false,
+        message: 'User not found or inactive.',
+        statusCode: 401,
+      });
+    }
+
+    const sanitizedUser: UserData = sanitizeUser(user);
+
+    return {
+      valid: true,
+      user: sanitizedUser,
+    };
+  }
+
   async validateUser(username: string, pass: string): Promise<any> {
     const user = await this.usersService.findAuthByUsername(username);
 
@@ -31,7 +74,7 @@ export class AuthService {
       );
     }
 
-    const isPasswordValid = await compare(pass, user.passwordHash);
+    const isPasswordValid = await compare(pass, user.passwordHash!);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException(
@@ -170,7 +213,7 @@ export class AuthService {
       }
 
       // Check if new password is same as old password
-      const isSamePassword = await compare(newPassword, user.passwordHash);
+      const isSamePassword = await compare(newPassword, user.passwordHash!);
       if (isSamePassword) {
         throw new BadRequestException(
           this.responseService.error('New password cannot be the same as old password', 400),

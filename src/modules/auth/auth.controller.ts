@@ -1,8 +1,8 @@
-import { Body, Controller, Post, UseGuards, Request, HttpStatus, Get } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Request, HttpStatus, Get, Headers, UnauthorizedException } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UsersService } from '../users/users.service';
-import { ApiBearerAuth, ApiInternalServerErrorResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiInternalServerErrorResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/user.decorator';
@@ -66,6 +66,85 @@ export class AuthController {
   @Public()
   async login(@Body() loginDto: LoginDto): Promise<LoginResponseDto> {
     return await this.authService.login(loginDto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Token validation endpoint — used by PCW Eats SSO (/sso) and other
+  // downstream apps to verify a PCW Ride access token and retrieve user info.
+  //
+  // Response shape (used by PCW Eats' /sso handler):
+  //   { valid: true, user: { user_id, email, username, displayname, role, ... } }
+  //
+  // On invalid/expired token → 401 (which PCW Eats treats as "redirect to login")
+  // ---------------------------------------------------------------------------
+  @Post('validate')
+  @Public()
+  @ApiOperation({
+    summary: 'Validate a PCW Ride access token (SSO for downstream apps)',
+  })
+  @ApiHeader({
+    name: 'Authorization',
+    description: 'Bearer <access-token>',
+    required: true,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Token is valid. Returns the authenticated user.',
+    schema: {
+      example: {
+        valid: true,
+        user: {
+          user_id: 9,
+          username: 'john.doe',
+          displayname: 'John Doe',
+          email: 'john@example.com',
+          role: 'EMPLOYEE',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Token missing, invalid, or expired.',
+    type: ErrorResponseDto,
+    example: ErrorResponseDto.example('Invalid or expired token.', HttpStatus.UNAUTHORIZED),
+  })
+  async validate(@Headers('authorization') authHeader?: string, @Request() req?: any) {
+    const token = this.extractBearerToken(authHeader);
+    if (!token) {
+      throw new UnauthorizedException(
+        ErrorResponseDto.example(
+          'Missing or malformed Authorization header.',
+          HttpStatus.UNAUTHORIZED,
+        ),
+      );
+    }
+
+    return this.authService.validateAccessToken(token);
+  }
+
+  // GET variant so a browser tab can hit /api/auth/validate?token=... during
+  // development (useful for debugging SSO by hand). Prefer POST in production.
+  @Get('validate')
+  @Public()
+  @ApiOperation({
+    summary: 'Validate a token via ?token= query (debug helper)',
+  })
+  async validateViaQuery(@Request() req: any) {
+    const token = String(req.query.token || '');
+    if (!token) {
+      throw new UnauthorizedException(
+        ErrorResponseDto.example('Missing token query parameter.', HttpStatus.UNAUTHORIZED),
+      );
+    }
+    return this.authService.validateAccessToken(token);
+  }
+
+  private extractBearerToken(header?: string): string | null {
+    if (!header) return null;
+    const [scheme, value] = header.split(' ');
+    if (!value || scheme.toLowerCase() !== 'bearer') return null;
+    return value.trim() || null;
   }
 
   @Post('verify-password-reset')

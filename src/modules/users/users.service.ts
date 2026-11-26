@@ -828,7 +828,7 @@ export class UsersService {
   async findEatsUserById(id: number) {
 
     let userId = id;
-    if(id === 999999) {
+    if(id === 999999 || id === 1000) {
       const devAcc = await this.userRepo.findOne({
         where: { username: 'buddikakasun' },
       });

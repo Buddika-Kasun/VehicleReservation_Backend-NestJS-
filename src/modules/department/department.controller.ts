@@ -22,7 +22,11 @@ export class DepartmentController {
   @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new department' })
-  @ApiResponse({ status: 201, description: 'Department created successfully', type: DepartmentResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Department created successfully',
+    type: DepartmentResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Company, cost center, or user not found' })
   async create(@Body() createDepartmentDto: CreateDepartmentDto) {
     return await this.departmentService.create(createDepartmentDto);
@@ -36,7 +40,11 @@ export class DepartmentController {
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'companyId', required: false, type: Number })
   @ApiQuery({ name: 'costCenterId', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Departments retrieved successfully', type: DepartmentListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Departments retrieved successfully',
+    type: DepartmentListResponseDto,
+  })
   async findAll(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -48,18 +56,69 @@ export class DepartmentController {
     const limitNumber = limit ? parseInt(limit, 10) : undefined; // Keep as undefined if not provided
     const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
     const costCenterIdNumber = costCenterId ? parseInt(costCenterId, 10) : undefined;
-    return await this.departmentService.findAll(pageNumber, limitNumber, search, companyIdNumber, costCenterIdNumber);
+    return await this.departmentService.findAll(
+      pageNumber,
+      limitNumber,
+      search,
+      companyIdNumber,
+      costCenterIdNumber,
+    );
   }
 
-  @Get('get-user-all')
-  @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR, UserRole.DRIVER, UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.SECURITY)
+  @Get('get-all-for-eats')
+  @Public()
   @ApiOperation({ summary: 'Get all departments' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'companyId', required: false, type: Number })
   @ApiQuery({ name: 'costCenterId', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Departments retrieved successfully', type: DepartmentListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Departments retrieved successfully',
+    type: DepartmentListResponseDto,
+  })
+  async findAllForEats(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('companyId') companyId?: string,
+    @Query('costCenterId') costCenterId?: string,
+  ) {
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : undefined; // Keep as undefined if not provided
+    const companyIdNumber = companyId ? parseInt(companyId, 10) : undefined;
+    const costCenterIdNumber = costCenterId ? parseInt(costCenterId, 10) : undefined;
+    return await this.departmentService.findAllForEats(
+      pageNumber,
+      limitNumber,
+      search,
+      companyIdNumber,
+      costCenterIdNumber,
+    );
+  }
+
+  @Get('get-user-all')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.SYSADMIN,
+    UserRole.HR,
+    UserRole.DRIVER,
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.SECURITY,
+  )
+  @ApiOperation({ summary: 'Get all departments' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'companyId', required: false, type: Number })
+  @ApiQuery({ name: 'costCenterId', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Departments retrieved successfully',
+    type: DepartmentListResponseDto,
+  })
   async findUserAll(
     @GetUser() user: any,
     @Query('page') page?: string,
@@ -73,7 +132,11 @@ export class DepartmentController {
   @Get('get/:id')
   @Roles(UserRole.ADMIN, UserRole.SYSADMIN, UserRole.HR)
   @ApiOperation({ summary: 'Get a department by ID' })
-  @ApiResponse({ status: 200, description: 'Department retrieved successfully', type: DepartmentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Department retrieved successfully',
+    type: DepartmentResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Department not found' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return await this.departmentService.findOne(id);
@@ -82,9 +145,16 @@ export class DepartmentController {
   @Put('update/:id')
   @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Update a department' })
-  @ApiResponse({ status: 200, description: 'Department updated successfully', type: DepartmentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Department updated successfully',
+    type: DepartmentResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Department not found' })
-  async update(@Param('id', ParseIntPipe) id: number, @Body() updateDepartmentDto: UpdateDepartmentDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDepartmentDto: UpdateDepartmentDto,
+  ) {
     return await this.departmentService.update(id, updateDepartmentDto);
   }
 
@@ -100,7 +170,11 @@ export class DepartmentController {
   @Patch('toggle-status/:id')
   @Roles(UserRole.ADMIN, UserRole.SYSADMIN)
   @ApiOperation({ summary: 'Toggle department active status' })
-  @ApiResponse({ status: 200, description: 'Department status updated successfully', type: DepartmentResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Department status updated successfully',
+    type: DepartmentResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Department not found' })
   async toggleStatus(@Param('id', ParseIntPipe) id: number) {
     return await this.departmentService.toggleStatus(id);

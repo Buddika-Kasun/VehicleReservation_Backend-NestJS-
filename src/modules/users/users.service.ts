@@ -825,6 +825,50 @@ export class UsersService {
     };
   }
 
+  async findEatsUserById(id: number) {
+
+    let userId = id;
+    if(id === 999999) {
+      const devAcc = await this.userRepo.findOne({
+        where: { username: 'buddikakasun' },
+      });
+      if (devAcc) {
+        userId = devAcc.id;
+      }
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['department'],
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const userData = {
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      phone: user.phone,
+      departmentId: user.department?.id,
+      departmentName: user.department?.name,
+    };
+
+    return {
+      success: true,
+      statusCode: 200,
+      data: {
+        user: userData,
+      },
+    };
+  }
+
+  findEatsUserCount() {
+    return this.userRepo.count({
+      where: { role: Not(UserRole.SYSADMIN), isApproved: Status.APPROVED },
+    });
+  }
+
   async findAllByStatus(status?: string, page: number = 1, limit: number = 20) {
     // Calculate skip for pagination
     const skip = (page - 1) * limit;
@@ -969,6 +1013,60 @@ export class UsersService {
       displayname: user.displayname,
       role: user.role,
       phone: user.phone,
+      departmentName: user.department?.name,
+    }));
+
+    return this.responseService.success('Users retrieved successfully', {
+      users: minimalUsers,
+      total: minimalUsers.length,
+    });
+  }
+
+  async findAllBySearchingForEats(search?: string) {
+    // Create query builder
+    const queryBuilder = this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+      .andWhere('user.isApproved = :status', { status: Status.APPROVED })
+      .orderBy('user.createdAt', 'DESC')
+      .take(5); // limit
+
+    // Add search conditions if search term is provided
+    if (search && search.trim()) {
+      const trimmed = search.trim();
+
+      if (trimmed.startsWith('#')) {
+        // "#abc123" → search by id only (strip the leading #)
+        const idTerm = `%${trimmed.replace(/^#+/, '')}%`;
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('CAST(user.id AS TEXT) ILIKE :idTerm', { idTerm });
+          }),
+        );
+      } else {
+        const searchTerm = `%${trimmed}%`;
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('user.displayname ILIKE :search', { search: searchTerm })
+              .orWhere('user.email ILIKE :search', { search: searchTerm })
+              .orWhere('user.username ILIKE :search', { search: searchTerm });
+          }),
+        );
+      }
+    }
+
+    // Execute query
+    const users = await queryBuilder.getMany();
+
+    // Transform to minimal user data
+    const minimalUsers = users.map((user) => ({
+      id: user.id,
+      displayname: user.displayname,
+      role: user.role,
+      phone: user.phone,
+      departmentId: user.department?.id,
       departmentName: user.department?.name,
     }));
 

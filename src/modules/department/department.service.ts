@@ -23,45 +23,31 @@ export class DepartmentService {
   ) {}
 
   async create(createDepartmentDto: CreateDepartmentDto) {
-
-    const companies = await this.companyRepository.find({ where: {isActive: true}});
+    const companies = await this.companyRepository.find({ where: { isActive: true } });
     const company = companies[0];
 
     if (!company) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Company not found',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Company not found', 404));
     }
 
     let costCenter: CostCenter | null = null;
     if (createDepartmentDto.costCenterId) {
       costCenter = await this.costCenterRepository.findOne({
-        where: { id: createDepartmentDto.costCenterId }
+        where: { id: createDepartmentDto.costCenterId },
       });
       if (!costCenter) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Cost center not found',
-            404
-          )
-        );
+        throw new NotFoundException(this.responseService.error('Cost center not found', 404));
       }
     }
 
     let head: User | null = null;
     if (createDepartmentDto.headId) {
       head = await this.userRepository.findOne({
-        where: { id: createDepartmentDto.headId }
+        where: { id: createDepartmentDto.headId },
       });
       if (!head) {
         throw new NotFoundException(
-          this.responseService.error(
-            'Department head user not found',
-            404
-          )
+          this.responseService.error('Department head user not found', 404),
         );
       }
     }
@@ -70,20 +56,18 @@ export class DepartmentService {
       ...createDepartmentDto,
       company,
       costCenter,
-      head
+      head,
     });
 
     const savedDepartment = await this.departmentRepository.save(department);
 
     const sysAdmins = await this.userRepository.find({
       where: {
-        role: UserRole.SYSADMIN
-      }
+        role: UserRole.SYSADMIN,
+      },
     });
 
-    const sysAdminsToUpdate = sysAdmins.filter(
-      user => !user.company || !user.department
-    );
+    const sysAdminsToUpdate = sysAdmins.filter((user) => !user.company || !user.department);
 
     if (sysAdminsToUpdate.length > 0) {
       for (const user of sysAdminsToUpdate) {
@@ -94,16 +78,18 @@ export class DepartmentService {
       await this.userRepository.save(sysAdminsToUpdate);
     }
 
-
-    return this.responseService.created(
-      'Department created successfully',
-      {
-        department: savedDepartment
-      }
-    );
+    return this.responseService.created('Department created successfully', {
+      department: savedDepartment,
+    });
   }
 
-  async findAll(page = 1, limit?: number, search?: string, companyId?: number, costCenterId?: number) {
+  async findAll(
+    page = 1,
+    limit?: number,
+    search?: string,
+    companyId?: number,
+    costCenterId?: number,
+  ) {
     const skip = (page - 1) * (limit || 0);
     const query = this.departmentRepository
       .createQueryBuilder('department')
@@ -125,10 +111,7 @@ export class DepartmentService {
 
     // If limit is provided, use pagination
     if (limit) {
-      query
-        .skip(skip)
-        .take(limit)
-        .orderBy('department.createdAt', 'DESC');
+      query.skip(skip).take(limit).orderBy('department.createdAt', 'DESC');
     } else {
       // If no limit, just order the results
       query.orderBy('department.createdAt', 'DESC');
@@ -136,29 +119,68 @@ export class DepartmentService {
 
     const [departments, total] = await query.getManyAndCount();
 
-    return this.responseService.success(
-      'Departments retrieved successfully',
-      {
-        departments,
-        pagination: {
-          page,
-          limit: limit || total, // If no limit, show total as limit
-          total,
-          totalPages: limit ? Math.ceil(total / limit) : 1,
-        },
-      }
-    );
+    return this.responseService.success('Departments retrieved successfully', {
+      departments,
+      pagination: {
+        page,
+        limit: limit || total, // If no limit, show total as limit
+        total,
+        totalPages: limit ? Math.ceil(total / limit) : 1,
+      },
+    });
   }
 
-  async findUserAll(page = 1, limit?: number, user?: any) { 
-    
+  async findAllForEats(
+    page = 1,
+    limit?: number,
+    search?: string,
+    companyId?: number,
+    costCenterId?: number,
+  ) {
+    const skip = (page - 1) * (limit || 0);
+    const query = this.departmentRepository
+      .createQueryBuilder('department')
+      .select(['department.id', 'department.name']);
+
+    if (search) {
+      query.where('department.name LIKE :search', { search: `%${search}%` });
+    }
+
+    if (companyId) {
+      query.andWhere('department.companyId = :companyId', { companyId });
+    }
+
+    if (costCenterId) {
+      query.andWhere('department.costCenterId = :costCenterId', { costCenterId });
+    }
+
+    if (limit) {
+      query.skip(skip).take(limit).orderBy('department.createdAt', 'DESC');
+    } else {
+      query.orderBy('department.createdAt', 'DESC');
+    }
+
+    const [departments, total] = await query.getManyAndCount();
+
+    return this.responseService.success('Departments retrieved successfully', {
+      departments,
+      pagination: {
+        page,
+        limit: limit || total,
+        total,
+        totalPages: limit ? Math.ceil(total / limit) : 1,
+      },
+    });
+  }
+
+  async findUserAll(page = 1, limit?: number, user?: any) {
     const userData = await this.userRepository.findOne({
       where: { id: user.userId },
-      relations: ['company', 'department']
+      relations: ['company', 'department'],
     });
-    
+
     const skip = (page - 1) * (limit || 0);
-    
+
     // Create base query
     const query = this.departmentRepository
       .createQueryBuilder('department')
@@ -181,12 +203,16 @@ export class DepartmentService {
           //   query.andWhere('company.id = :companyId', { companyId: user.company.id });
           // }
           break;
-        default: 
+        default:
           // user is head of department OR belongs to department
-          query.andWhere(new Brackets(qb => {
-            qb.where('head.id = :userId', { userId: userId }) // User is head
-              .orWhere('department.id = :userDepartmentId', { userDepartmentId: userDepartmentId }); // User belongs to
-          }));
+          query.andWhere(
+            new Brackets((qb) => {
+              qb.where('head.id = :userId', { userId: userId }) // User is head
+                .orWhere('department.id = :userDepartmentId', {
+                  userDepartmentId: userDepartmentId,
+                }); // User belongs to
+            }),
+          );
           break;
       }
     } else {
@@ -196,10 +222,7 @@ export class DepartmentService {
 
     // If limit is provided, use pagination
     if (limit) {
-      query
-        .skip(skip)
-        .take(limit)
-        .orderBy('department.createdAt', 'DESC');
+      query.skip(skip).take(limit).orderBy('department.createdAt', 'DESC');
     } else {
       // If no limit, just order the results
       query.orderBy('department.createdAt', 'DESC');
@@ -207,18 +230,15 @@ export class DepartmentService {
 
     const [departments, total] = await query.getManyAndCount();
 
-    return this.responseService.success(
-      'Departments retrieved successfully',
-      {
-        departments,
-        pagination: {
-          page,
-          limit: limit || total, // If no limit, show total as limit
-          total,
-          totalPages: limit ? Math.ceil(total / limit) : 1,
-        },
-      }
-    );
+    return this.responseService.success('Departments retrieved successfully', {
+      departments,
+      pagination: {
+        page,
+        limit: limit || total, // If no limit, show total as limit
+        total,
+        totalPages: limit ? Math.ceil(total / limit) : 1,
+      },
+    });
   }
 
   async findOne(id: number) {
@@ -231,63 +251,42 @@ export class DepartmentService {
       .getOne();
 
     if (!department) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Department not found',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Department not found', 404));
     }
 
-    return this.responseService.success(
-      'Department retrieved successfully',
-      {
-        department
-      }
-    );
+    return this.responseService.success('Department retrieved successfully', {
+      department,
+    });
   }
 
   async update(id: number, updateDepartmentDto: UpdateDepartmentDto) {
     const department = await this.departmentRepository.findOne({
       where: { id },
-      relations: ['company', 'costCenter', 'head']
+      relations: ['company', 'costCenter', 'head'],
     });
 
     if (!department) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Department not found',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Department not found', 404));
     }
 
     let costCenter: CostCenter | null = null;
     if (updateDepartmentDto.costCenterId) {
       costCenter = await this.costCenterRepository.findOne({
-        where: { id: updateDepartmentDto.costCenterId }
+        where: { id: updateDepartmentDto.costCenterId },
       });
       if (!costCenter) {
-        throw new NotFoundException(
-          this.responseService.error(
-            'Cost center not found',
-            404
-          )
-        );
+        throw new NotFoundException(this.responseService.error('Cost center not found', 404));
       }
     }
 
     let head: User | null = null;
     if (updateDepartmentDto.headId) {
       head = await this.userRepository.findOne({
-        where: { id: updateDepartmentDto.headId }
+        where: { id: updateDepartmentDto.headId },
       });
       if (!head) {
         throw new NotFoundException(
-          this.responseService.error(
-            'Department head user not found',
-            404
-          )
+          this.responseService.error('Department head user not found', 404),
         );
       }
     }
@@ -295,49 +294,32 @@ export class DepartmentService {
     Object.assign(department, {
       ...updateDepartmentDto,
       costCenter,
-      head
-    }
-    );
+      head,
+    });
     const updatedDepartment = await this.departmentRepository.save(department);
 
-    return this.responseService.success(
-      'Department updated successfully',
-      {
-        department: updatedDepartment
-      }
-    );
+    return this.responseService.success('Department updated successfully', {
+      department: updatedDepartment,
+    });
   }
 
   async remove(id: number) {
     const department = await this.departmentRepository.findOne({ where: { id } });
 
     if (!department) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Department not found',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Department not found', 404));
     }
 
     await this.departmentRepository.remove(department);
 
-    return this.responseService.success(
-      'Department deleted successfully',
-      null
-    );
+    return this.responseService.success('Department deleted successfully', null);
   }
 
   async toggleStatus(id: number) {
     const department = await this.departmentRepository.findOne({ where: { id } });
 
     if (!department) {
-      throw new NotFoundException(
-        this.responseService.error(
-          'Department not found',
-          404
-        )
-      );
+      throw new NotFoundException(this.responseService.error('Department not found', 404));
     }
 
     department.isActive = !department.isActive;
@@ -346,8 +328,8 @@ export class DepartmentService {
     return this.responseService.success(
       `Department ${updatedDepartment.isActive ? 'activated' : 'deactivated'} successfully`,
       {
-        department: updatedDepartment
-      }
+        department: updatedDepartment,
+      },
     );
   }
 }

@@ -15,6 +15,7 @@ import { User, UserRole } from 'src/infra/database/entities/user.entity';
 import { ApproveUserDto } from './dto/approve-user.dto';
 import { UsersLogService } from './user-log.service';
 import { TrackUserActivityDto } from 'src/infra/database/entities/user-log.entity';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('user')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -234,6 +235,43 @@ export class UsersController {
   })
   async getAllBySearching(@Query('query') search: string) {
     return this.usersService.findAllBySearching(search);
+  }
+
+  @Get('search-eats')
+  @Public()
+  @ApiOperation({ summary: 'Search users for Eats' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully.',
+  })
+  async getAllBySearchingForEats(@Query('query') search: string) {
+    return this.usersService.findAllBySearchingForEats(search);
+  }
+
+  @Get('get-eats-count')
+  @Public()
+  @ApiOperation({ summary: 'Get Eats user count' })
+  @ApiResponse({
+    status: 200,
+    description: `
+      User retrieved successfully.
+    `,
+  })
+  async getEatsUserCount() {
+    return this.usersService.findEatsUserCount();
+  }
+
+  @Get('get-eats/:id')
+  @Public()
+  @ApiOperation({ summary: 'Get Eats user details by ID' })
+  @ApiResponse({
+    status: 200,
+    description: `
+      User retrieved successfully.
+    `,
+  })
+  async getEatsUserById(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.findEatsUserById(id);
   }
 
   @Get('get-user-by-approval')

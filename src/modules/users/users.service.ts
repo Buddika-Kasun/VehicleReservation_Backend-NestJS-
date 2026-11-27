@@ -1040,6 +1040,59 @@ export class UsersService {
     });
   }
 
+  // async findAllBySearchingForEats(search?: string) {
+  //   // Create query builder
+  //   const queryBuilder = this.userRepo
+  //     .createQueryBuilder('user')
+  //     .leftJoinAndSelect('user.company', 'company')
+  //     .leftJoinAndSelect('user.department', 'department')
+  //     .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN })
+  //     .andWhere('user.isApproved = :status', { status: Status.APPROVED })
+  //     .orderBy('user.createdAt', 'DESC')
+  //     .take(5); // limit
+
+  //   // Add search conditions if search term is provided
+  //   if (search && search.trim()) {
+  //     const trimmed = search.trim();
+
+  //     if (trimmed.startsWith('#')) {
+  //       // "#abc123" → search by id only (strip the leading #)
+  //       const idTerm = `%${trimmed.replace(/^#+/, '')}%`;
+  //       queryBuilder.andWhere(
+  //         new Brackets((qb) => {
+  //           qb.where('CAST(user.id AS TEXT) ILIKE :idTerm', { idTerm });
+  //         }),
+  //       );
+  //     } else {
+  //       const searchTerm = `%${trimmed}%`;
+  //       queryBuilder.andWhere(
+  //         new Brackets((qb) => {
+  //           qb.where('user.displayname ILIKE :search', { search: searchTerm })
+  //             .orWhere('user.email ILIKE :search', { search: searchTerm })
+  //             .orWhere('user.username ILIKE :search', { search: searchTerm });
+  //         }),
+  //       );
+  //     }
+  //   }
+
+  //   // Execute query
+  //   const users = await queryBuilder.getMany();
+
+  //   // Transform to minimal user data
+  //   const minimalUsers = users.map((user) => ({
+  //     id: user.id,
+  //     displayname: user.displayname,
+  //     role: user.role,
+  //     phone: user.phone,
+  //     departmentId: user.department?.id,
+  //     departmentName: user.department?.name,
+  //   }));
+
+  //   return this.responseService.success('Users retrieved successfully', {
+  //     users: minimalUsers,
+  //     total: minimalUsers.length,
+  //   });
+  // }
   async findAllBySearchingForEats(search?: string) {
     // Create query builder
     const queryBuilder = this.userRepo
@@ -1056,13 +1109,20 @@ export class UsersService {
       const trimmed = search.trim();
 
       if (trimmed.startsWith('#')) {
-        // "#abc123" → search by id only (strip the leading #)
-        const idTerm = `%${trimmed.replace(/^#+/, '')}%`;
-        queryBuilder.andWhere(
-          new Brackets((qb) => {
-            qb.where('CAST(user.id AS TEXT) ILIKE :idTerm', { idTerm });
-          }),
-        );
+        // "#6" → exact ID match only
+        const rawId = trimmed.replace(/^#+/, '').trim();
+
+        // Guard: if not a valid numeric id, return empty / not found
+        if (!/^\d+$/.test(rawId)) {
+          return this.responseService.success('Users retrieved successfully', {
+            users: [],
+            total: 0,
+          });
+        }
+
+        queryBuilder.andWhere('user.id = :id', { id: Number(rawId) });
+        // exact match → at most one row
+        queryBuilder.take(1);
       } else {
         const searchTerm = `%${trimmed}%`;
         queryBuilder.andWhere(

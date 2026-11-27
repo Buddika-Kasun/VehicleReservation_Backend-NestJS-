@@ -185,10 +185,10 @@ export class UsersController {
   }
 
   @Post('get-all-by-status')
-  async getUsersByStatus(@Body() body: { status?: string; page?: number; limit?: number }) {
-    const { status, page = 1, limit = 20 } = body;
+  async getUsersByStatus(@Body() body: { status?: string; page?: number; limit?: number; search?: string }) {
+    const { status, page = 1, limit = 20, search } = body;
 
-    return this.usersService.findAllByStatus(status, page, limit);
+    return this.usersService.findAllByStatus(status, page, limit, search);
   }
 
   @Get('get-all-by-department/:id')

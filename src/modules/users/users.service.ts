@@ -826,9 +826,8 @@ export class UsersService {
   }
 
   async findEatsUserById(id: number) {
-
     let userId = id;
-    if(id === 999999 || id === 1000) {
+    if (id === 999999 || id === 1000) {
       const devAcc = await this.userRepo.findOne({
         where: { username: 'buddikakasun' },
       });
@@ -869,40 +868,59 @@ export class UsersService {
     });
   }
 
-  async findAllByStatus(status?: string, page: number = 1, limit: number = 20) {
-    // Calculate skip for pagination
-    const skip = (page - 1) * limit;
+  async findAllByStatus(status?: string, page: number = 1, limit: number = 20, search?: string) {
+    try {
+      // Calculate skip for pagination
+      const skip = (page - 1) * limit;
 
-    // Build where condition
-    const whereCondition: any = {
-      role: Not(UserRole.SYSADMIN),
-    };
+      // Build query builder
+      const queryBuilder = this.userRepo
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.company', 'company')
+        .leftJoinAndSelect('user.department', 'department')
+        .where('user.role != :sysadminRole', { sysadminRole: UserRole.SYSADMIN });
 
-    // Add status filter if provided
-    if (status && status.toLowerCase() !== 'all') {
-      whereCondition.isApproved = status.toLowerCase();
+      // Add status filter if provided (same behavior as before)
+      if (status && status.toLowerCase() !== 'all') {
+        queryBuilder.andWhere('user.isApproved = :status', {
+          status: status.toLowerCase(),
+        });
+      }
+
+      // Apply search filter if provided (optional, matches findAllByFiltration logic)
+      if (search && search.trim() !== '') {
+        const searchTerm = `%${search.trim()}%`;
+
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('user.displayname ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.email ILIKE :searchTerm', { searchTerm })
+              .orWhere('user.username ILIKE :searchTerm', { searchTerm })
+              .orWhere('CAST(user.id AS TEXT) ILIKE :searchTerm', { searchTerm });
+          }),
+        );
+      }
+
+      // Order (same as before: id DESC)
+      queryBuilder.orderBy('user.id', 'DESC');
+
+      // Execute query with pagination
+      const [users, total] = await queryBuilder.take(limit).skip(skip).getManyAndCount();
+
+      const sanitizedUsers = sanitizeUsers(users);
+
+      return this.responseService.success('Users retrieved successfully', {
+        users: sanitizedUsers,
+        total: total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      });
+    } catch (error) {
+      console.error('Error in findAllByStatus:', error);
     }
-
-    // Execute query with pagination
-    const [users, total] = await this.userRepo.findAndCount({
-      where: whereCondition,
-      relations: ['company', 'department'],
-      order: { id: 'DESC' },
-      take: limit,
-      skip: skip,
-    });
-
-    const sanitizedUsers = sanitizeUsers(users);
-
-    return this.responseService.success('Users retrieved successfully', {
-      users: sanitizedUsers,
-      total: total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages: Math.ceil(total / limit),
-      hasNextPage: page * limit < total,
-      hasPrevPage: page > 1,
-    });
   }
 
   async findAllByDepartment(departmentId?: number) {
